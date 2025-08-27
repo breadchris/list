@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Group, contentRepository } from '../data/ContentRepository';
+import { Group, contentRepository } from './ContentRepository';
 
 interface GroupSelectorProps {
   currentGroup: Group | null;

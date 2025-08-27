@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -32,6 +33,20 @@ func main() {
 				Name:   "build",
 				Usage:  "Build the application for production",
 				Action: buildCommand,
+			},
+			{
+				Name:      "run",
+				Usage:     "Run predefined commands",
+				ArgsUsage: "<command>",
+				Description: "Available commands:\n" +
+					"   migrate - Run database migrations (npx supabase db push)\n" +
+					"   types   - Generate TypeScript types from database schema",
+				Action: runCommand,
+			},
+			{
+				Name:   "deploy",
+				Usage:  "Build and deploy the application to Cloudflare Pages",
+				Action: deployCommand,
 			},
 		},
 	}
@@ -74,7 +89,12 @@ func serveCommand(c *cli.Context) error {
 func buildCommand(c *cli.Context) error {
 	fmt.Println("🏗️ Starting production build...")
 
-	buildDir := "./"
+	buildDir := "./build"
+
+	// Create build directory if it doesn't exist
+	if err := os.MkdirAll(buildDir, 0755); err != nil {
+		return fmt.Errorf("failed to create build directory: %v", err)
+	}
 
 	// Build main app bundle
 	result := buildWithEsbuild("./index.tsx", filepath.Join(buildDir, "app.js"), true)
@@ -100,6 +120,76 @@ func buildCommand(c *cli.Context) error {
 	fmt.Printf("   • index.html\n")
 	fmt.Printf("   • app.js\n")
 
+	return nil
+}
+
+// deployCommand builds and deploys the application to Cloudflare Pages
+func deployCommand(c *cli.Context) error {
+	fmt.Println("🚀 Starting deployment process...")
+
+	// First, run the build command
+	fmt.Println("📦 Building application...")
+	buildCmd := exec.Command("go", "run", ".", "build")
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+	
+	if err := buildCmd.Run(); err != nil {
+		return fmt.Errorf("build failed: %v", err)
+	}
+
+	fmt.Println("✅ Build completed successfully!")
+
+	// Then, deploy with wrangler
+	fmt.Println("☁️  Deploying to Cloudflare Pages...")
+	deployCmd := exec.Command("npx", "wrangler", "pages", "deploy", "./build")
+	deployCmd.Stdout = os.Stdout
+	deployCmd.Stderr = os.Stderr
+	deployCmd.Stdin = os.Stdin
+
+	if err := deployCmd.Run(); err != nil {
+		return fmt.Errorf("deployment failed: %v", err)
+	}
+
+	fmt.Println("🎉 Deployment completed successfully!")
+	return nil
+}
+
+// runCommand executes predefined bash commands based on command name
+func runCommand(c *cli.Context) error {
+	if c.NArg() == 0 {
+		return fmt.Errorf("command name is required\n\nAvailable commands:\n   migrate - Run database migrations\n   types   - Generate TypeScript types")
+	}
+
+	commandName := c.Args().Get(0)
+
+	// Command mappings
+	commands := map[string]string{
+		"migrate": "npx supabase db push",
+		"types":   `npx supabase gen types typescript --project-id "zazsrepfnamdmibcyenx" --schema public > types/database.types.ts`,
+	}
+
+	bashCommand, exists := commands[commandName]
+	if !exists {
+		availableCommands := make([]string, 0, len(commands))
+		for cmd := range commands {
+			availableCommands = append(availableCommands, cmd)
+		}
+		return fmt.Errorf("unknown command '%s'\n\nAvailable commands: %s", commandName, strings.Join(availableCommands, ", "))
+	}
+
+	fmt.Printf("🔧 Running: %s\n", bashCommand)
+
+	// Execute the bash command
+	cmd := exec.Command("bash", "-c", bashCommand)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("command failed: %v", err)
+	}
+
+	fmt.Printf("✅ Command '%s' completed successfully\n", commandName)
 	return nil
 }
 

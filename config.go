@@ -8,17 +8,17 @@ import (
 )
 
 type Config struct {
-	Port         string `json:"port"`
-	SupabaseURL  string `json:"supabase_url"`
-	SupabaseKey  string `json:"supabase_key"`
+	Port        string `json:"port"`
+	SupabaseURL string `json:"supabase_url"`
+	SupabaseKey string `json:"supabase_key"`
 }
 
 func LoadConfig() (*Config, error) {
 	// Default configuration
 	config := &Config{
 		Port:        "3002",
-		SupabaseURL: "https://qxbfhpisnafbwtrhekyn.supabase.co",
-		SupabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4YmZocGlzbmFmYnd0cmhla3luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExNDkyOTcsImV4cCI6MjA2NjcyNTI5N30.VboPHSbBC6XERXMKbxRLe_NhjzhjRYfctwBPzpz1eAo",
+		SupabaseURL: "https://zazsrepfnamdmibcyenx.supabase.co",
+		SupabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM",
 	}
 
 	// Try to load from config file if it exists

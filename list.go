@@ -2,7 +2,7 @@ package main
 
 import (
 	"net/http"
-	"path/filepath"
+	"os"
 )
 
 // createHTTPServer creates the HTTP server for the list app

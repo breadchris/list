@@ -1,14 +1,20 @@
 import React, { useState } from 'react';
-import { Content, contentRepository } from '../data/ContentRepository';
+import { Content, contentRepository } from './ContentRepository';
 
 interface ContentInputProps {
   groupId: string;
+  parentContentId?: string | null;
   onContentAdded: (content: Content) => void;
+  isVisible: boolean;
+  onClose: () => void;
 }
 
 export const ContentInput: React.FC<ContentInputProps> = ({ 
-  groupId, 
-  onContentAdded 
+  groupId,
+  parentContentId = null,
+  onContentAdded,
+  isVisible,
+  onClose
 }) => {
   const [inputText, setInputText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,10 +32,12 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         type: 'text',
         data: text,
         group_id: groupId,
+        parent_content_id: parentContentId,
       });
 
       onContentAdded(newContent);
       setInputText('');
+      onClose();
     } catch (error) {
       console.error('Error creating content:', error);
       // You might want to show an error message to the user here
@@ -45,15 +53,31 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     }
   };
 
+  if (!isVisible) return null;
+
   return (
-    <div className="bg-white border-t border-gray-200 px-4 py-3">
+    <div className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-gray-700">
+          {parentContentId ? "Add sub-item" : "Add new item"}
+        </h3>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      
       <form onSubmit={handleSubmit} className="flex items-end space-x-3">
         <div className="flex-1">
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Add a new item to the list..."
+            placeholder={parentContentId ? "Add a sub-item..." : "Add a new item to the list..."}
             className="w-full px-3 py-2 border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             rows={1}
             style={{
@@ -67,6 +91,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
               target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
             }}
             disabled={isSubmitting}
+            autoFocus
           />
           <p className="text-xs text-gray-500 mt-1">
             Press Enter to add, Shift+Enter for new line

@@ -3,7 +3,9 @@ module list
 go 1.21
 
 require (
+	github.com/alexferrari88/gohn v0.8.0
 	github.com/evanw/esbuild v0.19.0
+	github.com/lib/pq v1.10.9
 	github.com/urfave/cli/v2 v2.25.7
 )
 
