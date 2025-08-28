@@ -6,8 +6,10 @@
   "type": "module",
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
+    "@tailwindcss/cli": "^4.1.12",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^4.1.12"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
@@ -16,6 +18,9 @@
   },
   "scripts": {
     "dev": "go run . serve",
-    "build": "go run . build"
+    "build": "npm run css:build && go run . build",
+    "css:build": "npx @tailwindcss/cli -i ./src/styles/input.css -o ./public/styles.css --minify",
+    "css:watch": "npx @tailwindcss/cli -i ./src/styles/input.css -o ./public/styles.css --watch",
+    "css:dev": "npx @tailwindcss/cli -i ./src/styles/input.css -o ./public/styles.css"
   }
 }

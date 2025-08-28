@@ -24,7 +24,19 @@ export interface Content {
   group_id: string;
   user_id: string;
   parent_content_id?: string;
+  metadata?: any; // JSONB field for SEO and other metadata
   tags?: Tag[];
+}
+
+export interface SEOMetadata {
+  title?: string;
+  description?: string;
+  image?: string;
+  favicon?: string;
+  domain?: string;
+  siteName?: string;
+  type?: string;
+  url?: string;
 }
 
 export interface Tag {
@@ -461,6 +473,59 @@ export class ContentRepository {
         callback
       )
       .subscribe();
+  }
+
+  // SEO extraction functionality
+  async extractSEOInformation(contentId: string): Promise<{
+    seo_children: Content[],
+    urls_processed: number,
+    total_urls_found: number,
+    message: string
+  }> {
+    try {
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/extract-seo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.supabaseKey}`,
+        },
+        body: JSON.stringify({ content_id: contentId }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to extract SEO information:', error);
+      throw error;
+    }
+  }
+
+  // Get SEO children for a piece of content
+  async getSEOChildren(contentId: string): Promise<Content[]> {
+    try {
+      const { data, error } = await withRetry(async () => {
+        return await supabase
+          .from('content')
+          .select('*')
+          .eq('parent_content_id', contentId)
+          .eq('type', 'seo')
+          .order('created_at', { ascending: false });
+      });
+
+      if (error) {
+        console.error('Error fetching SEO children:', error);
+        throw new Error(error.message);
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Failed to fetch SEO children:', error);
+      throw error;
+    }
   }
 }
 

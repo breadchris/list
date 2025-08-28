@@ -128,8 +128,8 @@ func buildCommand(c *cli.Context) error {
 		return fmt.Errorf("failed to copy font files: %v", err)
 	}
 	
-	// Copy CSS file
-	if err := copyFile("public/satoshi.css", filepath.Join(buildDir, "satoshi.css")); err != nil {
+	// Copy compiled CSS file
+	if err := copyFile("public/styles.css", filepath.Join(buildDir, "styles.css")); err != nil {
 		return fmt.Errorf("failed to copy CSS file: %v", err)
 	}
 
@@ -138,7 +138,7 @@ func buildCommand(c *cli.Context) error {
 	fmt.Printf("📄 Files generated:\n")
 	fmt.Printf("   • index.html\n")
 	fmt.Printf("   • app.js\n")
-	fmt.Printf("   • satoshi.css\n")
+	fmt.Printf("   • styles.css\n")
 	fmt.Printf("   • fonts/ (directory with font files)\n")
 
 	return nil
@@ -547,11 +547,8 @@ func generateComponentHTML(componentName, componentPath string) string {
     <link rel="preload" href="/static/fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
     
-    <link rel="stylesheet" type="text/css" href="/static/satoshi.css">
-    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/daisyui@5">
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" type="text/css" href="/static/styles.css">
     <style>
-        body { margin: 0; padding: 0; font-family: 'Satoshi', system-ui, -apple-system, sans-serif; }
         #root { width: 100%%; height: 100vh; }
         .error { 
             padding: 20px; 
@@ -563,19 +560,6 @@ func generateComponentHTML(componentName, componentPath string) string {
             font-family: monospace;
         }
     </style>
-    <script>
-        // Extend Tailwind with Satoshi font
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        'sans': ['Satoshi', 'system-ui', '-apple-system', 'sans-serif'],
-                        'satoshi': ['Satoshi', 'system-ui', '-apple-system', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body>
     <div id="root"></div>
@@ -636,26 +620,10 @@ func generateProductionHTML() string {
     <link rel="preload" href="fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
     
-    <link rel="stylesheet" type="text/css" href="satoshi.css">
-    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/daisyui@5">
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" type="text/css" href="styles.css">
     <style>
-        body { margin: 0; padding: 0; font-family: 'Satoshi', system-ui, -apple-system, sans-serif; }
         #root { width: 100%; height: 100vh; }
     </style>
-    <script>
-        // Extend Tailwind with Satoshi font
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        'sans': ['Satoshi', 'system-ui', '-apple-system', 'sans-serif'],
-                        'satoshi': ['Satoshi', 'system-ui', '-apple-system', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body>
     <div id="root"></div>
