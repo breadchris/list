@@ -114,11 +114,32 @@ func buildCommand(c *cli.Context) error {
 		return fmt.Errorf("failed to write HTML file: %v", err)
 	}
 
+	// Copy font assets to build directory
+	fmt.Println("📝 Copying font assets...")
+	
+	// Create fonts directory in build
+	fontsDir := filepath.Join(buildDir, "fonts")
+	if err := os.MkdirAll(fontsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create fonts directory: %v", err)
+	}
+	
+	// Copy font files
+	if err := copyDirectory("public/fonts", fontsDir); err != nil {
+		return fmt.Errorf("failed to copy font files: %v", err)
+	}
+	
+	// Copy CSS file
+	if err := copyFile("public/satoshi.css", filepath.Join(buildDir, "satoshi.css")); err != nil {
+		return fmt.Errorf("failed to copy CSS file: %v", err)
+	}
+
 	fmt.Println("✅ Production build completed successfully!")
 	fmt.Printf("📁 Output directory: %s\n", buildDir)
 	fmt.Printf("📄 Files generated:\n")
 	fmt.Printf("   • index.html\n")
 	fmt.Printf("   • app.js\n")
+	fmt.Printf("   • satoshi.css\n")
+	fmt.Printf("   • fonts/ (directory with font files)\n")
 
 	return nil
 }
@@ -521,10 +542,16 @@ func generateComponentHTML(componentName, componentPath string) string {
         }
     }
     </script>
+    <!-- Preload key Satoshi font files for better performance -->
+    <link rel="preload" href="/static/fonts/Satoshi-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
+    
+    <link rel="stylesheet" type="text/css" href="/static/satoshi.css">
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/daisyui@5">
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
-        body { margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { margin: 0; padding: 0; font-family: 'Satoshi', system-ui, -apple-system, sans-serif; }
         #root { width: 100%%; height: 100vh; }
         .error { 
             padding: 20px; 
@@ -536,6 +563,19 @@ func generateComponentHTML(componentName, componentPath string) string {
             font-family: monospace;
         }
     </style>
+    <script>
+        // Extend Tailwind with Satoshi font
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['Satoshi', 'system-ui', '-apple-system', 'sans-serif'],
+                        'satoshi': ['Satoshi', 'system-ui', '-apple-system', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
 </head>
 <body>
     <div id="root"></div>
@@ -591,16 +631,81 @@ func generateProductionHTML() string {
         }
     }
     </script>
+    <!-- Preload key Satoshi font files for better performance -->
+    <link rel="preload" href="fonts/Satoshi-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
+    
+    <link rel="stylesheet" type="text/css" href="satoshi.css">
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/daisyui@5">
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
-        body { margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { margin: 0; padding: 0; font-family: 'Satoshi', system-ui, -apple-system, sans-serif; }
         #root { width: 100%; height: 100vh; }
     </style>
+    <script>
+        // Extend Tailwind with Satoshi font
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['Satoshi', 'system-ui', '-apple-system', 'sans-serif'],
+                        'satoshi': ['Satoshi', 'system-ui', '-apple-system', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
 </head>
 <body>
     <div id="root"></div>
     <script type="module" src="./app.js"></script>
 </body>
 </html>`
+}
+
+// copyFile copies a single file from src to dst
+func copyFile(src, dst string) error {
+	input, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	
+	err = os.WriteFile(dst, input, 0644)
+	if err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// copyDirectory copies all files from src directory to dst directory
+func copyDirectory(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		
+		if entry.IsDir() {
+			// Create subdirectory
+			if err := os.MkdirAll(dstPath, 0755); err != nil {
+				return err
+			}
+			// Recursively copy subdirectory
+			if err := copyDirectory(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// Copy file
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+	
+	return nil
 }

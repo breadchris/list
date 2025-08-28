@@ -20,6 +20,10 @@ func createHTTPServer() *http.ServeMux {
 	// ES Module endpoint for serving compiled JavaScript
 	mux.HandleFunc("/module/", handleServeModule)
 
+	// Static file server for CSS and fonts
+	fileServer := http.FileServer(http.Dir("public/"))
+	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
+
 	return mux
 }
 
