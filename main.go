@@ -116,18 +116,18 @@ func buildCommand(c *cli.Context) error {
 
 	// Copy font assets to build directory
 	fmt.Println("📝 Copying font assets...")
-	
+
 	// Create fonts directory in build
 	fontsDir := filepath.Join(buildDir, "fonts")
 	if err := os.MkdirAll(fontsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create fonts directory: %v", err)
 	}
-	
+
 	// Copy font files
 	if err := copyDirectory("public/fonts", fontsDir); err != nil {
 		return fmt.Errorf("failed to copy font files: %v", err)
 	}
-	
+
 	// Copy compiled CSS file
 	if err := copyFile("public/styles.css", filepath.Join(buildDir, "styles.css")); err != nil {
 		return fmt.Errorf("failed to copy CSS file: %v", err)
@@ -153,7 +153,7 @@ func deployCommand(c *cli.Context) error {
 	buildCmd := exec.Command("go", "run", ".", "build")
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
-	
+
 	if err := buildCmd.Run(); err != nil {
 		return fmt.Errorf("build failed: %v", err)
 	}
@@ -271,7 +271,6 @@ func handleRenderComponent(w http.ResponseWriter, r *http.Request) {
 
 		errorHTML := generateErrorHTML(componentPath, errorMessages)
 		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(errorHTML))
 		return
 	}
@@ -329,7 +328,6 @@ func handleServeModule(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(w, `{"error": "Build failed", "details": %q}`, errorMessages)
 		return
 	}
@@ -638,12 +636,12 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	err = os.WriteFile(dst, input, 0644)
 	if err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -653,11 +651,11 @@ func copyDirectory(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	for _, entry := range entries {
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
-		
+
 		if entry.IsDir() {
 			// Create subdirectory
 			if err := os.MkdirAll(dstPath, 0755); err != nil {
@@ -674,6 +672,6 @@ func copyDirectory(src, dst string) error {
 			}
 		}
 	}
-	
+
 	return nil
 }

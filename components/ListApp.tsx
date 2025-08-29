@@ -7,17 +7,20 @@ import { ContentList } from './ContentList';
 import { ContentInput } from './ContentInput';
 import { AppSidebar } from './AppSidebar';
 import { FloatingActionButton } from './FloatingActionButton';
+import { WorkflowFAB } from './WorkflowFAB';
+import { MicroGameOverlay } from './MicroGameOverlay';
 import { GroupDropdown } from './GroupDropdown';
 import { Group, Content, contentRepository } from './ContentRepository';
+import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
+import { useContentSelection } from '../hooks/useContentSelection';
+import { useSEOExtraction } from '../hooks/useSEOExtraction';
 
 export const ListApp: React.FC = () => {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
-  const [groupsLoading, setGroupsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
-  const [groups, setGroups] = useState<Group[]>([]);
   const [newContent, setNewContent] = useState<Content | undefined>();
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
   const [navigationStack, setNavigationStack] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'Root'}]);
@@ -25,15 +28,77 @@ export const ListApp: React.FC = () => {
   const [showInput, setShowInput] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupModalMode, setGroupModalMode] = useState<'create' | 'join'>('create');
+
+  // React Query hooks
+  const { data: groups = [], isLoading: groupsLoading, error: groupsError } = useGroupsQuery({ enabled: !!user });
+  const createGroupMutation = useCreateGroupMutation();
+  const joinGroupMutation = useJoinGroupMutation();
+  const seoExtractionMutation = useSEOExtraction();
   
-  // Search state
+  // Search state  
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Content[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchOffset, setSearchOffset] = useState(0);
-  const [searchHasMore, setSearchHasMore] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Content selection state for workflow operations
+  const contentSelection = useContentSelection();
+  
+  // Micro-game overlay state
+  const [showGameOverlay, setShowGameOverlay] = useState(false);
+  const [currentOperation, setCurrentOperation] = useState('');
+  
+  // Workflow action handlers
+  const handleSEOExtraction = async () => {
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    if (selectedIds.length === 0) return;
+
+    try {
+      // Show micro-game overlay during processing
+      setCurrentOperation('SEO Extraction');
+      setShowGameOverlay(true);
+      
+      const results = await seoExtractionMutation.mutateAsync(selectedIds);
+      
+      // Hide game overlay
+      setShowGameOverlay(false);
+      
+      // Show results summary
+      const totalUrls = results.reduce((sum, r) => sum + r.total_urls_found, 0);
+      const processedUrls = results.reduce((sum, r) => sum + r.urls_processed, 0);
+      
+      alert(`SEO extraction completed!\nProcessed ${processedUrls}/${totalUrls} URLs from ${selectedIds.length} items.`);
+      
+      // Clear selection after successful operation
+      contentSelection.clearSelection();
+    } catch (error) {
+      console.error('SEO extraction failed:', error);
+      setShowGameOverlay(false);
+      alert('SEO extraction failed. Please try again.');
+    }
+  };
+  
+  const handleBulkDelete = async () => {
+    // TODO: Implement bulk delete workflow
+    console.log('Bulk delete for selected items:', contentSelection.selectedItems);
+  };
+  
+  // Define available workflow actions
+  const workflowActions = [
+    {
+      id: 'seo-extract',
+      name: 'Extract SEO',
+      description: 'Extract SEO metadata from links',
+      icon: '🔍',
+      onClick: handleSEOExtraction
+    },
+    {
+      id: 'bulk-delete',
+      name: 'Delete Items',
+      description: 'Delete selected items',
+      icon: '🗑️',
+      onClick: handleBulkDelete
+    }
+  ];
 
   useEffect(() => {
     initializeAuth();
@@ -74,7 +139,6 @@ export const ListApp: React.FC = () => {
       } else if (!session?.user) {
         setUser(null);
         setCurrentGroup(null);
-        setGroups([]);
         setError(null);
       }
       
@@ -86,65 +150,24 @@ export const ListApp: React.FC = () => {
   };
 
   const handleUserInitialization = async (userId: string) => {
-    setGroupsLoading(true);
     setError(null);
     
     try {
-      // Run operations in parallel for better performance
-      const [profileResult, groupsResult] = await Promise.allSettled([
-        contentRepository.createOrUpdateUser(userId),
-        contentRepository.getUserGroups()
-      ]);
-      
-      // Handle profile creation result
-      if (profileResult.status === 'rejected') {
-        console.error('Error creating user profile:', profileResult.reason);
-        // Don't block the app for profile creation failures
-      }
-      
-      // Handle groups loading result  
-      if (groupsResult.status === 'fulfilled') {
-        const userGroups = groupsResult.value;
-        setGroups(userGroups);
-        
-        // If no current group and we have groups, select the first one
-        if (!currentGroup && userGroups.length > 0) {
-          setCurrentGroup(userGroups[0]);
-        }
-      } else {
-        console.error('Error loading groups:', groupsResult.reason);
-        setError('Failed to load groups. Please try refreshing the page.');
-      }
+      // Only handle profile creation - React Query will handle groups
+      await contentRepository.createOrUpdateUser(userId);
     } catch (error) {
-      console.error('User initialization error:', error);
-      setError('Failed to initialize user data');
-    } finally {
-      setGroupsLoading(false);
+      console.error('Error creating user profile:', error);
+      setError('Failed to initialize user profile');
     }
   };
 
 
-  const loadGroups = async () => {
-    if (groupsLoading) return;
-    
-    setGroupsLoading(true);
-    setError(null);
-    
-    try {
-      const userGroups = await contentRepository.getUserGroups();
-      setGroups(userGroups);
-      
-      // If no current group and we have groups, select the first one
-      if (!currentGroup && userGroups.length > 0) {
-        setCurrentGroup(userGroups[0]);
-      }
-    } catch (error) {
-      console.error('Error loading groups:', error);
-      setError('Failed to load groups');
-    } finally {
-      setGroupsLoading(false);
+  // Auto-select first group when groups are loaded
+  useEffect(() => {
+    if (!currentGroup && groups.length > 0) {
+      setCurrentGroup(groups[0]);
     }
-  };
+  }, [groups, currentGroup]);
 
   const handleSignOut = async () => {
     try {
@@ -183,6 +206,28 @@ export const ListApp: React.FC = () => {
   const handleJoinGroup = () => {
     setGroupModalMode('join');
     setShowGroupModal(true);
+  };
+
+  const handleCreateGroupSubmit = async (groupName: string) => {
+    try {
+      const newGroup = await createGroupMutation.mutateAsync(groupName);
+      setCurrentGroup(newGroup);
+      setShowGroupModal(false);
+    } catch (error) {
+      console.error('Error creating group:', error);
+      setError('Failed to create group');
+    }
+  };
+
+  const handleJoinGroupSubmit = async (joinCode: string) => {
+    try {
+      const group = await joinGroupMutation.mutateAsync(joinCode);
+      setCurrentGroup(group);
+      setShowGroupModal(false);
+    } catch (error) {
+      console.error('Error joining group:', error);
+      setError('Failed to join group');
+    }
   };
 
   const handleNavigate = async (parentId: string | null) => {
@@ -235,40 +280,6 @@ export const ListApp: React.FC = () => {
     }
   };
 
-  // Search functionality with debouncing
-  const performSearch = useCallback(async (query: string, reset = false) => {
-    if (!query.trim()) {
-      setIsSearching(false);
-      setSearchResults([]);
-      setSearchOffset(0);
-      return;
-    }
-
-    if (searchLoading && reset) return;
-    
-    setSearchLoading(true);
-    setIsSearching(true);
-    
-    try {
-      const newOffset = reset ? 0 : searchOffset;
-      const results = await contentRepository.searchContent(currentGroup?.id || '', query.trim(), currentParentId, newOffset, 20);
-      
-      if (reset) {
-        setSearchResults(results);
-        setSearchOffset(results.length);
-      } else {
-        setSearchResults(prev => [...prev, ...results]);
-        setSearchOffset(prev => prev + results.length);
-      }
-      
-      setSearchHasMore(results.length === 20);
-    } catch (error) {
-      console.error('Error searching content:', error);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [currentGroup, currentParentId, searchLoading, searchOffset]);
-
   // Handle search input with debouncing
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
@@ -279,17 +290,10 @@ export const ListApp: React.FC = () => {
       clearTimeout(searchTimeoutRef.current);
     }
     
-    // Set new timeout for debounced search
+    // Set new timeout for debounced search activation
     searchTimeoutRef.current = setTimeout(() => {
-      performSearch(query, true);
+      setIsSearching(!!query.trim());
     }, 300);
-  };
-
-  // Load more search results
-  const loadMoreSearchResults = () => {
-    if (searchQuery && !searchLoading && searchHasMore) {
-      performSearch(searchQuery, false);
-    }
   };
 
   // Reset navigation and search when group changes
@@ -301,17 +305,37 @@ export const ListApp: React.FC = () => {
       // Clear search
       setSearchQuery('');
       setIsSearching(false);
-      setSearchResults([]);
-      setSearchOffset(0);
+      // Clear content selection
+      contentSelection.clearSelection();
       // Set URL to new group without content path
       window.history.pushState(null, '', `/group/${currentGroup.id}`);
     }
-  }, [currentGroup]);
+  }, [currentGroup, contentSelection]);
 
   // Handle URL navigation on page load and browser navigation
   useEffect(() => {
     const handleInitialNavigation = async () => {
       const pathname = window.location.pathname;
+      
+      // Check for invite URL pattern: /invite/<code>
+      const inviteMatch = pathname.match(/^\/invite\/([^\/]+)$/);
+      if (inviteMatch) {
+        const [, joinCode] = inviteMatch;
+        try {
+          setError(null);
+          const group = await joinGroupMutation.mutateAsync(joinCode);
+          setCurrentGroup(group);
+          // Redirect to the group page after successful join
+          window.history.replaceState(null, '', `/group/${group.id}`);
+          return;
+        } catch (error) {
+          console.error('Error joining group from invite:', error);
+          setError('Failed to join group. The invite code may be invalid or expired.');
+          // Redirect to root on error
+          window.history.replaceState(null, '', '/');
+          return;
+        }
+      }
       
       // Parse URL pattern: /group/<group-id>/content/<content-id> or /group/<group-id>
       const groupMatch = pathname.match(/^\/group\/([^\/]+)(?:\/content\/([^\/]+))?$/);
@@ -346,28 +370,33 @@ export const ListApp: React.FC = () => {
       }
     };
 
-    if (currentGroup && groups.length > 0) {
+    // Run navigation handling for authenticated users
+    // For invite URLs, we don't need to wait for currentGroup
+    // For regular group URLs, we need groups to be loaded
+    if (user && (window.location.pathname.startsWith('/invite/') || (currentGroup && groups.length > 0))) {
       handleInitialNavigation();
     }
 
     // Handle browser back/forward navigation
     const handlePopState = () => {
-      if (currentGroup && groups.length > 0) {
+      if (user && (window.location.pathname.startsWith('/invite/') || (currentGroup && groups.length > 0))) {
         handleInitialNavigation();
       }
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [currentGroup, groups]);
+  }, [currentGroup, groups, user, joinGroupMutation]);
 
-  // Show loading only on initial load
-  if (loading && !authChecked) {
+  // Show loading for initial auth check or invite joining
+  if ((loading && !authChecked) || (joinGroupMutation.isPending && window.location.pathname.startsWith('/invite/'))) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-gray-600">Checking authentication...</p>
+          <p className="text-gray-600">
+            {joinGroupMutation.isPending ? 'Joining group...' : 'Checking authentication...'}
+          </p>
         </div>
       </div>
     );
@@ -441,7 +470,6 @@ export const ListApp: React.FC = () => {
                       onClick={() => {
                         setSearchQuery('');
                         setIsSearching(false);
-                        setSearchResults([]);
                         if (searchTimeoutRef.current) {
                           clearTimeout(searchTimeoutRef.current);
                         }
@@ -458,8 +486,29 @@ export const ListApp: React.FC = () => {
             )}
             
             <div className="flex items-center space-x-4 flex-shrink-0">
-              {groupsLoading && (
+              {(groupsLoading || createGroupMutation.isPending || joinGroupMutation.isPending) && (
                 <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+              )}
+              {currentGroup && !isSearching && (
+                <button
+                  onClick={contentSelection.toggleSelectionMode}
+                  className={`text-sm px-2 py-1 rounded-md transition-colors ${
+                    contentSelection.isSelectionMode
+                      ? 'text-orange-600 bg-orange-50'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  }`}
+                  title={contentSelection.isSelectionMode ? 'Exit selection mode' : 'Enter selection mode'}
+                >
+                  {contentSelection.isSelectionMode ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  )}
+                </button>
               )}
               <span className="text-sm text-gray-600">
                 {user.email}
@@ -474,9 +523,9 @@ export const ListApp: React.FC = () => {
           </div>
           
           {/* Search Status */}
-          {isSearching && currentGroup && (
+          {isSearching && currentGroup && searchQuery.trim() && (
             <div className="mt-2 text-sm text-gray-600">
-              {searchLoading ? 'Searching...' : `Found ${searchResults.length} result${searchResults.length !== 1 ? 's' : ''}`}
+              Searching for "{searchQuery.trim()}"...
             </div>
           )}
         </div>
@@ -510,6 +559,39 @@ export const ListApp: React.FC = () => {
           </div>
         )}
 
+        {/* Selection Header */}
+        {contentSelection.isSelectionMode && currentGroup && (
+          <div className="bg-blue-50 border-b border-blue-200 px-4 py-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-medium text-blue-900">
+                  {contentSelection.selectedCount} item{contentSelection.selectedCount !== 1 ? 's' : ''} selected
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => contentSelection.selectAll([])} // Will be updated when we have currentItems
+                  className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded"
+                >
+                  Select All
+                </button>
+                <button
+                  onClick={contentSelection.clearSelection}
+                  className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={contentSelection.toggleSelectionMode}
+                  className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* FAB Content Input */}
         <ContentInput
           groupId={currentGroup?.id || ''}
@@ -526,11 +608,8 @@ export const ListApp: React.FC = () => {
           parentContentId={currentParentId}
           onNavigate={handleNavigate}
           searchQuery={searchQuery}
-          searchResults={searchResults}
-          searchLoading={searchLoading}
-          searchHasMore={searchHasMore}
           isSearching={isSearching}
-          onLoadMoreSearchResults={loadMoreSearchResults}
+          selection={contentSelection}
         />
       </div>
 
@@ -538,6 +617,13 @@ export const ListApp: React.FC = () => {
       <FloatingActionButton
         onClick={handleFABClick}
         isVisible={!!currentGroup && !showInput}
+      />
+
+      {/* Workflow FAB for selected items */}
+      <WorkflowFAB
+        isVisible={contentSelection.isSelectionMode && contentSelection.selectedCount > 0}
+        actions={workflowActions}
+        selectedCount={contentSelection.selectedCount}
       />
 
       {/* Sidebar */}
@@ -549,7 +635,7 @@ export const ListApp: React.FC = () => {
         onGroupChange={handleGroupChange}
         onCreateGroup={handleCreateGroup}
         onJoinGroup={handleJoinGroup}
-        isLoading={groupsLoading}
+        isLoading={groupsLoading || createGroupMutation.isPending || joinGroupMutation.isPending}
       />
 
       {/* Group Modal */}
@@ -580,6 +666,13 @@ export const ListApp: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Micro-game overlay during workflow operations */}
+      <MicroGameOverlay
+        isVisible={showGameOverlay}
+        operationName={currentOperation}
+        onClose={() => setShowGameOverlay(false)}
+      />
     </div>
   );
 };

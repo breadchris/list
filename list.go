@@ -11,7 +11,7 @@ func createHTTPServer() *http.ServeMux {
 
 	// Main list app page
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		serveReactApp(w, r, "index.tsx", "ListApp")
+		serveReactApp(w, r, "index.tsx", "App")
 	})
 
 	// Component renderer endpoint for debugging

@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { ListApp } from './components/ListApp';
+import { App } from './components/App';
 
 // Auto-render application when module loads (for production builds)
 if (typeof document !== 'undefined') {
@@ -13,7 +13,7 @@ if (typeof document !== 'undefined') {
     
     try {
       const root = createRoot(rootElement);
-      root.render(<ListApp />);
+      root.render(<App />);
       console.log('✅ List App rendered successfully!');
     } catch (error) {
       console.error('❌ Failed to render List App:', error);
@@ -37,4 +37,4 @@ if (typeof document !== 'undefined') {
 }
 
 // Export for module usage
-export { ListApp };
+export { App };

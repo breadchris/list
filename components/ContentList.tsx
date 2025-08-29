@@ -1,6 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Content, contentRepository, Tag } from './ContentRepository';
 import { LinkifiedText } from './LinkifiedText';
+import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation } from '../hooks/useContentQueries';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from '../hooks/queryKeys';
+import { ContentSelectionState } from '../hooks/useContentSelection';
 
 interface ContentListProps {
   groupId: string;
@@ -8,11 +12,8 @@ interface ContentListProps {
   parentContentId?: string | null;
   onNavigate?: (parentId: string | null) => void;
   searchQuery: string;
-  searchResults: Content[];
-  searchLoading: boolean;
-  searchHasMore: boolean;
   isSearching: boolean;
-  onLoadMoreSearchResults: () => void;
+  selection: ContentSelectionState;
 }
 
 interface TagDisplayProps {
@@ -46,35 +47,55 @@ export const ContentList: React.FC<ContentListProps> = ({
   parentContentId = null, 
   onNavigate,
   searchQuery,
-  searchResults,
-  searchLoading,
-  searchHasMore,
   isSearching,
-  onLoadMoreSearchResults
+  selection
 }) => {
-  const [content, setContent] = useState<Content[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [offset, setOffset] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const deleteContentMutation = useDeleteContentMutation();
 
-  // Load initial content when group or parent changes
-  useEffect(() => {
-    if (groupId) {
-      loadContent(true);
-    }
-  }, [groupId, parentContentId]);
+  // Regular content query for non-search mode
+  const {
+    data: contentData,
+    isLoading: contentLoading,
+    isFetching: contentFetching,
+    hasNextPage: contentHasMore,
+    fetchNextPage: fetchMoreContent,
+    error: contentError
+  } = useInfiniteContentByParent(groupId, parentContentId, { enabled: !isSearching });
 
-  // Add new content to the list
+  // Search query for search mode
+  const {
+    data: searchData,
+    isLoading: searchLoading,
+    isFetching: searchFetching,
+    hasNextPage: searchHasMore,
+    fetchNextPage: fetchMoreSearch,
+    error: searchError
+  } = useInfiniteSearchContent(groupId, searchQuery, parentContentId, { enabled: isSearching });
+
+  // Handle optimistic updates for new content
   useEffect(() => {
     if (newContent && newContent.group_id === groupId && newContent.parent_content_id === parentContentId) {
-      if (!isSearching) {
-        setContent(prev => [newContent, ...prev]);
-      }
+      // Add to React Query cache optimistically
+      const queryKey = QueryKeys.contentByParent(groupId, parentContentId);
+      queryClient.setQueryData(queryKey, (old: any) => {
+        if (old?.pages) {
+          return {
+            ...old,
+            pages: old.pages.map((page: any, index: number) => 
+              index === 0 
+                ? { ...page, items: [newContent, ...page.items] }
+                : page
+            ),
+          };
+        }
+        return old;
+      });
     }
-  }, [newContent, groupId, parentContentId, isSearching]);
+  }, [newContent, groupId, parentContentId, queryClient]);
 
-  // Set up real-time subscription
+  // Set up real-time subscription to update React Query cache
   useEffect(() => {
     if (!groupId) return;
 
@@ -82,28 +103,59 @@ export const ContentList: React.FC<ContentListProps> = ({
       groupId,
       (payload) => {
         const { eventType, new: newRecord, old: oldRecord } = payload;
+        const queryKey = QueryKeys.contentByParent(groupId, parentContentId);
         
         switch (eventType) {
           case 'INSERT':
             // Only add if it's not the newContent we already added and matches current context
-            if (newRecord && newRecord.id !== newContent?.id && newRecord.parent_content_id === parentContentId && !isSearching) {
-              setContent(prev => [newRecord, ...prev]);
+            if (newRecord && newRecord.id !== newContent?.id && newRecord.parent_content_id === parentContentId) {
+              queryClient.setQueryData(queryKey, (old: any) => {
+                if (old?.pages) {
+                  return {
+                    ...old,
+                    pages: old.pages.map((page: any, index: number) => 
+                      index === 0 
+                        ? { ...page, items: [newRecord, ...page.items] }
+                        : page
+                    ),
+                  };
+                }
+                return old;
+              });
             }
             break;
           case 'UPDATE':
-            if (newRecord && !isSearching) {
-              setContent(prev => 
-                prev.map(item => 
-                  item.id === newRecord.id ? newRecord : item
-                )
-              );
+            if (newRecord) {
+              queryClient.setQueryData(queryKey, (old: any) => {
+                if (old?.pages) {
+                  return {
+                    ...old,
+                    pages: old.pages.map((page: any) => ({
+                      ...page,
+                      items: page.items.map((item: Content) => 
+                        item.id === newRecord.id ? newRecord : item
+                      )
+                    })),
+                  };
+                }
+                return old;
+              });
             }
             break;
           case 'DELETE':
-            if (oldRecord && !isSearching) {
-              setContent(prev => 
-                prev.filter(item => item.id !== oldRecord.id)
-              );
+            if (oldRecord) {
+              queryClient.setQueryData(queryKey, (old: any) => {
+                if (old?.pages) {
+                  return {
+                    ...old,
+                    pages: old.pages.map((page: any) => ({
+                      ...page,
+                      items: page.items.filter((item: Content) => item.id !== oldRecord.id)
+                    })),
+                  };
+                }
+                return old;
+              });
             }
             break;
         }
@@ -113,42 +165,17 @@ export const ContentList: React.FC<ContentListProps> = ({
     return () => {
       subscription.unsubscribe();
     };
-  }, [groupId, newContent, parentContentId, isSearching]);
-
-  const loadContent = async (reset = false) => {
-    if (loading) return;
-
-    setLoading(true);
-    try {
-      const newOffset = reset ? 0 : offset;
-      const items = await contentRepository.getContentByParent(groupId, parentContentId, newOffset, 20);
-      
-      if (reset) {
-        setContent(items);
-        setOffset(items.length);
-      } else {
-        setContent(prev => [...prev, ...items]);
-        setOffset(prev => prev + items.length);
-      }
-      
-      setHasMore(items.length === 20);
-    } catch (error) {
-      console.error('Error loading content:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  }, [groupId, newContent, parentContentId, queryClient]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     
     // Load more when scrolled to bottom
     if (scrollHeight - scrollTop <= clientHeight + 100) {
-      if (isSearching && searchHasMore && !searchLoading) {
-        onLoadMoreSearchResults();
-      } else if (!isSearching && hasMore && !loading) {
-        loadContent();
+      if (isSearching && searchHasMore && !searchFetching) {
+        fetchMoreSearch();
+      } else if (!isSearching && contentHasMore && !contentFetching) {
+        fetchMoreContent();
       }
     }
   };
@@ -159,18 +186,23 @@ export const ContentList: React.FC<ContentListProps> = ({
     }
 
     try {
-      await contentRepository.deleteContent(contentId);
-      // The real-time subscription will handle removing it from the list
+      await deleteContentMutation.mutateAsync(contentId);
     } catch (error) {
       console.error('Error deleting content:', error);
       alert('Failed to delete item');
     }
   };
 
-  // Navigate to child content
+  // Handle content click - either navigate or toggle selection
   const handleContentClick = (contentItem: Content) => {
-    if (onNavigate) {
-      onNavigate(contentItem.id);
+    if (selection.isSelectionMode) {
+      // In selection mode, toggle item selection
+      selection.toggleItem(contentItem.id);
+    } else {
+      // Normal mode, navigate to content
+      if (onNavigate) {
+        onNavigate(contentItem.id);
+      }
     }
   };
 
@@ -215,9 +247,15 @@ export const ContentList: React.FC<ContentListProps> = ({
     );
   }
 
-  const currentItems = isSearching ? searchResults : content;
-  const currentLoading = isSearching ? searchLoading : loading;
-  const currentHasMore = isSearching ? searchHasMore : hasMore;
+  // Flatten the paginated data
+  const contentItems = contentData?.pages.flatMap(page => page.items) ?? [];
+  const searchItems = searchData?.pages.flatMap(page => page.items) ?? [];
+  
+  const currentItems = isSearching ? searchItems : contentItems;
+  const currentLoading = isSearching ? searchLoading : contentLoading;
+  const currentFetching = isSearching ? searchFetching : contentFetching;
+  const currentHasMore = isSearching ? searchHasMore : contentHasMore;
+  const currentError = isSearching ? searchError : contentError;
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50">
@@ -246,12 +284,34 @@ export const ContentList: React.FC<ContentListProps> = ({
           </div>
         ) : (
           <div className="p-4 space-y-3">
-            {currentItems.map((item) => (
-              <div 
-                key={item.id} 
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => handleContentClick(item)}
-              >
+            {currentItems.map((item) => {
+              const isSelected = selection.selectedItems.has(item.id);
+              return (
+                <div 
+                  key={item.id} 
+                  className={`bg-white rounded-lg shadow-sm border p-4 hover:shadow-md transition-all cursor-pointer relative ${
+                    isSelected 
+                      ? 'border-blue-500 border-2 bg-blue-50' 
+                      : 'border-gray-200'
+                  }`}
+                  onClick={() => handleContentClick(item)}
+                >
+                  {/* Selection indicator */}
+                  {selection.isSelectionMode && (
+                    <div className="absolute top-2 right-2 z-10">
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                        isSelected 
+                          ? 'bg-blue-500 border-blue-500' 
+                          : 'border-gray-300 bg-white'
+                      }`}>
+                        {isSelected && (
+                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 <div className="flex justify-between items-start">
                   <div className="flex-1 min-w-0">
                     <LinkifiedText
@@ -278,35 +338,34 @@ export const ContentList: React.FC<ContentListProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
             
-            {currentLoading && (
+            {(currentLoading || currentFetching) && (
               <div className="flex justify-center py-4">
                 <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>
               </div>
             )}
             
-            {/* Load More Button for Normal Content */}
-            {!isSearching && hasMore && !loading && content.length > 0 && (
+            {/* Load More Button */}
+            {currentHasMore && !currentFetching && currentItems.length > 0 && (
               <div className="flex justify-center py-4">
                 <button
-                  onClick={() => loadContent()}
+                  onClick={() => isSearching ? fetchMoreSearch() : fetchMoreContent()}
                   className="px-4 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                  disabled={currentFetching}
                 >
-                  Load More
+                  {isSearching ? 'Load More Results' : 'Load More'}
                 </button>
               </div>
             )}
             
-            {/* Load More Button for Search Results */}
-            {isSearching && searchHasMore && !searchLoading && searchResults.length > 0 && (
+            {/* Error State */}
+            {currentError && (
               <div className="flex justify-center py-4">
-                <button
-                  onClick={onLoadMoreSearchResults}
-                  className="px-4 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
-                >
-                  Load More Results
-                </button>
+                <div className="text-red-600 text-sm">
+                  Error loading content. Please try again.
+                </div>
               </div>
             )}
             
