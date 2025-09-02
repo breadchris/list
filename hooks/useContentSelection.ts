@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Content } from '../components/ContentRepository';
 
 export interface ContentSelectionState {
@@ -37,33 +37,35 @@ export const useContentSelection = (): ContentSelectionState => {
         newSet.add(itemId);
       }
       
-      // If no items selected, exit selection mode
+      // Handle selection mode state changes
       if (newSet.size === 0) {
         setIsSelectionMode(false);
-      } else if (!isSelectionMode) {
-        // Enter selection mode when first item is selected
+      } else {
         setIsSelectionMode(true);
       }
       
       return newSet;
     });
-  }, [isSelectionMode]);
+  }, []);
 
   const toggleSelectionMode = useCallback(() => {
-    if (isSelectionMode) {
-      // Exit selection mode and clear selections
-      clearSelection();
-    } else {
-      // Enter selection mode
-      setIsSelectionMode(true);
-    }
-  }, [isSelectionMode, clearSelection]);
+    setIsSelectionMode(prev => {
+      if (prev) {
+        // Exit selection mode and clear selections
+        setSelectedItems(new Set());
+        return false;
+      } else {
+        // Enter selection mode
+        return true;
+      }
+    });
+  }, []);
 
   const getSelectedItems = useCallback((items: Content[]): Content[] => {
     return items.filter(item => selectedItems.has(item.id));
   }, [selectedItems]);
 
-  return {
+  return useMemo(() => ({
     selectedItems,
     isSelectionMode,
     selectAll,
@@ -72,5 +74,13 @@ export const useContentSelection = (): ContentSelectionState => {
     toggleSelectionMode,
     getSelectedItems,
     selectedCount: selectedItems.size
-  };
+  }), [
+    selectedItems,
+    isSelectionMode,
+    selectAll,
+    clearSelection,
+    toggleItem,
+    toggleSelectionMode,
+    getSelectedItems
+  ]);
 };

@@ -24,6 +24,8 @@ export const WorkflowFAB: React.FC<WorkflowFABProps> = ({
   if (!isVisible) return null;
 
   const toggleMenu = () => {
+    console.log(`🎯 WorkflowFAB menu toggle: ${!isMenuOpen ? 'opening' : 'closing'}`);
+    console.log('Actions available:', actions.length);
     setIsMenuOpen(!isMenuOpen);
   };
 
@@ -43,6 +45,7 @@ export const WorkflowFAB: React.FC<WorkflowFABProps> = ({
                 <button
                   key={action.id}
                   onClick={() => {
+                    console.log(`🚀 WorkflowFAB action clicked: ${action.id} (${action.name})`);
                     action.onClick();
                     setIsMenuOpen(false);
                   }}

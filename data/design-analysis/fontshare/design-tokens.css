@@ -1,0 +1,93 @@
+/* Generated CSS Variables from Fontshare Design System */
+/* Generated: 2025-08-30 23:36:50 */
+
+:root {
+  /* === Colors === */
+  --background-1: rgb(255, 255, 227);
+  --background-2: rgb(16, 16, 14);
+  --background-3: rgb(25, 24, 21);
+  --background-4: rgb(232, 232, 207);
+  --background-5: rgb(48, 48, 43);
+  --background-6: rgb(255, 241, 181);
+  --background-7: rgb(255, 207, 207);
+  --background-8: rgb(196, 253, 199);
+  --background-9: rgb(186, 251, 255);
+  --background-10: rgb(255, 255, 255);
+  --text-1: rgb(0, 0, 0);
+  --text-2: rgb(255, 255, 227);
+  --text-3: rgb(16, 16, 14);
+  --text-4: rgb(96, 96, 85);
+  --text-5: rgb(48, 48, 43);
+  --text-6: rgb(232, 232, 207);
+  --border-1: rgb(48, 48, 43);
+  --border-2: rgb(255, 255, 227) rgb(48, 48, 43) rgba(0, 0, 0, 0) rgb(255, 255, 227);
+  --border-3: rgb(16, 16, 14) rgb(48, 48, 43) rgb(48, 48, 43) rgb(16, 16, 14);
+  --border-4: rgb(255, 255, 227) rgb(48, 48, 43) rgb(48, 48, 43) rgb(255, 255, 227);
+  --border-5: rgb(255, 255, 227) rgb(255, 255, 227) rgba(0, 0, 0, 0);
+  --border-6: rgb(96, 96, 85) rgb(96, 96, 85) rgb(48, 48, 43);
+  --border-7: rgb(255, 255, 227) rgb(255, 255, 227) rgb(48, 48, 43);
+  --border-8: rgb(232, 232, 207);
+  --border-9: rgb(96, 96, 85);
+  --border-10: rgb(255, 255, 227) rgb(255, 255, 227) rgba(0, 0, 0, 0) rgb(48, 48, 43);
+  --border-11: rgb(16, 16, 14);
+
+  /* === Typography === */
+  --font-family-1: Passenger-Sans, sans-serif;
+  --font-family-2: _Satoshi_Variable;
+  --font-family-3: _Clash_Display_Variable;
+
+  /* === Type Scale === */
+  --font-size-div: 120px;
+  --line-height-div: 144px;
+  --font-weight-div: 400;
+  --font-size-div: 64px;
+  --line-height-div: 72px;
+  --font-weight-div: 600;
+  --font-size-div: 24px;
+  --line-height-div: 29px;
+  --font-weight-div: 500;
+  --font-size-div: 16px;
+  --line-height-div: 19px;
+  --font-weight-div: 400;
+  --font-size-a: 16px;
+  --line-height-a: 19px;
+  --font-weight-a: 500;
+  --font-size-div: 14px;
+  --line-height-div: 14px;
+  --font-weight-div: 500;
+  --font-size-span: 12px;
+  --line-height-span: 14px;
+  --font-weight-span: 500;
+  --font-size-div: 12px;
+  --line-height-div: 14px;
+  --font-weight-div: 400;
+  --font-size-span: 12px;
+  --line-height-span: 14px;
+  --font-weight-span: 700;
+
+  /* === Spacing === */
+  --spacing-1: -40px;
+  --spacing-2: -26px;
+  --spacing-3: -20px;
+  --spacing-4: -15px;
+  --spacing-5: -10px;
+  --spacing-6: -6px;
+  --spacing-7: -5px;
+  --spacing-8: -2px;
+  --spacing-9: -1px;
+  --spacing-10: 1px;
+  --spacing-11: 2px;
+  --spacing-12: 4.0505px;
+  --spacing-13: 5px;
+  --spacing-14: 6px;
+  --spacing-15: 10px;
+  --spacing-16: 15px;
+  --spacing-17: 20px;
+  --spacing-18: 25px;
+  --spacing-19: 40px;
+  --spacing-20: 60px;
+  --spacing-21: 75px;
+  --spacing-22: 80px;
+  --spacing-23: 100px;
+  --spacing-24: normal 20px;
+}

@@ -66,6 +66,16 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
     try {
       const group = await contentRepository.joinGroupByCode(joinCode.trim());
       
+      // Check if user was already a member
+      if ((group as any).alreadyMember) {
+        setError(`You're already a member of "${group.name}"`);
+        // Still switch to the group
+        onGroupChange(group);
+        setShowModal(false);
+        setJoinCode('');
+        return;
+      }
+      
       // Check if group is already in our list
       const existingGroup = groups.find(g => g.id === group.id);
       if (!existingGroup) {

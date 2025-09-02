@@ -1,0 +1,632 @@
+{
+  "url": "https://www.fontshare.com/",
+  "domain": "www.fontshare.com",
+  "timestamp": "2025-08-31T06:36:50.709Z",
+  "colors": {
+    "primary": [],
+    "secondary": [],
+    "neutral": [],
+    "background": [
+      {
+        "name": "background-1",
+        "value": "rgb(255, 255, 227)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-2",
+        "value": "rgb(16, 16, 14)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-3",
+        "value": "rgb(25, 24, 21)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-4",
+        "value": "rgb(232, 232, 207)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-5",
+        "value": "rgb(48, 48, 43)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-6",
+        "value": "rgb(255, 241, 181)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-7",
+        "value": "rgb(255, 207, 207)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-8",
+        "value": "rgb(196, 253, 199)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-9",
+        "value": "rgb(186, 251, 255)",
+        "usage": "Background color",
+        "contrast": ""
+      },
+      {
+        "name": "background-10",
+        "value": "rgb(255, 255, 255)",
+        "usage": "Background color",
+        "contrast": ""
+      }
+    ],
+    "text": [
+      {
+        "name": "text-1",
+        "value": "rgb(0, 0, 0)",
+        "usage": "Text color",
+        "contrast": ""
+      },
+      {
+        "name": "text-2",
+        "value": "rgb(255, 255, 227)",
+        "usage": "Text color",
+        "contrast": ""
+      },
+      {
+        "name": "text-3",
+        "value": "rgb(16, 16, 14)",
+        "usage": "Text color",
+        "contrast": ""
+      },
+      {
+        "name": "text-4",
+        "value": "rgb(96, 96, 85)",
+        "usage": "Text color",
+        "contrast": ""
+      },
+      {
+        "name": "text-5",
+        "value": "rgb(48, 48, 43)",
+        "usage": "Text color",
+        "contrast": ""
+      },
+      {
+        "name": "text-6",
+        "value": "rgb(232, 232, 207)",
+        "usage": "Text color",
+        "contrast": ""
+      }
+    ],
+    "border": [
+      {
+        "name": "border-1",
+        "value": "rgb(48, 48, 43)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-2",
+        "value": "rgb(255, 255, 227) rgb(48, 48, 43) rgba(0, 0, 0, 0) rgb(255, 255, 227)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-3",
+        "value": "rgb(16, 16, 14) rgb(48, 48, 43) rgb(48, 48, 43) rgb(16, 16, 14)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-4",
+        "value": "rgb(255, 255, 227) rgb(48, 48, 43) rgb(48, 48, 43) rgb(255, 255, 227)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-5",
+        "value": "rgb(255, 255, 227) rgb(255, 255, 227) rgba(0, 0, 0, 0)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-6",
+        "value": "rgb(96, 96, 85) rgb(96, 96, 85) rgb(48, 48, 43)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-7",
+        "value": "rgb(255, 255, 227) rgb(255, 255, 227) rgb(48, 48, 43)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-8",
+        "value": "rgb(232, 232, 207)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-9",
+        "value": "rgb(96, 96, 85)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-10",
+        "value": "rgb(255, 255, 227) rgb(255, 255, 227) rgba(0, 0, 0, 0) rgb(48, 48, 43)",
+        "usage": "Border color",
+        "contrast": ""
+      },
+      {
+        "name": "border-11",
+        "value": "rgb(16, 16, 14)",
+        "usage": "Border color",
+        "contrast": ""
+      }
+    ],
+    "accent": [],
+    "semantic": [],
+    "gradients": [],
+    "shadows": []
+  },
+  "typography": {
+    "fontFamilies": [
+      {
+        "name": "Passenger-Sans",
+        "stack": "Passenger-Sans, sans-serif",
+        "category": "serif",
+        "weights": [],
+        "source": "web",
+        "usage": "general"
+      },
+      {
+        "name": "_Satoshi_Variable",
+        "stack": "_Satoshi_Variable",
+        "category": "sans-serif",
+        "weights": [],
+        "source": "web",
+        "usage": "general"
+      },
+      {
+        "name": "_Clash_Display_Variable",
+        "stack": "_Clash_Display_Variable",
+        "category": "sans-serif",
+        "weights": [],
+        "source": "web",
+        "usage": "general"
+      }
+    ],
+    "typeScale": [
+      {
+        "name": "div",
+        "size": "120px",
+        "lineHeight": "144px",
+        "weight": "400"
+      },
+      {
+        "name": "div",
+        "size": "64px",
+        "lineHeight": "72px",
+        "weight": "600"
+      },
+      {
+        "name": "div",
+        "size": "24px",
+        "lineHeight": "29px",
+        "weight": "500"
+      },
+      {
+        "name": "div",
+        "size": "16px",
+        "lineHeight": "19px",
+        "weight": "400"
+      },
+      {
+        "name": "a",
+        "size": "16px",
+        "lineHeight": "19px",
+        "weight": "500"
+      },
+      {
+        "name": "div",
+        "size": "14px",
+        "lineHeight": "14px",
+        "weight": "500"
+      },
+      {
+        "name": "span",
+        "size": "12px",
+        "lineHeight": "14px",
+        "weight": "500"
+      },
+      {
+        "name": "div",
+        "size": "12px",
+        "lineHeight": "14px",
+        "weight": "400"
+      },
+      {
+        "name": "span",
+        "size": "12px",
+        "lineHeight": "14px",
+        "weight": "700"
+      }
+    ],
+    "textStyles": [],
+    "lineHeights": {},
+    "letterSpacing": {}
+  },
+  "spacing": {
+    "baseUnit": "8px",
+    "scale": [
+      "-40px",
+      "-26px",
+      "-20px",
+      "-15px",
+      "-10px",
+      "-6px",
+      "-5px",
+      "-2px",
+      "-1px",
+      "1px",
+      "2px",
+      "4.0505px",
+      "5px",
+      "6px",
+      "10px",
+      "15px",
+      "20px",
+      "25px",
+      "40px",
+      "60px",
+      "75px",
+      "80px",
+      "100px",
+      "normal 20px"
+    ],
+    "margins": {
+      "m-1": "-40px",
+      "m-10": "-2px",
+      "m-11": "-10px",
+      "m-12": "-5px",
+      "m-13": "5px",
+      "m-14": "-6px",
+      "m-15": "2px",
+      "m-16": "40px",
+      "m-2": "-15px",
+      "m-3": "-1px",
+      "m-4": "-20px",
+      "m-5": "100px",
+      "m-6": "20px",
+      "m-7": "10px",
+      "m-8": "1px",
+      "m-9": "-26px"
+    },
+    "paddings": {
+      "p-1": "20px",
+      "p-10": "6px",
+      "p-11": "2px",
+      "p-12": "1px",
+      "p-13": "80px",
+      "p-2": "40px",
+      "p-3": "4.0505px",
+      "p-4": "15px",
+      "p-5": "60px",
+      "p-6": "10px",
+      "p-7": "25px",
+      "p-8": "75px",
+      "p-9": "5px"
+    },
+    "gaps": {
+      "gap-1": "20px",
+      "gap-2": "10px",
+      "gap-3": "15px",
+      "gap-4": "5px",
+      "gap-5": "normal 20px",
+      "gap-6": "6px"
+    }
+  },
+  "layout": {
+    "gridSystem": {
+      "columns": 0,
+      "gutter": "",
+      "margin": "",
+      "maxWidth": "",
+      "breakpoints": null
+    },
+    "maxWidths": {},
+    "containers": [],
+    "flexPatterns": [
+      {
+        "name": "QV7bzcYO",
+        "properties": {
+          "alignItems": "center",
+          "display": "flex",
+          "flexDirection": "row",
+          "flexWrap": "nowrap",
+          "gap": "normal",
+          "justifyContent": "center"
+        },
+        "usage": "Flex container"
+      }
+    ],
+    "gridPatterns": [
+      {
+        "name": "PzMIt5Ye",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "1200px",
+          "gridTemplateRows": "0px 140px 5511px 120px"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "GFRNZwxt",
+        "properties": {
+          "display": "grid",
+          "gap": "20px",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "16px 1088px 16px",
+          "gridTemplateRows": "16px"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "KJUXdvtG -CLmIQPi",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "145px 145px 145px 145px 145px 145px 145px 145px",
+          "gridTemplateRows": "139px"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "_7U4M3hdh",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "144px",
+          "gridTemplateRows": "139px"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "router-link-exact-active router-link-active hMmYYpBB PDcLK5bc _6EyoHjal _1H7KP0aB",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "39.5234px",
+          "gridTemplateRows": "139px"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "hMmYYpBB PDcLK5bc _6EyoHjal",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "35.4375px",
+          "gridTemplateRows": "139px"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "hMmYYpBB PDcLK5bc _6EyoHjal",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "62.2578px",
+          "gridTemplateRows": "139px"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "_9M7ZV9og",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "53px",
+          "gridTemplateRows": "139px"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "otmtZw6q",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none"
+        },
+        "usage": "Grid container"
+      },
+      {
+        "name": "_14dEiKud",
+        "properties": {
+          "display": "grid",
+          "gap": "normal",
+          "gridAutoFlow": "row",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none"
+        },
+        "usage": "Grid container"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "KJUXdvtG -CLmIQPi",
+      "type": "navigation",
+      "selector": "header.KJUXdvtG.-CLmIQPi",
+      "properties": {
+        "alignItems": "normal",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "display": "grid",
+        "justifyContent": "normal",
+        "padding": "0px 20px",
+        "position": "relative"
+      },
+      "states": {},
+      "variants": [],
+      "examples": null
+    }
+  ],
+  "interactions": {
+    "transitions": [
+      {
+        "selector": "dark yellowTheme",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "head",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "meta",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "meta",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "title",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "meta",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "meta",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "meta",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "meta",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      },
+      {
+        "selector": "meta",
+        "property": "all",
+        "duration": "0s",
+        "timing": "ease",
+        "delay": "0s"
+      }
+    ],
+    "animations": [],
+    "hovers": [],
+    "scrolling": {
+      "smooth": false,
+      "scrollSnap": "none",
+      "stickyElements": [
+        "sLh4qYpy",
+        "XXnizd9v",
+        "D213qXZe a5VAjs4v",
+        "oqm17v8s",
+        "sUB5eAHX S+7gIqgv",
+        "R7YfR-uG",
+        "eiNKMz6Y"
+      ]
+    }
+  },
+  "breakpoints": [
+    {
+      "name": "xs",
+      "minWidth": "0px",
+      "maxWidth": "639px"
+    },
+    {
+      "name": "sm",
+      "minWidth": "640px",
+      "maxWidth": "767px"
+    },
+    {
+      "name": "md",
+      "minWidth": "768px",
+      "maxWidth": "1023px"
+    },
+    {
+      "name": "lg",
+      "minWidth": "1024px",
+      "maxWidth": "1279px"
+    },
+    {
+      "name": "xl",
+      "minWidth": "1280px",
+      "maxWidth": "1535px"
+    },
+    {
+      "name": "2xl",
+      "minWidth": "1536px"
+    }
+  ],
+  "assets": {
+    "images": {
+      "lazyLoading": false,
+      "formats": [],
+      "optimization": "standard",
+      "placeholders": "none"
+    },
+    "icons": {
+      "system": "svg"
+    },
+    "fonts": {
+      "strategy": "swap",
+      "preload": [
+        "https://www.fontshare.com/assets/fonts/PassengerSans-Variable.e7fbe7bf.woff2"
+      ],
+      "fontDisplay": "swap"
+    }
+  }
+}

@@ -1,15 +1,50 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Configuration from environment variables
+// Configuration - these values may be injected at build time by the Go server
 const SUPABASE_URL = 'https://zazsrepfnamdmibcyenx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM';
+
+// Runtime configuration cache
+let runtimeConfig: { supabase_url: string; supabase_key: string } | null = null;
+
+// Fetch configuration from server if needed
+const fetchRuntimeConfig = async (): Promise<{ supabase_url: string; supabase_key: string }> => {
+  if (runtimeConfig) {
+    return runtimeConfig;
+  }
+
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) {
+      throw new Error(`Failed to fetch config: ${response.status}`);
+    }
+    runtimeConfig = await response.json();
+    return runtimeConfig!;
+  } catch (error) {
+    console.warn('Failed to fetch runtime config, using build-time values:', error);
+    return {
+      supabase_url: SUPABASE_URL,
+      supabase_key: SUPABASE_ANON_KEY
+    };
+  }
+};
+
+// Get effective configuration (runtime or build-time)
+const getSupabaseConfig = async () => {
+  const config = await fetchRuntimeConfig();
+  return {
+    url: config.supabase_url,
+    key: config.supabase_key
+  };
+};
 
 // Validate configuration
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error('Missing Supabase configuration: SUPABASE_URL and SUPABASE_ANON_KEY are required');
 }
 
-// Create Supabase client with optimized settings
+// Create Supabase client with build-time configuration (will be used immediately)
+// This will be the primary client instance, with build-time injected values if available
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: true,
@@ -28,6 +63,29 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     }
   }
 });
+
+// For future extensibility: function to create a client with runtime config
+export const createSupabaseClientWithConfig = async () => {
+  const config = await getSupabaseConfig();
+  return createClient(config.url, config.key, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce'
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10
+      }
+    },
+    global: {
+      headers: {
+        'cache-control': 'no-cache'
+      }
+    }
+  });
+};
 
 export const signInWithGoogle = async () => {
   console.log("🔍 SupabaseClient: Starting Google OAuth sign in...");
@@ -62,10 +120,13 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number = 5000): Promise<
   ]);
 };
 
-// Fast session check (uses cached session)
+// Fast session check (uses cached session with timeout)
 export const getFastSession = async () => {
   try {
-    const { data: { session }, error } = await supabase.auth.getSession();
+    const { data: { session }, error } = await withTimeout(
+      supabase.auth.getSession(), 
+      2000 // 2 second timeout
+    );
     if (error) throw error;
     return session;
   } catch (error) {

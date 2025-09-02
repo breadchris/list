@@ -9,17 +9,22 @@ import { AppSidebar } from './AppSidebar';
 import { FloatingActionButton } from './FloatingActionButton';
 import { WorkflowFAB } from './WorkflowFAB';
 import { MicroGameOverlay } from './MicroGameOverlay';
+import { SEOProgressOverlay, SEOProgressItem } from './SEOProgressOverlay';
+import { SharingSettingsModal } from './SharingSettingsModal';
 import { GroupDropdown } from './GroupDropdown';
 import { Group, Content, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
+import { useToast } from './ToastProvider';
 
 export const ListApp: React.FC = () => {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Standard React state management - no defensive programming needed
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [newContent, setNewContent] = useState<Content | undefined>();
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
@@ -43,43 +48,167 @@ export const ListApp: React.FC = () => {
   // Content selection state for workflow operations
   const contentSelection = useContentSelection();
   
+  // Toast notifications
+  const toast = useToast();
+  
   // Micro-game overlay state
   const [showGameOverlay, setShowGameOverlay] = useState(false);
   const [currentOperation, setCurrentOperation] = useState('');
   
+  // SEO Progress tracking
+  const [showSEOProgress, setShowSEOProgress] = useState(false);
+  const [seoProgressItems, setSeoProgressItems] = useState<SEOProgressItem[]>([]);
+  const [selectedContentForSEO, setSelectedContentForSEO] = useState<Content[]>([]);
+  
+  // Sharing settings modal state
+  const [showSharingModal, setShowSharingModal] = useState(false);
+  const [currentContentForSharing, setCurrentContentForSharing] = useState<Content | null>(null);
+  
   // Workflow action handlers
   const handleSEOExtraction = async () => {
+    console.log('🔍 SEO Extraction button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+    
     const selectedIds = Array.from(contentSelection.selectedItems);
-    if (selectedIds.length === 0) return;
+    console.log('Selected IDs:', selectedIds);
+    
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
 
     try {
-      // Show micro-game overlay during processing
-      setCurrentOperation('SEO Extraction');
-      setShowGameOverlay(true);
+      // Get the full content objects for the selected IDs by fetching them individually
+      console.log('Fetching content objects for IDs:', selectedIds);
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          try {
+            const content = await contentRepository.getContentById(id);
+            if (!content) {
+              console.warn(`Content with ID ${id} not found`);
+              return null;
+            }
+            return content;
+          } catch (error) {
+            console.warn(`Could not load content ${id}:`, error);
+            return null;
+          }
+        })
+      );
+
+      // Filter out null results and continue with valid content
+      const validContent = selectedContent.filter((content): content is Content => content !== null);
       
-      const results = await seoExtractionMutation.mutateAsync(selectedIds);
+      if (validContent.length === 0) {
+        toast.error('No content found', 'Unable to find selected items in database.');
+        return;
+      }
+
+      if (validContent.length < selectedIds.length) {
+        toast.warning(
+          'Some items not found',
+          `Proceeding with ${validContent.length} of ${selectedIds.length} selected items.`
+        );
+      }
+      // Initialize progress tracking
+      const initialProgressItems: SEOProgressItem[] = validContent.map(content => ({
+        contentId: content.id,
+        content,
+        status: 'pending' as const,
+        urlsFound: 0,
+        urlsProcessed: 0,
+        seoChildren: []
+      }));
       
-      // Hide game overlay
-      setShowGameOverlay(false);
+      setSeoProgressItems(initialProgressItems);
+      setSelectedContentForSEO(validContent);
+      setShowSEOProgress(true);
+
+      console.log('Starting SEO extraction for:', validContent.map(c => c.id));
+      
+      // Create progress callback
+      const handleProgress = (updatedItem: SEOProgressItem) => {
+        console.log('Progress update:', updatedItem);
+        setSeoProgressItems(prev => 
+          prev.map(item => 
+            item.contentId === updatedItem.contentId ? updatedItem : item
+          )
+        );
+      };
+
+      // Trigger the SEO extraction with progress tracking
+      const results = await seoExtractionMutation.mutateAsync({
+        selectedContent: validContent,
+        onProgress: handleProgress
+      });
       
       // Show results summary
       const totalUrls = results.reduce((sum, r) => sum + r.total_urls_found, 0);
       const processedUrls = results.reduce((sum, r) => sum + r.urls_processed, 0);
+      const failedCount = results.filter(r => r.errors && r.errors.length > 0).length;
       
-      alert(`SEO extraction completed!\nProcessed ${processedUrls}/${totalUrls} URLs from ${selectedIds.length} items.`);
+      if (failedCount === 0) {
+        toast.success(
+          'SEO extraction completed!', 
+          `Processed ${processedUrls}/${totalUrls} URLs from ${validContent.length} items.`
+        );
+      } else {
+        toast.warning(
+          'SEO extraction completed with errors',
+          `Processed ${processedUrls}/${totalUrls} URLs. ${failedCount} items failed.`
+        );
+      }
       
       // Clear selection after successful operation
       contentSelection.clearSelection();
     } catch (error) {
       console.error('SEO extraction failed:', error);
-      setShowGameOverlay(false);
-      alert('SEO extraction failed. Please try again.');
+      toast.error('SEO extraction failed', 'Please try again.');
+      // Update all items to failed status
+      setSeoProgressItems(prev => 
+        prev.map(item => ({ 
+          ...item, 
+          status: 'failed' as const,
+          error: error instanceof Error ? error.message : String(error)
+        }))
+      );
     }
   };
   
   const handleBulkDelete = async () => {
     // TODO: Implement bulk delete workflow
     console.log('Bulk delete for selected items:', contentSelection.selectedItems);
+  };
+
+  const handleCloseSEOProgress = () => {
+    setShowSEOProgress(false);
+    setSeoProgressItems([]);
+    setSelectedContentForSEO([]);
+  };
+
+  const handleOpenSharingModal = async () => {
+    if (!currentParentId) return;
+    
+    try {
+      // Get the current content item to share
+      const content = await contentRepository.getContentById(currentParentId);
+      if (content) {
+        setCurrentContentForSharing(content);
+        setShowSharingModal(true);
+      }
+    } catch (error) {
+      console.error('Failed to load content for sharing:', error);
+      toast.error('Failed to load content', 'Please try again.');
+    }
+  };
+
+  const handleCloseSharingModal = () => {
+    setShowSharingModal(false);
+    setCurrentContentForSharing(null);
   };
   
   // Define available workflow actions
@@ -89,7 +218,10 @@ export const ListApp: React.FC = () => {
       name: 'Extract SEO',
       description: 'Extract SEO metadata from links',
       icon: '🔍',
-      onClick: handleSEOExtraction
+      onClick: () => {
+        console.log('🔍 WorkflowAction onClick triggered for SEO extraction');
+        handleSEOExtraction();
+      }
     },
     {
       id: 'bulk-delete',
@@ -99,65 +231,101 @@ export const ListApp: React.FC = () => {
       onClick: handleBulkDelete
     }
   ];
+  
+  console.log('WorkflowActions initialized:', workflowActions.map(a => ({ id: a.id, name: a.name })));
 
+  // Initialize auth on mount
   useEffect(() => {
     initializeAuth();
   }, []);
 
-  const initializeAuth = async () => {
-    try {
-      // First, check for existing session (faster than getUser)
-      const session = await getFastSession();
+  // Auth state listener - stable reference, no recreation cycles
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.id);
+      
+      // Skip token refresh events
+      if (event === 'TOKEN_REFRESHED') {
+        return;
+      }
 
+      // Defer all state updates to next event loop tick to avoid DOM timing conflicts
+      setTimeout(async () => {
+        try {
+          if (session?.user && session.user.id !== user?.id) {
+            setUser(session.user);
+            setError(null);
+            
+            if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+              await handleUserInitialization(session.user.id);
+              await handlePendingInvite();
+            }
+          } else if (!session?.user && event === 'SIGNED_OUT') {
+            setUser(null);
+            setCurrentGroup(null);
+            setError(null);
+            sessionStorage.removeItem('pendingInviteCode');
+          }
+          
+          setAuthChecked(true);
+          setLoading(false);
+        } catch (error) {
+          console.error('Auth state change error:', error);
+          setError('Authentication error occurred');
+        }
+      }, 0);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const initializeAuth = async () => {
+    setLoading(false);
+    setAuthChecked(true);
+    
+    try {
+      const session = await getFastSession();
       if (session?.user) {
         setUser(session.user);
-        setAuthChecked(true);
-        setLoading(false); // Show UI immediately
-        
-        // Run profile creation and group loading in parallel
-        await handleUserInitialization(session.user.id);
-      } else {
-        setLoading(false);
-        setAuthChecked(true);
+        handleUserInitialization(session.user.id).catch(console.error);
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
-      setError('Failed to initialize authentication');
-      setLoading(false);
     }
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.id);
-      
-      if (session?.user && session.user.id !== user?.id) {
-        setUser(session.user);
-        setError(null);
-        await handleUserInitialization(session.user.id);
-      } else if (!session?.user) {
-        setUser(null);
-        setCurrentGroup(null);
-        setError(null);
-      }
-      
-      setAuthChecked(true);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
   };
 
   const handleUserInitialization = async (userId: string) => {
     setError(null);
-    
     try {
-      // Only handle profile creation - React Query will handle groups
       await contentRepository.createOrUpdateUser(userId);
     } catch (error) {
       console.error('Error creating user profile:', error);
       setError('Failed to initialize user profile');
+    }
+  };
+
+  // Handle pending invites after auth - separated from main auth flow
+  const handlePendingInvite = async () => {
+    const pendingInviteCode = sessionStorage.getItem('pendingInviteCode');
+    if (!pendingInviteCode) return;
+    
+    try {
+      const group = await joinGroupMutation.mutateAsync(pendingInviteCode);
+      setCurrentGroup(group);
+      sessionStorage.removeItem('pendingInviteCode');
+      
+      // Use setTimeout to defer DOM operation until after React updates
+      setTimeout(() => {
+        window.history.replaceState(null, '', `/group/${group.id}`);
+      }, 0);
+      
+      toast.success('Joined group!', `Welcome to "${group.name}".`);
+    } catch (error) {
+      console.error('Error joining group after auth:', error);
+      sessionStorage.removeItem('pendingInviteCode');
+      toast.error('Failed to join group', 'The invite code may be invalid or expired.');
     }
   };
 
@@ -222,10 +390,26 @@ export const ListApp: React.FC = () => {
   const handleJoinGroupSubmit = async (joinCode: string) => {
     try {
       const group = await joinGroupMutation.mutateAsync(joinCode);
+      
+      // Check if user was already a member
+      if ((group as any).alreadyMember) {
+        toast.success('Already a member', `You're already part of "${group.name}".`);
+      } else {
+        toast.success('Joined group!', `Successfully joined "${group.name}".`);
+      }
+      
       setCurrentGroup(group);
       setShowGroupModal(false);
     } catch (error) {
       console.error('Error joining group:', error);
+      
+      // Provide specific error messages
+      const errorMessage = error instanceof Error ? error.message : 'Failed to join group';
+      if (errorMessage.includes('Invalid join code')) {
+        toast.error('Invalid join code', 'Please check the code and try again.');
+      } else {
+        toast.error('Failed to join group', errorMessage);
+      }
       setError('Failed to join group');
     }
   };
@@ -310,7 +494,7 @@ export const ListApp: React.FC = () => {
       // Set URL to new group without content path
       window.history.pushState(null, '', `/group/${currentGroup.id}`);
     }
-  }, [currentGroup, contentSelection]);
+  }, [currentGroup]);
 
   // Handle URL navigation on page load and browser navigation
   useEffect(() => {
@@ -321,16 +505,30 @@ export const ListApp: React.FC = () => {
       const inviteMatch = pathname.match(/^\/invite\/([^\/]+)$/);
       if (inviteMatch) {
         const [, joinCode] = inviteMatch;
+        
+        // If user is not authenticated, save invite code and show auth
+        if (!user) {
+          // Store invite code for after authentication
+          sessionStorage.setItem('pendingInviteCode', joinCode);
+          // Don't redirect yet - let them authenticate first
+          return;
+        }
+        
+        // User is authenticated, try to join the group
         try {
           setError(null);
           const group = await joinGroupMutation.mutateAsync(joinCode);
           setCurrentGroup(group);
+          // Clear any stored invite code
+          sessionStorage.removeItem('pendingInviteCode');
           // Redirect to the group page after successful join
           window.history.replaceState(null, '', `/group/${group.id}`);
           return;
         } catch (error) {
           console.error('Error joining group from invite:', error);
           setError('Failed to join group. The invite code may be invalid or expired.');
+          // Clear stored invite code on error
+          sessionStorage.removeItem('pendingInviteCode');
           // Redirect to root on error
           window.history.replaceState(null, '', '/');
           return;
@@ -388,15 +586,13 @@ export const ListApp: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [currentGroup, groups, user, joinGroupMutation]);
 
-  // Show loading for initial auth check or invite joining
-  if ((loading && !authChecked) || (joinGroupMutation.isPending && window.location.pathname.startsWith('/invite/'))) {
+  // Only show loading for invite joining, never block for auth check
+  if (joinGroupMutation.isPending && window.location.pathname.startsWith('/invite/')) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-gray-600">
-            {joinGroupMutation.isPending ? 'Joining group...' : 'Checking authentication...'}
-          </p>
+          <p className="text-gray-600">Joining group...</p>
         </div>
       </div>
     );
@@ -436,13 +632,13 @@ export const ListApp: React.FC = () => {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-3 flex-shrink-0">
+            <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
               {/* Hamburger Menu */}
               <button
                 onClick={() => setShowSidebar(true)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-gray-500 hover:text-gray-700 p-1"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
@@ -456,14 +652,14 @@ export const ListApp: React.FC = () => {
             
             {/* Search Bar */}
             {currentGroup && (
-              <div className="flex-1 max-w-md mx-4">
+              <div className="flex-1 max-w-md mx-2 sm:mx-4">
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search content..."
+                    placeholder="Search..."
                     value={searchQuery}
                     onChange={handleSearchChange}
-                    className="w-full px-4 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    className="w-full px-3 sm:px-4 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                   />
                   {searchQuery && (
                     <button
@@ -474,9 +670,9 @@ export const ListApp: React.FC = () => {
                           clearTimeout(searchTimeoutRef.current);
                         }
                       }}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
@@ -485,14 +681,14 @@ export const ListApp: React.FC = () => {
               </div>
             )}
             
-            <div className="flex items-center space-x-4 flex-shrink-0">
+            <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
               {(groupsLoading || createGroupMutation.isPending || joinGroupMutation.isPending) && (
                 <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
               )}
               {currentGroup && !isSearching && (
                 <button
                   onClick={contentSelection.toggleSelectionMode}
-                  className={`text-sm px-2 py-1 rounded-md transition-colors ${
+                  className={`p-1.5 sm:px-2 sm:py-1 rounded-md transition-colors ${
                     contentSelection.isSelectionMode
                       ? 'text-orange-600 bg-orange-50'
                       : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
@@ -510,15 +706,42 @@ export const ListApp: React.FC = () => {
                   )}
                 </button>
               )}
-              <span className="text-sm text-gray-600">
-                {user.email}
-              </span>
-              <button
-                onClick={handleSignOut}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Sign out
-              </button>
+              {/* Sharing Button - only show when viewing specific content */}
+              {currentGroup && currentParentId && (
+                <button
+                  onClick={handleOpenSharingModal}
+                  className="text-gray-500 hover:text-gray-700 transition-colors p-1.5 rounded-md hover:bg-gray-50"
+                  title="Share this content"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+              )}
+              {/* User info - responsive layout */}
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                {/* Show email only on larger screens */}
+                <span className="hidden sm:inline text-sm text-gray-600 truncate max-w-32">
+                  {user.email}
+                </span>
+                {/* User avatar on mobile */}
+                <div className="w-6 h-6 sm:hidden bg-gray-400 rounded-full flex items-center justify-center">
+                  <span className="text-xs text-white font-medium">
+                    {user.email?.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  className="text-gray-500 hover:text-gray-700 p-1"
+                  title="Sign out"
+                >
+                  {/* Icon on mobile, text on desktop */}
+                  <span className="hidden sm:inline text-sm">Sign out</span>
+                  <svg className="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
           
@@ -534,18 +757,18 @@ export const ListApp: React.FC = () => {
       <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm">
         {/* Breadcrumb Navigation */}
         {currentGroup && navigationStack.length > 1 && (
-          <div className="bg-gray-50 border-b border-gray-200 px-4 py-2">
-            <div className="flex items-center space-x-2 text-sm">
+          <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2">
+            <div className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm overflow-x-auto">
               {navigationStack.map((item, index) => (
-                <React.Fragment key={index}>
+                <div key={index} className="flex items-center space-x-1 sm:space-x-2">
                   {index > 0 && (
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   )}
                   <button
                     onClick={() => handleBreadcrumbClick(index)}
-                    className={`hover:text-blue-600 transition-colors ${
+                    className={`hover:text-blue-600 transition-colors whitespace-nowrap touch-manipulation px-1 py-0.5 rounded ${
                       index === navigationStack.length - 1 
                         ? 'text-gray-900 font-medium' 
                         : 'text-gray-500 hover:text-blue-600'
@@ -553,7 +776,7 @@ export const ListApp: React.FC = () => {
                   >
                     {item.name}
                   </button>
-                </React.Fragment>
+                </div>
               ))}
             </div>
           </div>
@@ -561,8 +784,40 @@ export const ListApp: React.FC = () => {
 
         {/* Selection Header */}
         {contentSelection.isSelectionMode && currentGroup && (
-          <div className="bg-blue-50 border-b border-blue-200 px-4 py-2">
-            <div className="flex items-center justify-between">
+          <div className="bg-blue-50 border-b border-blue-200 px-4 py-3">
+            {/* Mobile Layout - Stack vertically */}
+            <div className="sm:hidden">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-blue-900">
+                  {contentSelection.selectedCount} selected
+                </span>
+                <button
+                  onClick={contentSelection.toggleSelectionMode}
+                  className="text-xs text-gray-500 hover:text-gray-700 p-2 -m-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => contentSelection.selectAll([])}
+                  className="flex-1 text-xs text-blue-600 hover:text-blue-800 px-3 py-2 rounded-md bg-white border border-blue-200 hover:bg-blue-50 transition-colors"
+                >
+                  All
+                </button>
+                <button
+                  onClick={contentSelection.clearSelection}
+                  className="flex-1 text-xs text-blue-600 hover:text-blue-800 px-3 py-2 rounded-md bg-white border border-blue-200 hover:bg-blue-50 transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            
+            {/* Desktop Layout - Keep original */}
+            <div className="hidden sm:flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <span className="text-sm font-medium text-blue-900">
                   {contentSelection.selectedCount} item{contentSelection.selectedCount !== 1 ? 's' : ''} selected
@@ -570,7 +825,7 @@ export const ListApp: React.FC = () => {
               </div>
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={() => contentSelection.selectAll([])} // Will be updated when we have currentItems
+                  onClick={() => contentSelection.selectAll([])}
                   className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded"
                 >
                   Select All
@@ -621,7 +876,15 @@ export const ListApp: React.FC = () => {
 
       {/* Workflow FAB for selected items */}
       <WorkflowFAB
-        isVisible={contentSelection.isSelectionMode && contentSelection.selectedCount > 0}
+        isVisible={(() => {
+          const isVisible = contentSelection.isSelectionMode && contentSelection.selectedCount > 0;
+          console.log('WorkflowFAB visibility check:', {
+            isSelectionMode: contentSelection.isSelectionMode,
+            selectedCount: contentSelection.selectedCount,
+            isVisible
+          });
+          return isVisible;
+        })()}
         actions={workflowActions}
         selectedCount={contentSelection.selectedCount}
       />
@@ -645,7 +908,6 @@ export const ListApp: React.FC = () => {
           onGroupChange={(group) => {
             handleGroupChange(group);
             setShowGroupModal(false);
-            setGroups(prev => prev.some(g => g.id === group.id) ? prev : [group, ...prev]);
           }}
         />
       )}
@@ -672,6 +934,21 @@ export const ListApp: React.FC = () => {
         isVisible={showGameOverlay}
         operationName={currentOperation}
         onClose={() => setShowGameOverlay(false)}
+      />
+
+      {/* SEO Progress Overlay */}
+      <SEOProgressOverlay
+        isVisible={showSEOProgress}
+        selectedContent={selectedContentForSEO}
+        progressItems={seoProgressItems}
+        onClose={handleCloseSEOProgress}
+      />
+
+      {/* Sharing Settings Modal */}
+      <SharingSettingsModal
+        isVisible={showSharingModal}
+        content={currentContentForSharing}
+        onClose={handleCloseSharingModal}
       />
     </div>
   );

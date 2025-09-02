@@ -47,3 +47,24 @@ func LoadConfig() (*Config, error) {
 
 	return config, nil
 }
+
+// LoadDatabaseConfig loads database configuration and returns a database URL
+func LoadDatabaseConfig(configPath string) (string, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var config struct {
+		SupabaseURL string `json:"supabase_url"`
+	}
+
+	if err := json.Unmarshal(data, &config); err != nil {
+		return "", fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Convert Supabase URL to PostgreSQL database URL
+	// This is a simplified conversion - in production you'd need proper database credentials
+	dbURL := config.SupabaseURL + "/rest/v1/"
+	return dbURL, nil
+}

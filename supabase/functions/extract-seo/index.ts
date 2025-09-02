@@ -117,23 +117,56 @@ async function fetchSEOMetadata(url: string): Promise<SEOMetadata> {
   }
 }
 
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   try {
     // Only allow POST requests
     if (req.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 });
+      return new Response('Method not allowed', { 
+        status: 405,
+        headers: corsHeaders
+      });
     }
 
     // Get request body
     const { content_id } = await req.json();
     if (!content_id) {
-      return new Response('Missing content_id', { status: 400 });
+      return new Response('Missing content_id', { 
+        status: 400,
+        headers: corsHeaders
+      });
     }
 
-    // Create Supabase client
+    // Get auth token from request headers
+    const authorization = req.headers.get('Authorization');
+    if (!authorization) {
+      return new Response('Missing authorization header', { 
+        status: 401,
+        headers: corsHeaders
+      });
+    }
+
+    // Create Supabase client with user's auth token
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authorization,
+        },
+      },
+    });
 
     // Get the content
     const { data: content, error: contentError } = await supabase
@@ -143,7 +176,10 @@ serve(async (req) => {
       .single();
 
     if (contentError || !content) {
-      return new Response('Content not found', { status: 404 });
+      return new Response('Content not found', { 
+        status: 404,
+        headers: corsHeaders
+      });
     }
 
     const contentRow = content as ContentRow;
@@ -157,7 +193,10 @@ serve(async (req) => {
         seo_children: [],
         urls_processed: 0
       }), {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        },
       });
     }
 
@@ -236,7 +275,10 @@ serve(async (req) => {
       urls_processed: urlsProcessed,
       total_urls_found: urls.length
     }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      },
     });
 
   } catch (error) {
@@ -246,7 +288,10 @@ serve(async (req) => {
       message: error.message
     }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      },
     });
   }
 });

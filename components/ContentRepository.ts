@@ -39,6 +39,20 @@ export interface SEOMetadata {
   url?: string;
 }
 
+export interface SharingMetadata {
+  isPublic: boolean;
+  enabledAt?: string;
+  enabledBy?: string;
+  disabledAt?: string;
+  disabledBy?: string;
+}
+
+export interface SharingResponse {
+  success: boolean;
+  isPublic: boolean;
+  publicUrl?: string;
+}
+
 export interface Tag {
   id: string;
   created_at: string;
@@ -258,35 +272,54 @@ export class ContentRepository {
 
   async joinGroupByCode(joinCode: string): Promise<Group> {
     try {
-      // First find the group
-      const { data: group, error: groupError } = await withRetry(async () => {
-        return await supabase
-          .from('groups')
-          .select('*')
-          .eq('join_code', joinCode.toUpperCase())
-          .single();
+      // Use the safe join function that checks for existing membership
+      const { data, error } = await withRetry(async () => {
+        return await supabase.rpc('join_group_safe', {
+          p_join_code: joinCode
+        });
       });
 
-      if (groupError) {
-        console.error('Error finding group:', groupError);
-        throw new Error('Invalid join code');
+      if (error) {
+        console.error('Error joining group:', error);
+        throw new Error('Failed to join group');
       }
 
-      // Add user to group if not already a member
-      const { error: membershipError } = await withRetry(async () => {
-        return await supabase
-          .from('group_memberships')
-          .upsert([{ 
-            group_id: group.id,
-            role: 'member'
-          }], {
-            onConflict: 'user_id,group_id'
-          });
-      });
+      if (!data.success) {
+        // Handle specific error cases
+        if (data.status === 'invalid_code') {
+          throw new Error('Invalid join code');
+        }
+        throw new Error(data.message || 'Failed to join group');
+      }
 
-      if (membershipError) {
-        console.error('Error joining group:', membershipError);
-        throw new Error(membershipError.message);
+      // Check if user was already a member
+      if (data.status === 'already_member') {
+        // Still fetch and return the group, but the caller can check the status
+        const { data: group, error: groupError } = await supabase
+          .from('groups')
+          .select('*')
+          .eq('id', data.group.id)
+          .single();
+        
+        if (groupError) {
+          console.error('Error fetching group details:', groupError);
+          throw new Error('Failed to fetch group details');
+        }
+
+        // Add a flag to indicate the user was already a member
+        return { ...group, alreadyMember: true } as Group & { alreadyMember?: boolean };
+      }
+
+      // Fetch the full group details for newly joined members
+      const { data: group, error: groupError } = await supabase
+        .from('groups')
+        .select('*')
+        .eq('id', data.group.id)
+        .single();
+      
+      if (groupError) {
+        console.error('Error fetching group details:', groupError);
+        throw new Error('Failed to fetch group details');
       }
 
       return group;
@@ -483,17 +516,25 @@ export class ContentRepository {
     message: string
   }> {
     try {
+      // Get the current user session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated');
+      }
+
       const response = await fetch(`${supabase.supabaseUrl}/functions/v1/extract-seo`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.supabaseKey}`,
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ content_id: contentId }),
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
       }
 
       const result = await response.json();
@@ -525,6 +566,134 @@ export class ContentRepository {
     } catch (error) {
       console.error('Failed to fetch SEO children:', error);
       throw error;
+    }
+  }
+
+  // Public Content Sharing Methods
+  
+  // Toggle content public sharing
+  async toggleContentSharing(contentId: string, isPublic: boolean): Promise<SharingResponse> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const { data, error } = await supabase.rpc('toggle_content_sharing', {
+        content_id: contentId,
+        is_public: isPublic,
+        user_id: user.id
+      });
+
+      if (error) {
+        console.error('Error toggling content sharing:', error);
+        throw new Error(error.message);
+      }
+
+      return data as SharingResponse;
+    } catch (error) {
+      console.error('Failed to toggle content sharing:', error);
+      throw error;
+    }
+  }
+
+  // Get public content by ID (accessible to anonymous users)
+  async getPublicContent(contentId: string): Promise<Content | null> {
+    try {
+      const { data, error } = await supabase
+        .from('public_content')
+        .select(`
+          id,
+          created_at,
+          updated_at,
+          type,
+          data,
+          metadata,
+          shared_at,
+          shared_by
+        `)
+        .eq('id', contentId)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // Not found or not public
+          return null;
+        }
+        console.error('Error fetching public content:', error);
+        throw new Error(error.message);
+      }
+
+      return {
+        ...data,
+        group_id: '', // Not exposed for public content
+        user_id: data.shared_by || '', // Use shared_by as user_id
+        parent_content_id: null, // Simplified for public view
+        tags: [] // Tags not exposed for public content
+      };
+    } catch (error) {
+      console.error('Failed to fetch public content:', error);
+      throw error;
+    }
+  }
+
+  // Get sharing status for content
+  async getContentSharingStatus(contentId: string): Promise<{ isPublic: boolean; publicUrl?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('content')
+        .select('metadata')
+        .eq('id', contentId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching content sharing status:', error);
+        throw new Error(error.message);
+      }
+
+      const sharingData = data.metadata?.sharing as SharingMetadata;
+      const isPublic = sharingData?.isPublic || false;
+      
+      let publicUrl: string | undefined;
+      if (isPublic) {
+        // Generate public URL
+        publicUrl = `${window.location.origin}/public/content/${contentId}`;
+      }
+
+      return {
+        isPublic,
+        publicUrl
+      };
+    } catch (error) {
+      console.error('Failed to fetch content sharing status:', error);
+      throw error;
+    }
+  }
+
+  // Check if user can modify content sharing (must be owner)
+  async canModifyContentSharing(contentId: string): Promise<boolean> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return false;
+      }
+
+      const { data, error } = await supabase
+        .from('content')
+        .select('user_id')
+        .eq('id', contentId)
+        .single();
+
+      if (error || !data) {
+        return false;
+      }
+
+      return data.user_id === user.id;
+    } catch (error) {
+      console.error('Failed to check content sharing permissions:', error);
+      return false;
     }
   }
 }

@@ -20,7 +20,11 @@ export const useContentByParent = (
       return await contentRepository.getContentByParent(groupId, parentId, 0, 20);
     },
     enabled: !!groupId && options?.enabled !== false,
-    staleTime: options?.staleTime ?? 30000, // 30 seconds
+    staleTime: options?.staleTime ?? 300000, // 5 minutes - reduce unnecessary refetching during auth refresh
+    gcTime: 600000, // 10 minutes
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false, // Prevent refetch on window focus during auth events
+    refetchOnReconnect: true
   });
 };
 
@@ -57,7 +61,18 @@ export const useInfiniteContentByParent = (
     },
     initialPageParam: 0,
     enabled: !!groupId && options?.enabled !== false,
-    staleTime: 30000, // 30 seconds
+    staleTime: 180000, // 3 minutes - balance between freshness and stability
+    gcTime: 600000, // 10 minutes
+    refetchOnMount: false, // Prevent refetch on component remount during auth
+    refetchOnWindowFocus: false, // Critical: prevent refetch during auth token refresh
+    refetchOnReconnect: true,
+    retry: (failureCount, error) => {
+      // Don't retry during auth transitions
+      if (error?.message?.includes('JWT') || error?.message?.includes('auth')) {
+        return false;
+      }
+      return failureCount < 2;
+    }
   });
 };
 
@@ -94,10 +109,11 @@ export const useSearchContent = (
       return await contentRepository.searchContent(groupId, query, parentId, 0, 20);
     },
     enabled: !!groupId && !!query.trim() && options?.enabled !== false,
-    staleTime: 60000, // 1 minute - search results can be cached longer
-    // Add a small delay to debounce rapid search queries
+    staleTime: 300000, // 5 minutes - search results can be cached longer during auth refresh
+    gcTime: 600000, // 10 minutes
     refetchOnMount: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: false, // Prevent refetch during auth events
+    refetchOnReconnect: true
   });
 };
 
@@ -136,7 +152,18 @@ export const useInfiniteSearchContent = (
     },
     initialPageParam: 0,
     enabled: !!groupId && !!query.trim() && options?.enabled !== false,
-    staleTime: 60000, // 1 minute
+    staleTime: 300000, // 5 minutes - longer cache for search results
+    gcTime: 600000, // 10 minutes
+    refetchOnMount: false,
+    refetchOnWindowFocus: false, // Prevent refetch during auth events
+    refetchOnReconnect: true,
+    retry: (failureCount, error) => {
+      // Don't retry during auth transitions
+      if (error?.message?.includes('JWT') || error?.message?.includes('auth')) {
+        return false;
+      }
+      return failureCount < 2;
+    }
   });
 };
 
@@ -176,27 +203,28 @@ export const useCreateContentMutation = () => {
         tags: [],
       };
 
-      queryClient.setQueryData(queryKey, (old: Content[] | undefined) => {
-        return old ? [optimisticContent, ...old] : [optimisticContent];
-      });
-
-      // Also update infinite query if it exists
-      queryClient.setQueryData(
-        QueryKeys.contentByParent(newContent.group_id, newContent.parent_content_id || null),
-        (old: any) => {
-          if (old?.pages) {
-            return {
-              ...old,
-              pages: old.pages.map((page: any, index: number) => 
-                index === 0 
-                  ? { ...page, items: [optimisticContent, ...page.items] }
-                  : page
-              ),
-            };
-          }
-          return old;
+      // Update infinite query cache (this is what the app actually uses)
+      queryClient.setQueryData(queryKey, (old: any) => {
+        if (old?.pages) {
+          // Handle infinite query structure
+          return {
+            ...old,
+            pages: old.pages.map((page: any, index: number) => 
+              index === 0 
+                ? { ...page, items: [optimisticContent, ...page.items] }
+                : page
+            ),
+          };
+        } else if (Array.isArray(old)) {
+          // Handle simple array structure (fallback for non-infinite queries)
+          return [optimisticContent, ...old];
         }
-      );
+        // If no existing data, create initial structure
+        return {
+          pages: [{ items: [optimisticContent], hasMore: false, nextOffset: 1 }],
+          pageParams: [0]
+        };
+      });
 
       // Return a context object with the snapshotted value
       return { previousContent, queryKey };

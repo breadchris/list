@@ -13,7 +13,11 @@ if (typeof document !== 'undefined') {
     
     try {
       const root = createRoot(rootElement);
-      root.render(<App />);
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>
+      );
       console.log('✅ List App rendered successfully!');
     } catch (error) {
       console.error('❌ Failed to render List App:', error);

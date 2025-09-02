@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +12,9 @@ import (
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/urfave/cli/v2"
 )
+
+// Global configuration for HTTP handlers
+var currentConfig *Config
 
 func main() {
 	app := &cli.App{
@@ -25,6 +29,14 @@ func main() {
 						Name:  "port",
 						Value: "3002",
 						Usage: "Port to run server on",
+					},
+					&cli.StringFlag{
+						Name:  "supabase-url",
+						Usage: "Override Supabase URL",
+					},
+					&cli.StringFlag{
+						Name:  "supabase-key",
+						Usage: "Override Supabase anonymous key",
 					},
 				},
 				Action: serveCommand,
@@ -60,6 +72,8 @@ func main() {
 // serveCommand starts the development server
 func serveCommand(c *cli.Context) error {
 	port := c.String("port")
+	supabaseURL := c.String("supabase-url")
+	supabaseKey := c.String("supabase-key")
 
 	// Load configuration
 	config, err := LoadConfig()
@@ -71,6 +85,17 @@ func serveCommand(c *cli.Context) error {
 	if port != "3002" {
 		config.Port = port
 	}
+	
+	// Override Supabase config if provided
+	if supabaseURL != "" {
+		config.SupabaseURL = supabaseURL
+	}
+	if supabaseKey != "" {
+		config.SupabaseKey = supabaseKey
+	}
+	
+	// Set global config for HTTP handlers
+	currentConfig = config
 
 	mux := createHTTPServer()
 
@@ -318,8 +343,14 @@ func handleServeModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Inject Supabase configuration if this is the SupabaseClient.ts file
+	sourceCodeStr := string(sourceCode)
+	if strings.Contains(componentPath, "SupabaseClient.ts") || strings.Contains(componentPath, "SupabaseClient.js") {
+		sourceCodeStr = injectSupabaseConfig(sourceCodeStr)
+	}
+
 	// Build as ES module for browser consumption
-	result := buildAsESModule(string(sourceCode), filepath.Dir(srcPath), filepath.Base(srcPath))
+	result := buildAsESModule(sourceCodeStr, filepath.Dir(srcPath), filepath.Base(srcPath))
 
 	if len(result.Errors) > 0 {
 		errorMessages := make([]string, len(result.Errors))
@@ -456,6 +487,7 @@ func buildAsESModule(sourceCode, resolveDir, sourcefile string) api.BuildResult 
 		Target:          api.ES2020,
 		JSX:             api.JSXAutomatic,
 		JSXImportSource: "react",
+		Sourcemap:       api.SourceMapInline,
 		LogLevel:        api.LogLevelSilent,
 		External:        []string{"react", "react-dom", "react/jsx-runtime", "@supabase/supabase-js"},
 		TsconfigRaw: `{
@@ -528,6 +560,8 @@ func generateComponentHTML(componentName, componentPath string) string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <meta name="translate" content="no">
     <title>%s - List App</title>
     <script type="importmap">
     {
@@ -601,6 +635,8 @@ func generateProductionHTML() string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <meta name="translate" content="no">
     <title>List App</title>
     <script type="importmap">
     {
@@ -614,20 +650,79 @@ func generateProductionHTML() string {
     }
     </script>
     <!-- Preload key Satoshi font files for better performance -->
-    <link rel="preload" href="fonts/Satoshi-Regular.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/Satoshi-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
     
-    <link rel="stylesheet" type="text/css" href="styles.css">
+    <link rel="stylesheet" type="text/css" href="/styles.css">
     <style>
         #root { width: 100%; height: 100vh; }
     </style>
 </head>
 <body>
     <div id="root"></div>
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="/app.js"></script>
 </body>
 </html>`
+}
+
+// handleAPIConfig serves the current Supabase configuration as JSON
+func handleAPIConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Use global config or fallback to loading config
+	config := currentConfig
+	if config == nil {
+		var err error
+		config, err = LoadConfig()
+		if err != nil {
+			http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Create response with only frontend-needed config
+	configResponse := map[string]string{
+		"supabase_url": config.SupabaseURL,
+		"supabase_key": config.SupabaseKey,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	
+	if err := json.NewEncoder(w).Encode(configResponse); err != nil {
+		http.Error(w, "Failed to encode configuration", http.StatusInternalServerError)
+		return
+	}
+}
+
+// injectSupabaseConfig replaces hardcoded Supabase values with current configuration
+func injectSupabaseConfig(sourceCode string) string {
+	// Get current config
+	config := currentConfig
+	if config == nil {
+		var err error
+		config, err = LoadConfig()
+		if err != nil {
+			// If we can't load config, return original source code
+			return sourceCode
+		}
+	}
+
+	// Replace hardcoded SUPABASE_URL
+	sourceCode = strings.ReplaceAll(sourceCode, 
+		"const SUPABASE_URL = 'https://zazsrepfnamdmibcyenx.supabase.co';",
+		fmt.Sprintf("const SUPABASE_URL = '%s';", config.SupabaseURL))
+
+	// Replace hardcoded SUPABASE_ANON_KEY
+	sourceCode = strings.ReplaceAll(sourceCode,
+		"const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM';",
+		fmt.Sprintf("const SUPABASE_ANON_KEY = '%s';", config.SupabaseKey))
+
+	return sourceCode
 }
 
 // copyFile copies a single file from src to dst

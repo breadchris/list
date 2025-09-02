@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { Content, contentRepository, Tag } from './ContentRepository';
+import { Content, contentRepository, Tag, SEOMetadata, SharingMetadata } from './ContentRepository';
 import { LinkifiedText } from './LinkifiedText';
+import { SEOCard } from './SEOCard';
+import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from '../hooks/queryKeys';
@@ -53,15 +55,18 @@ export const ContentList: React.FC<ContentListProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const deleteContentMutation = useDeleteContentMutation();
+  const toast = useToast();
 
   // Regular content query for non-search mode
   const {
     data: contentData,
     isLoading: contentLoading,
     isFetching: contentFetching,
+    isFetchingNextPage: contentFetchingNext,
     hasNextPage: contentHasMore,
     fetchNextPage: fetchMoreContent,
-    error: contentError
+    error: contentError,
+    status: contentStatus
   } = useInfiniteContentByParent(groupId, parentContentId, { enabled: !isSearching });
 
   // Search query for search mode
@@ -69,9 +74,11 @@ export const ContentList: React.FC<ContentListProps> = ({
     data: searchData,
     isLoading: searchLoading,
     isFetching: searchFetching,
+    isFetchingNextPage: searchFetchingNext,
     hasNextPage: searchHasMore,
     fetchNextPage: fetchMoreSearch,
-    error: searchError
+    error: searchError,
+    status: searchStatus
   } = useInfiniteSearchContent(groupId, searchQuery, parentContentId, { enabled: isSearching });
 
   // Handle optimistic updates for new content
@@ -167,29 +174,60 @@ export const ContentList: React.FC<ContentListProps> = ({
     };
   }, [groupId, newContent, parentContentId, queryClient]);
 
+  // Auto-retry mechanism for stuck queries - must be before early return
+  useEffect(() => {
+    // Only run if we have a groupId and are not in initial loading
+    if (!groupId) return;
+    
+    const contentItems = contentData?.pages.flatMap(page => page.items) ?? [];
+    const searchItems = searchData?.pages.flatMap(page => page.items) ?? [];
+    const currentItems = isSearching ? searchItems : contentItems;
+    const currentFetching = isSearching ? searchFetching : contentFetching;
+    const currentFetchingNext = isSearching ? searchFetchingNext : contentFetchingNext;
+    const currentLoading = isSearching ? searchLoading : contentLoading;
+    
+    // Determine if we're in a stuck loading state (auth refresh issue)
+    const isStuckLoading = currentFetching && !currentFetchingNext && !currentLoading && currentItems.length > 0;
+    
+    if (isStuckLoading) {
+      console.warn('Detected stuck loading state, attempting recovery...');
+      const timer = setTimeout(() => {
+        if (isSearching) {
+          queryClient.resetQueries({ queryKey: QueryKeys.contentSearch(groupId, searchQuery, parentContentId) });
+        } else {
+          queryClient.resetQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContentId) });
+        }
+      }, 3000); // Wait 3 seconds before reset
+      
+      return () => clearTimeout(timer);
+    }
+  }, [groupId, contentData, searchData, isSearching, searchFetching, contentFetching, searchFetchingNext, contentFetchingNext, searchLoading, contentLoading, queryClient, searchQuery, parentContentId]);
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     
-    // Load more when scrolled to bottom
+    // Load more when scrolled to bottom (but not if already fetching next page)
     if (scrollHeight - scrollTop <= clientHeight + 100) {
-      if (isSearching && searchHasMore && !searchFetching) {
+      if (isSearching && searchHasMore && !searchFetchingNext && !searchFetching) {
         fetchMoreSearch();
-      } else if (!isSearching && contentHasMore && !contentFetching) {
+      } else if (!isSearching && contentHasMore && !contentFetchingNext && !contentFetching) {
         fetchMoreContent();
       }
     }
   };
 
   const handleDelete = async (contentId: string) => {
+    // Simple confirmation using window.confirm for now - could be enhanced with modal later
     if (!confirm('Are you sure you want to delete this item?')) {
       return;
     }
 
     try {
       await deleteContentMutation.mutateAsync(contentId);
+      toast.success('Item deleted successfully');
     } catch (error) {
       console.error('Error deleting content:', error);
-      alert('Failed to delete item');
+      toast.error('Failed to delete item', 'Please try again.');
     }
   };
 
@@ -236,6 +274,11 @@ export const ContentList: React.FC<ContentListProps> = ({
     }
   };
 
+  const isContentPublic = (content: Content): boolean => {
+    const sharingData = content.metadata?.sharing as SharingMetadata;
+    return sharingData?.isPublic || false;
+  };
+
   if (!groupId) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -254,8 +297,10 @@ export const ContentList: React.FC<ContentListProps> = ({
   const currentItems = isSearching ? searchItems : contentItems;
   const currentLoading = isSearching ? searchLoading : contentLoading;
   const currentFetching = isSearching ? searchFetching : contentFetching;
+  const currentFetchingNext = isSearching ? searchFetchingNext : contentFetchingNext;
   const currentHasMore = isSearching ? searchHasMore : contentHasMore;
   const currentError = isSearching ? searchError : contentError;
+  const currentStatus = isSearching ? searchStatus : contentStatus;
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50">
@@ -283,29 +328,29 @@ export const ContentList: React.FC<ContentListProps> = ({
             </div>
           </div>
         ) : (
-          <div className="p-4 space-y-3">
+          <div className="p-3 sm:p-4 space-y-3">
             {currentItems.map((item) => {
               const isSelected = selection.selectedItems.has(item.id);
               return (
                 <div 
                   key={item.id} 
-                  className={`bg-white rounded-lg shadow-sm border p-4 hover:shadow-md transition-all cursor-pointer relative ${
+                  className={`bg-white rounded-lg shadow-sm border p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer relative ${
                     isSelected 
                       ? 'border-blue-500 border-2 bg-blue-50' 
                       : 'border-gray-200'
                   }`}
                   onClick={() => handleContentClick(item)}
                 >
-                  {/* Selection indicator */}
+                  {/* Selection indicator - better mobile positioning */}
                   {selection.isSelectionMode && (
-                    <div className="absolute top-2 right-2 z-10">
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                    <div className="absolute top-3 right-3 z-10">
+                      <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 flex items-center justify-center touch-manipulation ${
                         isSelected 
                           ? 'bg-blue-500 border-blue-500' 
                           : 'border-gray-300 bg-white'
                       }`}>
                         {isSelected && (
-                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3 h-3 sm:w-4 sm:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
                         )}
@@ -313,58 +358,138 @@ export const ContentList: React.FC<ContentListProps> = ({
                     </div>
                   )}
                 <div className="flex justify-between items-start">
-                  <div className="flex-1 min-w-0">
-                    <LinkifiedText
-                      text={item.data}
-                      className="text-gray-900 whitespace-pre-wrap break-words"
-                    />
-                    <TagDisplay tags={item.tags || []} />
-                    <p className="text-xs text-gray-500 mt-2">
-                      {formatRelativeTime(item.created_at)}
-                    </p>
+                  <div className={`flex-1 min-w-0 ${selection.isSelectionMode ? 'pr-8 sm:pr-10' : ''}`}>
+                    {item.type === 'seo' ? (
+                      <div>
+                        <div className="flex items-start space-x-2">
+                          <div className="flex-1 min-w-0">
+                            <SEOCard 
+                              metadata={item.metadata as SEOMetadata} 
+                              onClick={() => handleContentClick(item)}
+                            />
+                          </div>
+                          {isContentPublic(item) && (
+                            <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">
+                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        <TagDisplay tags={item.tags || []} />
+                        <p className="text-xs text-gray-500 mt-2">
+                          {formatRelativeTime(item.created_at)}
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-start space-x-2">
+                          <div className="flex-1 min-w-0">
+                            <LinkifiedText
+                              text={item.data}
+                              className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
+                            />
+                          </div>
+                          {isContentPublic(item) && (
+                            <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">
+                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        <TagDisplay tags={item.tags || []} />
+                        <p className="text-xs text-gray-500 mt-2">
+                          {formatRelativeTime(item.created_at)}
+                        </p>
+                      </div>
+                    )}
                   </div>
                   
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(item.id);
-                    }}
-                    className="ml-3 text-gray-400 hover:text-red-500 transition-colors"
-                    title="Delete item"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {/* Delete button - hide in selection mode to avoid confusion */}
+                  {!selection.isSelectionMode && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(item.id);
+                      }}
+                      className="ml-2 sm:ml-3 text-gray-400 hover:text-red-500 transition-colors p-1 touch-manipulation"
+                      title="Delete item"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
               );
             })}
             
-            {(currentLoading || currentFetching) && (
-              <div className="flex justify-center py-4">
-                <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+            {/* Show different loading states */}
+            {currentLoading && (
+              <div className="flex justify-center py-8">
+                <div className="text-center">
+                  <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                  <p className="text-sm text-gray-600">Loading content...</p>
+                </div>
               </div>
             )}
             
-            {/* Load More Button */}
-            {currentHasMore && !currentFetching && currentItems.length > 0 && (
-              <div className="flex justify-center py-4">
-                <button
-                  onClick={() => isSearching ? fetchMoreSearch() : fetchMoreContent()}
-                  className="px-4 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
-                  disabled={currentFetching}
-                >
-                  {isSearching ? 'Load More Results' : 'Load More'}
-                </button>
+            {/* Background refresh indicator (less prominent) */}
+            {currentFetching && !currentLoading && !currentFetchingNext && currentItems.length > 0 && (
+              <div className="flex justify-center py-2">
+                <div className="flex items-center text-xs text-gray-500">
+                  <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full mr-2"></div>
+                  Refreshing...
+                </div>
               </div>
             )}
             
-            {/* Error State */}
+            {/* Load More Button with better state handling */}
+            {currentHasMore && currentItems.length > 0 && (
+              <div className="flex justify-center py-4">
+                {currentFetchingNext ? (
+                  <div className="flex items-center px-4 py-2 text-blue-600">
+                    <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full mr-2"></div>
+                    Loading more...
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => isSearching ? fetchMoreSearch() : fetchMoreContent()}
+                    className="px-4 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={currentFetching}
+                  >
+                    {isSearching ? 'Load More Results' : 'Load More'}
+                  </button>
+                )}
+              </div>
+            )}
+            
+            {/* Enhanced Error State with Retry */}
             {currentError && (
               <div className="flex justify-center py-4">
-                <div className="text-red-600 text-sm">
-                  Error loading content. Please try again.
+                <div className="text-center">
+                  <div className="text-red-600 text-sm mb-2">
+                    {currentError.message?.includes('JWT') || currentError.message?.includes('auth') 
+                      ? 'Authentication refreshing... please wait'
+                      : 'Error loading content. Please try again.'
+                    }
+                  </div>
+                  {!currentError.message?.includes('JWT') && !currentError.message?.includes('auth') && (
+                    <button
+                      onClick={() => {
+                        if (isSearching) {
+                          queryClient.resetQueries({ queryKey: QueryKeys.contentSearch(groupId, searchQuery, parentContentId) });
+                        } else {
+                          queryClient.resetQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContentId) });
+                        }
+                      }}
+                      className="px-3 py-1 text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-300 rounded transition-colors"
+                    >
+                      Retry
+                    </button>
+                  )}
                 </div>
               </div>
             )}
