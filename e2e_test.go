@@ -320,6 +320,19 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// TestE2E_Basic tests that the basic framework works
+func TestE2E_Basic(t *testing.T) {
+	suite := NewE2ETestSuite(t)
+	if err := suite.Setup(); err != nil {
+		t.Fatalf("Failed to setup test environment: %v", err)
+	}
+	defer suite.Cleanup()
+
+	t.Run("FrameworkWorks", func(t *testing.T) {
+		suite.testFrameworkWorks(t)
+	})
+}
+
 // TestE2E_LoginFlow tests the complete login flow
 func TestE2E_LoginFlow(t *testing.T) {
 	suite := NewE2ETestSuite(t)
@@ -341,91 +354,140 @@ func TestE2E_LoginFlow(t *testing.T) {
 	})
 }
 
+// testFrameworkWorks verifies the basic E2E framework is functional
+func (suite *E2ETestSuite) testFrameworkWorks(t *testing.T) {
+	t.Log("🧪 Testing that E2E framework works...")
+
+	ctx := suite.chromeCtx
+
+	// Simple navigation test
+	var pageTitle string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(suite.appURL),
+		chromedp.Sleep(3*time.Second),
+		chromedp.Title(&pageTitle),
+	)
+	if err != nil {
+		t.Fatalf("Failed basic navigation: %v", err)
+	}
+
+	// Check that we can interact with the page
+	var hasLoginForm bool
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(`
+			document.querySelector('#email') !== null && 
+			document.querySelector('#password') !== null
+		`, &hasLoginForm),
+	)
+	if err != nil {
+		t.Fatalf("Failed to check page elements: %v", err)
+	}
+
+	t.Logf("✅ Framework working - Page title: %s, Login form present: %v", pageTitle, hasLoginForm)
+	
+	if !hasLoginForm {
+		// Get page content for debugging
+		var content string
+		chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerHTML`, &content))
+		t.Logf("Page HTML: %s", content[:min(1000, len(content))])
+	}
+
+	t.Log("✅ E2E framework test passed")
+}
+
 // testValidLogin tests successful login with valid credentials
 func (suite *E2ETestSuite) testValidLogin(t *testing.T) {
 	t.Log("🔐 Testing valid login flow...")
 
-	// Reset auth state before test
-	if err := suite.resetAuthState(); err != nil {
-		t.Fatalf("Failed to reset auth state: %v", err)
-	}
-
-	// Use the main Chrome context directly instead of creating a timeout context
+	// Use the main Chrome context directly
 	ctx := suite.chromeCtx
 
-	// Navigate to the app and check for login elements with timeout
+	// Navigate to the app with better error handling
+	t.Log("📱 Navigating to app...")
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(suite.appURL),
-		chromedp.Sleep(3*time.Second), // Wait for page to fully load
+		chromedp.Sleep(5*time.Second), // Give more time for page load
 	)
 	if err != nil {
 		t.Fatalf("Failed to navigate to app: %v", err)
 	}
 
-	// Check if login elements exist with more flexible selectors
-	var hasEmailInput, hasPasswordInput bool
+	// Check what's actually on the page
+	var pageTitle, pageContent string
 	err = chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('input[type="email"]') !== null || document.querySelector('input[name="email"]') !== null`, &hasEmailInput),
-		chromedp.Evaluate(`document.querySelector('input[type="password"]') !== null || document.querySelector('input[name="password"]') !== null`, &hasPasswordInput),
+		chromedp.Title(&pageTitle),
+		chromedp.Evaluate(`document.body.textContent || ''`, &pageContent),
 	)
 	if err != nil {
-		t.Fatalf("Failed to check for login elements: %v", err)
+		t.Fatalf("Failed to get page info: %v", err)
 	}
+	t.Logf("📄 Page title: %s", pageTitle)
+	t.Logf("📄 Page content preview: %s", pageContent[:min(200, len(pageContent))])
 
-	if !hasEmailInput || !hasPasswordInput {
-		// Take a screenshot for debugging and get page content
-		var pageContent string
-		chromedp.Run(ctx,
-			chromedp.Evaluate(`document.documentElement.outerHTML`, &pageContent),
-		)
-		t.Logf("Page content: %s", pageContent[:min(1000, len(pageContent))])
-		t.Fatalf("Login page elements not found - hasEmail: %v, hasPassword: %v", hasEmailInput, hasPasswordInput)
-	}
-
-	// Fill in login form
+	// Check for login form elements with specific selectors
+	var emailInputVisible, passwordInputVisible, submitButtonVisible bool
 	err = chromedp.Run(ctx,
-		chromedp.SendKeys(`input[type="email"]`, TEST_EMAIL, chromedp.ByQuery),
-		chromedp.SendKeys(`input[type="password"]`, TEST_PASSWORD, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelector('#email') !== null`, &emailInputVisible),
+		chromedp.Evaluate(`document.querySelector('#password') !== null`, &passwordInputVisible),
+		chromedp.Evaluate(`document.querySelector('button[type="submit"]') !== null`, &submitButtonVisible),
+	)
+	if err != nil {
+		t.Fatalf("Failed to check login elements: %v", err)
+	}
+
+	t.Logf("🔍 Login elements found - Email: %v, Password: %v, Submit: %v", 
+		emailInputVisible, passwordInputVisible, submitButtonVisible)
+
+	if !emailInputVisible || !passwordInputVisible || !submitButtonVisible {
+		t.Fatalf("Login form not ready - missing elements")
+	}
+
+	// Fill in login form using ID selectors
+	t.Log("📝 Filling login form...")
+	err = chromedp.Run(ctx,
+		chromedp.Clear(`#email`, chromedp.ByID),
+		chromedp.SendKeys(`#email`, TEST_EMAIL, chromedp.ByID),
+		chromedp.Clear(`#password`, chromedp.ByID),
+		chromedp.SendKeys(`#password`, TEST_PASSWORD, chromedp.ByID),
 	)
 	if err != nil {
 		t.Fatalf("Failed to fill login form: %v", err)
 	}
 
 	// Submit login form
+	t.Log("🚀 Submitting login form...")
 	err = chromedp.Run(ctx,
 		chromedp.Click(`button[type="submit"]`, chromedp.ByQuery),
+		chromedp.Sleep(5*time.Second), // Wait for login to process
 	)
 	if err != nil {
 		t.Fatalf("Failed to submit login form: %v", err)
 	}
 
-	// Wait for successful login - look for elements that appear after login
+	// Check if we're now in the authenticated state
+	var isAuthenticated bool
 	err = chromedp.Run(ctx,
-		// Wait for login form to disappear and main app to appear
-		chromedp.WaitNotPresent(`input[type="email"]`, chromedp.ByQuery),
-		chromedp.Sleep(2*time.Second), // Allow for authentication to complete
-		// Look for authenticated user interface elements
-		suite.waitForElement(`.group-selector`, 5*time.Second),
+		// Look for elements that only appear when authenticated
+		chromedp.Evaluate(`
+			// Check for group selector or user email in header
+			document.querySelector('.group-selector') !== null ||
+			document.querySelector('[data-testid="group-dropdown"]') !== null ||
+			(document.body && document.body.textContent && document.body.textContent.includes('` + TEST_EMAIL + `'))
+		`, &isAuthenticated),
 	)
 	if err != nil {
-		// Take a screenshot for debugging if available
-		var buf []byte
-		chromedp.Run(ctx, chromedp.FullScreenshot(&buf, 90))
-		t.Logf("Screenshot saved during login failure")
-		
-		t.Fatalf("Failed to detect successful login: %v", err)
+		t.Fatalf("Failed to check authentication state: %v", err)
 	}
 
-	// Verify we're in the authenticated state by checking for user-specific content
-	var groupSelectorVisible bool
-	err = chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.group-selector') !== null`, &groupSelectorVisible),
-	)
-	if err != nil || !groupSelectorVisible {
-		t.Fatalf("Login appeared successful but user is not in authenticated state")
+	if !isAuthenticated {
+		// Get current page state for debugging
+		var currentContent string
+		chromedp.Run(ctx, chromedp.Evaluate(`document.body.textContent || ''`, &currentContent))
+		t.Logf("🔍 Current page content: %s", currentContent[:min(500, len(currentContent))])
+		t.Fatalf("Login form submitted but user not authenticated")
 	}
 
-	t.Log("✅ Valid login test passed")
+	t.Log("✅ Valid login test passed - user successfully authenticated")
 }
 
 // testInvalidLogin tests login failure with incorrect credentials

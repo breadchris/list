@@ -448,20 +448,15 @@ export const ListApp: React.FC = () => {
     }
   };
 
-  const handleBreadcrumbClick = (index: number) => {
+  const handleBreadcrumbClick = async (index: number) => {
     const targetItem = navigationStack[index];
-    setCurrentParentId(targetItem.id);
-    setNavigationStack(navigationStack.slice(0, index + 1));
-    setShowInput(false); // Close input when navigating via breadcrumbs
     
-    // Update URL with new pattern
-    if (currentGroup) {
-      if (targetItem.id === null) {
-        window.history.pushState(null, '', `/group/${currentGroup.id}`);
-      } else {
-        window.history.pushState(null, '', `/group/${currentGroup.id}/content/${targetItem.id}`);
-      }
-    }
+    // Use the unified navigation logic
+    await handleNavigate(targetItem.id);
+    
+    // Override the navigation stack to match breadcrumb expectations
+    // handleNavigate builds the stack from scratch, but breadcrumbs should slice existing stack
+    setNavigationStack(navigationStack.slice(0, index + 1));
   };
 
   // Handle search input with debouncing
