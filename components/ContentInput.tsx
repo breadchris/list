@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Content } from './ContentRepository';
 import { useCreateContentMutation } from '../hooks/useContentQueries';
+import { ContentTypeSelector, ContentType } from './ContentTypeSelector';
 
 interface ContentInputProps {
   groupId: string;
@@ -18,6 +19,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   onClose
 }) => {
   const [inputText, setInputText] = useState('');
+  const [contentType, setContentType] = useState<ContentType>('text');
   const createContentMutation = useCreateContentMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,7 +30,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
     try {
       const newContent = await createContentMutation.mutateAsync({
-        type: 'text',
+        type: contentType,
         data: text,
         group_id: groupId,
         parent_content_id: parentContentId,
@@ -36,6 +38,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
       onContentAdded(newContent);
       setInputText('');
+      setContentType('text');
       onClose();
     } catch (error) {
       console.error('Error creating content:', error);
@@ -68,13 +71,26 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         </button>
       </div>
       
+      <div className="mb-3">
+        <ContentTypeSelector 
+          value={contentType} 
+          onChange={setContentType}
+        />
+      </div>
+      
       <form onSubmit={handleSubmit} className="flex items-end space-x-3">
         <div className="flex-1">
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={parentContentId ? "Add a sub-item..." : "Add a new item to the list..."}
+            placeholder={
+              contentType === 'js' 
+                ? "Enter JavaScript code..." 
+                : parentContentId 
+                  ? "Add a sub-item..." 
+                  : "Add a new item to the list..."
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             rows={1}
             style={{

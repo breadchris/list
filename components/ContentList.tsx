@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Content, contentRepository, Tag, SEOMetadata, SharingMetadata } from './ContentRepository';
 import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
+import { JsContentDisplay } from './JsContentDisplay';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -367,6 +368,33 @@ export const ContentList: React.FC<ContentListProps> = ({
                               metadata={item.metadata as SEOMetadata} 
                               onClick={() => handleContentClick(item)}
                             />
+                          </div>
+                          {isContentPublic(item) && (
+                            <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">
+                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        <TagDisplay tags={item.tags || []} />
+                        <p className="text-xs text-gray-500 mt-2">
+                          {formatRelativeTime(item.created_at)}
+                        </p>
+                      </div>
+                    ) : item.type === 'js' ? (
+                      <div>
+                        <div className="flex items-start space-x-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="mb-2">
+                              <div className="flex items-center space-x-2 mb-2">
+                                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                </svg>
+                                <span className="text-xs font-medium text-green-600 uppercase tracking-wide">JavaScript</span>
+                              </div>
+                              <JsContentDisplay code={item.data} maxLines={8} />
+                            </div>
                           </div>
                           {isContentPublic(item) && (
                             <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">

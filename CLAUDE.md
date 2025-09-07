@@ -144,3 +144,88 @@ useEffect(() => {
 - **Data corruption recovery** - Database inconsistencies, corrupt local storage
 
 Remember: If you're writing complex error handling for React state updates, you're probably solving the wrong problem.
+
+## JSON Naming Convention
+
+**CRITICAL**: Always use snake_case for JSON keys across all contexts
+
+### Scope of snake_case Usage
+
+All JSON-related keys must use snake_case convention:
+
+1. **JSON Files** - Configuration files, data files, seed data
+   ```json
+   {
+     "supabase_url": "https://example.supabase.co",
+     "api_key": "your_key_here",
+     "feature_flags": {
+       "enable_search": true,
+       "max_results": 50
+     }
+   }
+   ```
+
+2. **Database JSON/JSONB Columns** - PostgreSQL JSON fields
+   ```sql
+   INSERT INTO content (metadata) VALUES ('{"created_at": "2024-01-01", "user_preferences": {"theme": "dark"}}');
+   ```
+
+3. **Go Struct Tags** - JSON serialization in Go
+   ```go
+   type User struct {
+       UserID    string `json:"user_id"`
+       CreatedAt time.Time `json:"created_at"`
+       Settings  map[string]interface{} `json:"user_settings"`
+   }
+   ```
+
+4. **TypeScript Types** - API interfaces and data models
+   ```typescript
+   interface ContentItem {
+     content_id: string;
+     created_at: string;
+     user_metadata: {
+       last_modified: string;
+       view_count: number;
+     };
+   }
+   ```
+
+5. **API Request/Response Payloads** - All HTTP communication
+   ```json
+   {
+     "group_id": "abc123",
+     "invite_code": "xyz789",
+     "member_count": 5,
+     "created_at": "2024-01-01T00:00:00Z"
+   }
+   ```
+
+### Benefits of Consistent snake_case
+
+- **Database Alignment** - Matches PostgreSQL column naming conventions
+- **API Consistency** - Prevents confusion between frontend camelCase and backend snake_case
+- **Predictability** - Developers know what to expect across all JSON contexts
+- **Tool Compatibility** - Works well with database tools and API clients
+- **Migration Safety** - Consistent with existing database schema
+
+### Examples to Avoid
+
+❌ **Mixed conventions in the same context:**
+```json
+{
+  "userId": "123",           // camelCase
+  "created_at": "2024-01-01" // snake_case
+}
+```
+
+✅ **Consistent snake_case:**
+```json
+{
+  "user_id": "123",
+  "created_at": "2024-01-01"
+}
+```
+
+### Exception
+The only exception is when interfacing with external APIs that require camelCase - in these cases, transform at the boundary using proper serialization tags or mapping functions.

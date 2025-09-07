@@ -1,14 +1,21 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 	
 	"github.com/alexferrari88/gohn/pkg/gohn"
 	_ "github.com/lib/pq"
@@ -296,6 +303,20 @@ type HackerNewsArticle struct {
 	HNId  int    `json:"hn_id"`
 	Score int    `json:"score,omitempty"`
 	Author string `json:"author,omitempty"`
+}
+
+type IMDbTitle struct {
+	TitleID        string   `json:"title_id"`        // tconst
+	TitleType      string   `json:"title_type"`      // movie, tvseries, etc
+	PrimaryTitle   string   `json:"primary_title"`   // main title
+	OriginalTitle  string   `json:"original_title"`  // original language title
+	IsAdult        bool     `json:"is_adult"`        // adult content flag
+	StartYear      *int     `json:"start_year"`      // release year
+	EndYear        *int     `json:"end_year"`        // end year for TV series
+	RuntimeMinutes *int     `json:"runtime_minutes"` // duration in minutes
+	Genres         []string `json:"genres"`          // genre list
+	AverageRating  *float64 `json:"average_rating"`  // from ratings file
+	NumVotes       *int     `json:"num_votes"`       // vote count from ratings
 }
 
 func TestImportHackerNewsArticles(t *testing.T) {
@@ -615,4 +636,488 @@ func TestImportHackerNewsArticles(t *testing.T) {
 	t.Logf("User: %s (ID: %s)", userEmail, userID)
 	t.Logf("Tags applied: hackernews, import")
 	t.Log("✅ HackerNews import completed successfully!")
+}
+
+// downloadIMDbFile downloads an IMDb dataset file if it doesn't exist
+func downloadIMDbFile(filePath, url string) error {
+	// Check if file already exists
+	if _, err := os.Stat(filePath); err == nil {
+		return nil // File already exists
+	}
+
+	// Create the directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+
+	// Download the file
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	// Create the file
+	out, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer out.Close()
+
+	// Copy the data
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %v", err)
+	}
+
+	return nil
+}
+
+// parseIMDbTSV parses a gzipped TSV file and returns the records
+func parseIMDbTSV(filePath string) ([][]string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// Create gzip reader
+	gzReader, err := gzip.NewReader(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gzip reader: %v", err)
+	}
+	defer gzReader.Close()
+
+	// Create CSV reader for TSV (Tab-Separated Values)
+	csvReader := csv.NewReader(gzReader)
+	csvReader.Comma = '\t' // Tab delimiter
+	csvReader.LazyQuotes = true
+
+	// Read all records
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CSV: %v", err)
+	}
+
+	return records, nil
+}
+
+// parseIntField converts string to *int, handling '\N' null values
+func parseIntField(s string) *int {
+	if s == "" || s == "\\N" {
+		return nil
+	}
+	if val, err := strconv.Atoi(s); err == nil {
+		return &val
+	}
+	return nil
+}
+
+// parseFloatField converts string to *float64, handling '\N' null values
+func parseFloatField(s string) *float64 {
+	if s == "" || s == "\\N" {
+		return nil
+	}
+	if val, err := strconv.ParseFloat(s, 64); err == nil {
+		return &val
+	}
+	return nil
+}
+
+// parseGenres splits genre string into slice, handling '\N' null values
+func parseGenres(s string) []string {
+	if s == "" || s == "\\N" {
+		return []string{}
+	}
+	return strings.Split(s, ",")
+}
+
+func TestImportIMDbData(t *testing.T) {
+	// Load database configuration
+	dbURL, err := LoadDatabaseConfig("data/config.json")
+	if err != nil {
+		t.Fatalf("Failed to load database config: %v", err)
+	}
+
+	// Connect to database
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		t.Fatalf("Failed to ping database: %v", err)
+	}
+
+	t.Log("✅ Connected to database successfully")
+
+	// Define file paths and URLs
+	dataDir := "data/imdb"
+	titleBasicsFile := filepath.Join(dataDir, "title.basics.tsv.gz")
+	titleRatingsFile := filepath.Join(dataDir, "title.ratings.tsv.gz")
+	
+	titleBasicsURL := "https://datasets.imdbws.com/title.basics.tsv.gz"
+	titleRatingsURL := "https://datasets.imdbws.com/title.ratings.tsv.gz"
+
+	// Download files if they don't exist
+	t.Log("📥 Downloading IMDb datasets...")
+	if err := downloadIMDbFile(titleBasicsFile, titleBasicsURL); err != nil {
+		t.Fatalf("Failed to download title.basics.tsv.gz: %v", err)
+	}
+	
+	if err := downloadIMDbFile(titleRatingsFile, titleRatingsURL); err != nil {
+		t.Fatalf("Failed to download title.ratings.tsv.gz: %v", err)
+	}
+	
+	t.Log("✅ IMDb datasets ready")
+
+	// Parse title.basics.tsv.gz
+	t.Log("📖 Parsing title.basics.tsv.gz...")
+	titleRecords, err := parseIMDbTSV(titleBasicsFile)
+	if err != nil {
+		t.Fatalf("Failed to parse title.basics.tsv.gz: %v", err)
+	}
+	
+	if len(titleRecords) == 0 {
+		t.Fatal("No records found in title.basics.tsv.gz")
+	}
+	
+	t.Logf("✅ Parsed %d title records", len(titleRecords)-1) // -1 for header
+
+	// Parse title.ratings.tsv.gz
+	t.Log("📖 Parsing title.ratings.tsv.gz...")
+	ratingRecords, err := parseIMDbTSV(titleRatingsFile)
+	if err != nil {
+		t.Fatalf("Failed to parse title.ratings.tsv.gz: %v", err)
+	}
+	
+	t.Logf("✅ Parsed %d rating records", len(ratingRecords)-1) // -1 for header
+
+	// Build ratings map for fast lookup
+	ratings := make(map[string]struct {
+		averageRating *float64
+		numVotes      *int
+	})
+	
+	// Skip header (first row) and process ratings
+	for i, record := range ratingRecords[1:] {
+		if len(record) >= 3 {
+			titleID := record[0]
+			ratings[titleID] = struct {
+				averageRating *float64
+				numVotes      *int
+			}{
+				averageRating: parseFloatField(record[1]),
+				numVotes:      parseIntField(record[2]),
+			}
+		}
+		
+		// Progress logging for ratings
+		if (i+1)%100000 == 0 {
+			t.Logf("Progress: processed %d rating records", i+1)
+		}
+	}
+	
+	t.Logf("✅ Built ratings lookup table with %d entries", len(ratings))
+
+	// Start database transaction
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Failed to start transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	userEmail := "chris@breadchris.com"
+	
+	// Get or create user
+	var userID string
+	err = tx.QueryRow(`
+		UPDATE users 
+		SET username = $1 
+		WHERE username IS NULL 
+		RETURNING id
+	`, userEmail).Scan(&userID)
+	
+	if err == sql.ErrNoRows {
+		err = tx.QueryRow(`
+			SELECT id FROM users WHERE username = $1
+		`, userEmail).Scan(&userID)
+		
+		if err == sql.ErrNoRows {
+			err = tx.QueryRow(`
+				INSERT INTO users (id, username, created_at) 
+				VALUES (gen_random_uuid(), $1, NOW())
+				RETURNING id
+			`, userEmail).Scan(&userID)
+		}
+	}
+	
+	if err != nil {
+		t.Fatalf("Failed to get or create user: %v", err)
+	}
+	
+	t.Logf("✅ User ID: %s", userID)
+
+	// Create group for import
+	currentDate := time.Now().Format("2006-01-02")
+	groupName := fmt.Sprintf("imdb-import-%s", currentDate)
+	var groupID string
+	err = tx.QueryRow(`
+		INSERT INTO groups (id, name, created_by, created_at, join_code)
+		VALUES (gen_random_uuid(), $1, $2, NOW(), substr(md5(random()::text), 1, 8))
+		RETURNING id
+	`, groupName, userID).Scan(&groupID)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+	
+	t.Logf("✅ Created group: %s (ID: %s)", groupName, groupID)
+
+	// Add user to group as owner
+	_, err = tx.Exec(`
+		INSERT INTO group_memberships (id, user_id, group_id, role, created_at)
+		VALUES (gen_random_uuid(), $1, $2, 'owner', NOW())
+	`, userID, groupID)
+	if err != nil {
+		t.Fatalf("Failed to add user to group: %v", err)
+	}
+
+	// Create tags
+	var imdbTagID, importTagID string
+	
+	// Create imdb tag
+	err = tx.QueryRow(`
+		INSERT INTO tags (id, name, user_id, created_at)
+		VALUES (gen_random_uuid(), 'imdb', $1, NOW())
+		RETURNING id
+	`, userID).Scan(&imdbTagID)
+	if err != nil {
+		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+			err = tx.QueryRow(`
+				SELECT id FROM tags WHERE name = 'imdb' AND user_id = $1
+			`, userID).Scan(&imdbTagID)
+		}
+		if err != nil {
+			t.Fatalf("Failed to create or get imdb tag: %v", err)
+		}
+	}
+
+	// Create import tag
+	err = tx.QueryRow(`
+		INSERT INTO tags (id, name, user_id, created_at)
+		VALUES (gen_random_uuid(), 'import', $1, NOW())
+		RETURNING id
+	`, userID).Scan(&importTagID)
+	if err != nil {
+		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+			err = tx.QueryRow(`
+				SELECT id FROM tags WHERE name = 'import' AND user_id = $1
+			`, userID).Scan(&importTagID)
+		}
+		if err != nil {
+			t.Fatalf("Failed to create or get import tag: %v", err)
+		}
+	}
+	
+	t.Logf("✅ Tags created - imdb: %s, import: %s", imdbTagID, importTagID)
+
+	// Process title records and create IMDbTitle structs
+	var titles []IMDbTitle
+	const maxTitles = 2000 // Limit for testing
+	
+	t.Logf("🎬 Processing title records (limit: %d)...", maxTitles)
+	
+	// Skip header (first row) and process titles
+	for i, record := range titleRecords[1:] {
+		if len(titles) >= maxTitles {
+			break
+		}
+		
+		if len(record) < 9 {
+			continue // Skip incomplete records
+		}
+		
+		// Parse basic title data
+		titleID := record[0]
+		titleType := record[1]
+		primaryTitle := record[2]
+		originalTitle := record[3]
+		isAdult := record[4] == "1"
+		
+		// Skip adult content
+		if isAdult {
+			continue
+		}
+		
+		// Filter for movies and TV series only
+		if titleType != "movie" && titleType != "tvSeries" {
+			continue
+		}
+		
+		// Create IMDbTitle struct
+		title := IMDbTitle{
+			TitleID:       titleID,
+			TitleType:     titleType,
+			PrimaryTitle:  primaryTitle,
+			OriginalTitle: originalTitle,
+			IsAdult:       isAdult,
+			StartYear:     parseIntField(record[5]),
+			EndYear:       parseIntField(record[6]),
+			RuntimeMinutes: parseIntField(record[7]),
+			Genres:        parseGenres(record[8]),
+		}
+		
+		// Add ratings if available
+		if rating, exists := ratings[titleID]; exists {
+			title.AverageRating = rating.averageRating
+			title.NumVotes = rating.numVotes
+		}
+		
+		titles = append(titles, title)
+		
+		// Progress logging
+		if (i+1)%50000 == 0 {
+			t.Logf("Progress: processed %d title records, collected %d titles", i+1, len(titles))
+		}
+	}
+	
+	t.Logf("✅ Collected %d IMDb titles for import", len(titles))
+
+	if len(titles) == 0 {
+		t.Fatal("No suitable titles found for import")
+	}
+
+	// Create parent list content
+	listData := fmt.Sprintf("IMDb Titles Import - %d items", len(titles))
+	var parentContentID string
+	err = tx.QueryRow(`
+		INSERT INTO content (id, type, data, group_id, user_id, created_at, updated_at)
+		VALUES (gen_random_uuid(), 'list', $1, $2, $3, NOW(), NOW())
+		RETURNING id
+	`, listData, groupID, userID).Scan(&parentContentID)
+	if err != nil {
+		t.Fatalf("Failed to create parent list content: %v", err)
+	}
+	
+	t.Logf("✅ Created parent list: %s", parentContentID)
+
+	// Add tags to parent content
+	_, err = tx.Exec(`
+		INSERT INTO content_tags (content_id, tag_id, created_at)
+		VALUES ($1, $2, NOW()), ($1, $3, NOW())
+	`, parentContentID, imdbTagID, importTagID)
+	if err != nil {
+		t.Fatalf("Failed to add tags to parent content: %v", err)
+	}
+
+	// Insert all titles as child content items
+	t.Logf("📝 Inserting %d titles as child content items...", len(titles))
+	insertedCount := 0
+	
+	// Prepare statement for bulk insert
+	stmt, err := tx.Prepare(`
+		INSERT INTO content (id, type, data, group_id, user_id, parent_content_id, created_at, updated_at)
+		VALUES (gen_random_uuid(), 'movie', $1, $2, $3, $4, NOW(), NOW())
+	`)
+	if err != nil {
+		t.Fatalf("Failed to prepare statement: %v", err)
+	}
+	defer stmt.Close()
+
+	for i, title := range titles {
+		// Use primary title as the main data field
+		titleData := title.PrimaryTitle
+		
+		// If we have additional metadata, we could store it as JSON
+		// For now, let's use a simple format with title and metadata
+		if title.StartYear != nil || title.AverageRating != nil {
+			metadataJSON, err := json.Marshal(title)
+			if err == nil {
+				titleData = fmt.Sprintf("%s [%s]", title.PrimaryTitle, string(metadataJSON))
+			}
+		}
+		
+		_, err = stmt.Exec(titleData, groupID, userID, parentContentID)
+		if err != nil {
+			t.Logf("Warning: Failed to insert title %d (%s): %v", i+1, title.PrimaryTitle, err)
+			continue
+		}
+		insertedCount++
+		
+		// Progress logging
+		if (i+1)%500 == 0 {
+			t.Logf("Progress: %d/%d titles inserted", i+1, len(titles))
+		}
+	}
+	
+	t.Logf("✅ Successfully inserted %d/%d titles", insertedCount, len(titles))
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		t.Fatalf("Failed to commit transaction: %v", err)
+	}
+	
+	t.Log("✅ Transaction committed successfully")
+
+	// Verification
+	t.Log("🔍 Verifying import...")
+	
+	var verifyParentID, verifyData string
+	var childCount int
+	err = db.QueryRow(`
+		SELECT c.id, c.data, COUNT(child.id) as child_count
+		FROM content c
+		LEFT JOIN content child ON child.parent_content_id = c.id
+		WHERE c.id = $1 AND c.type = 'list'
+		GROUP BY c.id, c.data
+	`, parentContentID).Scan(&verifyParentID, &verifyData, &childCount)
+	if err != nil {
+		t.Fatalf("Failed to verify parent list: %v", err)
+	}
+	
+	t.Logf("✅ Parent list verified: %s (Children: %d)", verifyData, childCount)
+
+	// Sample some child titles
+	rows, err := db.Query(`
+		SELECT data FROM content 
+		WHERE parent_content_id = $1 AND type = 'movie'
+		ORDER BY created_at
+		LIMIT 5
+	`, parentContentID)
+	if err != nil {
+		t.Fatalf("Failed to query child items: %v", err)
+	}
+	defer rows.Close()
+
+	t.Log("Sample imported titles:")
+	for rows.Next() {
+		var titleData string
+		if err := rows.Scan(&titleData); err != nil {
+			continue
+		}
+		
+		// Extract just the title part (before any JSON metadata)
+		if idx := strings.Index(titleData, " ["); idx != -1 {
+			titleData = titleData[:idx]
+		}
+		
+		t.Logf("  - %s", titleData)
+	}
+
+	// Final summary
+	t.Log("\n=== IMDb Import Summary ===")
+	t.Logf("Total titles processed: %d", len(titles))
+	t.Logf("Successfully imported: %d", insertedCount)
+	t.Logf("Parent list ID: %s", parentContentID)
+	t.Logf("Group ID: %s", groupID)
+	t.Logf("Group name: %s", groupName)
+	t.Logf("User: %s (ID: %s)", userEmail, userID)
+	t.Logf("Tags applied: imdb, import")
+	t.Log("✅ IMDb import completed successfully!")
 }

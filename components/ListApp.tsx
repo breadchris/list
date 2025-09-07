@@ -5,6 +5,7 @@ import { UserAuth } from './UserAuth';
 import { GroupSelector } from './GroupSelector';
 import { ContentList } from './ContentList';
 import { ContentInput } from './ContentInput';
+import { JsEditorView } from './JsEditorView';
 import { AppSidebar } from './AppSidebar';
 import { FloatingActionButton } from './FloatingActionButton';
 import { WorkflowFAB } from './WorkflowFAB';
@@ -12,30 +13,37 @@ import { MicroGameOverlay } from './MicroGameOverlay';
 import { SEOProgressOverlay, SEOProgressItem } from './SEOProgressOverlay';
 import { SharingSettingsModal } from './SharingSettingsModal';
 import { GroupDropdown } from './GroupDropdown';
+import { AppSkeleton, HeaderSkeleton, ContentListSkeleton } from './SkeletonComponents';
 import { Group, Content, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
 import { useToast } from './ToastProvider';
 
+// Unified app loading states to prevent flashing
+type AppLoadingState = 'initializing' | 'authenticating' | 'loading-data' | 'ready' | 'error';
+
 export const ListApp: React.FC = () => {
+  // Unified app state to prevent flashing between loading states
+  const [appState, setAppState] = useState<AppLoadingState>('initializing');
   const [user, setUser] = useState<SupabaseUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [authChecked, setAuthChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Standard React state management - no defensive programming needed
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [newContent, setNewContent] = useState<Content | undefined>();
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
+  const [currentJsContent, setCurrentJsContent] = useState<Content | null>(null);
   const [navigationStack, setNavigationStack] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'Root'}]);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showInput, setShowInput] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupModalMode, setGroupModalMode] = useState<'create' | 'join'>('create');
 
-  // React Query hooks
-  const { data: groups = [], isLoading: groupsLoading, error: groupsError } = useGroupsQuery({ enabled: !!user });
+  // React Query hooks - only enable when we have user and app is ready for data loading
+  const { data: groups = [], isLoading: groupsLoading, error: groupsError } = useGroupsQuery({ 
+    enabled: !!user && (appState === 'loading-data' || appState === 'ready')
+  });
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
   const seoExtractionMutation = useSEOExtraction();
@@ -231,15 +239,50 @@ export const ListApp: React.FC = () => {
       onClick: handleBulkDelete
     }
   ];
-  
-  console.log('WorkflowActions initialized:', workflowActions.map(a => ({ id: a.id, name: a.name })));
 
-  // Initialize auth on mount
+  // Batched initialization to prevent flashing - combines auth + data loading
+  const initializeApp = async () => {
+    setAppState('authenticating');
+    
+    try {
+      // Step 1: Get authentication session
+      const session = await getFastSession();
+      
+      if (!session?.user) {
+        // No user - show auth screen
+        setAppState('ready');
+        return;
+      }
+
+      // Step 2: Set user and initialize profile
+      setUser(session.user);
+      setError(null);
+      
+      // Transition to data loading state
+      setAppState('loading-data');
+      
+      // Step 3: Initialize user profile and handle pending invites in parallel
+      await Promise.all([
+        handleUserInitialization(session.user.id),
+        handlePendingInvite()
+      ]);
+      
+      // Step 4: App is ready - groups will load via React Query
+      setAppState('ready');
+      
+    } catch (error) {
+      console.error('App initialization error:', error);
+      setError('Failed to initialize application');
+      setAppState('error');
+    }
+  };
+
+  // Initialize app on mount
   useEffect(() => {
-    initializeAuth();
+    initializeApp();
   }, []);
 
-  // Auth state listener - stable reference, no recreation cycles
+  // Auth state listener - handles sign in/out events
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event, session?.user?.id);
@@ -249,29 +292,48 @@ export const ListApp: React.FC = () => {
         return;
       }
 
-      // Defer all state updates to next event loop tick to avoid DOM timing conflicts
+      // Handle auth state changes
       setTimeout(async () => {
         try {
-          if (session?.user && session.user.id !== user?.id) {
-            setUser(session.user);
-            setError(null);
+          if (session?.user) {
+            // Check if this is a signup completion (new user signing in for first time)
+            const isSignupCompletion = event === 'SIGNED_IN' && !user;
             
-            if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-              await handleUserInitialization(session.user.id);
-              await handlePendingInvite();
+            if (isSignupCompletion) {
+              console.log('Signup completion detected - email confirmed');
+              
+              // Check if we're on an invite confirmation URL
+              const isInviteConfirmUrl = window.location.pathname.includes('/invite/') && window.location.pathname.endsWith('/confirm');
+              
+              if (isInviteConfirmUrl) {
+                console.log('Email confirmation on invite URL - letting URL handler process group join');
+                // Don't show toast here - URL handler will show appropriate messages
+              } else {
+                // Check if there's a pending invite to process (fallback method)
+                const pendingInviteCode = sessionStorage.getItem('pendingInviteCode');
+                if (pendingInviteCode) {
+                  console.log('Processing pending invite after signup completion');
+                  toast.success('Email confirmed!', 'Welcome! Joining your group now...');
+                } else {
+                  toast.success('Email confirmed!', 'Welcome to List App!');
+                }
+              }
             }
+            
+            // User signed in - re-run full initialization
+            await initializeApp();
           } else if (!session?.user && event === 'SIGNED_OUT') {
+            // User signed out - reset state
             setUser(null);
             setCurrentGroup(null);
             setError(null);
+            setAppState('ready');
             sessionStorage.removeItem('pendingInviteCode');
           }
-          
-          setAuthChecked(true);
-          setLoading(false);
         } catch (error) {
           console.error('Auth state change error:', error);
           setError('Authentication error occurred');
+          setAppState('error');
         }
       }, 0);
     });
@@ -279,22 +341,7 @@ export const ListApp: React.FC = () => {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
-
-  const initializeAuth = async () => {
-    setLoading(false);
-    setAuthChecked(true);
-    
-    try {
-      const session = await getFastSession();
-      if (session?.user) {
-        setUser(session.user);
-        handleUserInitialization(session.user.id).catch(console.error);
-      }
-    } catch (error) {
-      console.error('Auth initialization error:', error);
-    }
-  };
+  }, []); // Removed user dependency to prevent loop
 
   const handleUserInitialization = async (userId: string) => {
     setError(null);
@@ -321,7 +368,13 @@ export const ListApp: React.FC = () => {
         window.history.replaceState(null, '', `/group/${group.id}`);
       }, 0);
       
-      toast.success('Joined group!', `Welcome to "${group.name}".`);
+      // Show different messages based on whether this was a signup completion
+      const isSignupCompletion = !user; // If no current user, this is likely signup completion
+      if (isSignupCompletion) {
+        toast.success('Welcome! You\'ve joined the group', `Successfully joined "${group.name}" after confirming your email.`);
+      } else {
+        toast.success('Joined group!', `Welcome to "${group.name}".`);
+      }
     } catch (error) {
       console.error('Error joining group after auth:', error);
       sessionStorage.removeItem('pendingInviteCode');
@@ -415,7 +468,7 @@ export const ListApp: React.FC = () => {
   };
 
   const handleNavigate = async (parentId: string | null) => {
-    if (parentId === currentParentId) return;
+    if (parentId === currentParentId && !currentJsContent) return;
     
     // Close input when navigating
     setShowInput(false);
@@ -423,6 +476,7 @@ export const ListApp: React.FC = () => {
     if (parentId === null) {
       // Navigate to root
       setCurrentParentId(null);
+      setCurrentJsContent(null);
       setNavigationStack([{id: null, name: 'Root'}]);
       // Update URL to group root
       if (currentGroup) {
@@ -433,10 +487,23 @@ export const ListApp: React.FC = () => {
         // Get the content item to navigate to
         const parentContent = await contentRepository.getContentById(parentId);
         if (parentContent) {
-          setCurrentParentId(parentId);
+          // Check if this is JS content - if so, show the JS editor view
+          if (parentContent.type === 'js') {
+            setCurrentJsContent(parentContent);
+            setCurrentParentId(parentId);
+          } else {
+            // Regular content navigation
+            setCurrentJsContent(null);
+            setCurrentParentId(parentId);
+          }
+          
           // Add to navigation stack
-          const newStack = [...navigationStack, {id: parentId, name: parentContent.data.substring(0, 30)}];
+          const displayName = parentContent.type === 'js' 
+            ? `JS: ${parentContent.data.substring(0, 20)}...`
+            : parentContent.data.substring(0, 30);
+          const newStack = [...navigationStack, {id: parentId, name: displayName}];
           setNavigationStack(newStack);
+          
           // Update URL to new pattern
           if (currentGroup) {
             window.history.pushState(null, '', `/group/${currentGroup.id}/content/${parentId}`);
@@ -479,6 +546,7 @@ export const ListApp: React.FC = () => {
   useEffect(() => {
     if (currentGroup) {
       setCurrentParentId(null);
+      setCurrentJsContent(null);
       setNavigationStack([{id: null, name: 'Root'}]);
       setShowInput(false); // Close input when switching groups
       // Clear search
@@ -489,16 +557,54 @@ export const ListApp: React.FC = () => {
       // Set URL to new group without content path
       window.history.pushState(null, '', `/group/${currentGroup.id}`);
     }
-  }, [currentGroup]);
+  }, [currentGroup, contentSelection]);
 
   // Handle URL navigation on page load and browser navigation
   useEffect(() => {
     const handleInitialNavigation = async () => {
       const pathname = window.location.pathname;
       
-      // Check for invite URL pattern: /invite/<code>
+      // Check for invite URL patterns: /invite/<code> or /invite/<code>/confirm
       const inviteMatch = pathname.match(/^\/invite\/([^\/]+)$/);
-      if (inviteMatch) {
+      const inviteConfirmMatch = pathname.match(/^\/invite\/([^\/]+)\/confirm$/);
+      
+      if (inviteConfirmMatch) {
+        // This is an email confirmation with invite code
+        const [, joinCode] = inviteConfirmMatch;
+        
+        console.log('Email confirmation with invite detected:', joinCode);
+        
+        // User just confirmed their email and should join the group
+        if (!user) {
+          console.log('No user yet, waiting for auth state change to complete');
+          // Store the invite code for when auth completes
+          sessionStorage.setItem('pendingInviteCode', joinCode);
+          return;
+        }
+        
+        // User is authenticated after email confirmation, join the group
+        try {
+          setError(null);
+          toast.success('Email confirmed!', 'Joining your group now...');
+          
+          const group = await joinGroupMutation.mutateAsync(joinCode);
+          setCurrentGroup(group);
+          
+          // Clear the URL and redirect to clean group URL
+          window.history.replaceState(null, '', `/group/${group.id}`);
+          
+          // Show success message
+          toast.success('Welcome! You\'ve joined the group', `Successfully joined "${group.name}" after confirming your email.`);
+          return;
+        } catch (error) {
+          console.error('Error joining group after email confirmation:', error);
+          setError('Failed to join group after email confirmation. The invite code may be invalid or expired.');
+          // Redirect to root on error
+          window.history.replaceState(null, '', '/');
+          return;
+        }
+      } else if (inviteMatch) {
+        // Regular invite URL (not email confirmation)
         const [, joinCode] = inviteMatch;
         
         // If user is not authenticated, save invite code and show auth
@@ -564,7 +670,7 @@ export const ListApp: React.FC = () => {
     };
 
     // Run navigation handling for authenticated users
-    // For invite URLs, we don't need to wait for currentGroup
+    // For invite URLs (including confirmation URLs), we don't need to wait for currentGroup
     // For regular group URLs, we need groups to be loaded
     if (user && (window.location.pathname.startsWith('/invite/') || (currentGroup && groups.length > 0))) {
       handleInitialNavigation();
@@ -579,33 +685,30 @@ export const ListApp: React.FC = () => {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [currentGroup, groups, user, joinGroupMutation]);
+  }, [currentGroup, groups, user]); // Removed joinGroupMutation to prevent loop
 
-  // Only show loading for invite joining, never block for auth check
-  if (joinGroupMutation.isPending && window.location.pathname.startsWith('/invite/')) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-gray-600">Joining group...</p>
-        </div>
-      </div>
-    );
+  // Show skeleton during app initialization and authentication
+  if (appState === 'initializing' || appState === 'authenticating') {
+    return <AppSkeleton />;
+  }
+
+  // Show skeleton during data loading (when user is authenticated but loading groups)
+  if (appState === 'loading-data') {
+    return <AppSkeleton />;
   }
 
   // Show error state with retry option
-  if (error && !user) {
+  if (appState === 'error') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md px-4">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-semibold text-red-800 mb-2">Connection Error</h2>
-            <p className="text-red-600 mb-4">{error}</p>
+            <p className="text-red-600 mb-4">{error || 'Failed to initialize application'}</p>
             <button
               onClick={() => {
                 setError(null);
-                setLoading(true);
-                initializeAuth();
+                initializeApp();
               }}
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
             >
@@ -617,12 +720,18 @@ export const ListApp: React.FC = () => {
     );
   }
 
+  // Show auth screen if no user (appState is 'ready' but no user)
   if (!user) {
     return <UserAuth onAuthSuccess={() => {}} />;
   }
 
+  // Show skeleton while joining group via invite
+  if (joinGroupMutation.isPending && window.location.pathname.startsWith('/invite/')) {
+    return <AppSkeleton />;
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50 flex flex-col transition-all duration-200 ease-in-out">
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-3">
@@ -749,7 +858,7 @@ export const ListApp: React.FC = () => {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm">
+      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out">
         {/* Breadcrumb Navigation */}
         {currentGroup && navigationStack.length > 1 && (
           <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2">
@@ -842,25 +951,43 @@ export const ListApp: React.FC = () => {
           </div>
         )}
 
-        {/* FAB Content Input */}
-        <ContentInput
-          groupId={currentGroup?.id || ''}
-          parentContentId={currentParentId}
-          onContentAdded={handleContentAdded}
-          isVisible={showInput}
-          onClose={handleInputClose}
-        />
-
-        {/* Content List */}
-        <ContentList
-          groupId={currentGroup?.id || ''}
-          newContent={newContent}
-          parentContentId={currentParentId}
-          onNavigate={handleNavigate}
-          searchQuery={searchQuery}
-          isSearching={isSearching}
-          selection={contentSelection}
-        />
+        {/* Content List or JS Editor View */}
+        {currentJsContent ? (
+          <JsEditorView
+            jsContent={currentJsContent}
+            groupId={currentGroup?.id || ''}
+            onClose={() => handleNavigate(null)}
+            onNavigate={handleNavigate}
+            searchQuery={searchQuery}
+            isSearching={isSearching}
+            selection={contentSelection}
+            newContent={newContent}
+            onContentAdded={handleContentAdded}
+            showInput={showInput}
+            onInputClose={handleInputClose}
+          />
+        ) : (
+          <>
+            {/* FAB Content Input - Only show for regular content view */}
+            <ContentInput
+              groupId={currentGroup?.id || ''}
+              parentContentId={currentParentId}
+              onContentAdded={handleContentAdded}
+              isVisible={showInput}
+              onClose={handleInputClose}
+            />
+            
+            <ContentList
+              groupId={currentGroup?.id || ''}
+              newContent={newContent}
+              parentContentId={currentParentId}
+              onNavigate={handleNavigate}
+              searchQuery={searchQuery}
+              isSearching={isSearching}
+              selection={contentSelection}
+            />
+          </>
+        )}
       </div>
 
       {/* Floating Action Button */}
@@ -871,15 +998,7 @@ export const ListApp: React.FC = () => {
 
       {/* Workflow FAB for selected items */}
       <WorkflowFAB
-        isVisible={(() => {
-          const isVisible = contentSelection.isSelectionMode && contentSelection.selectedCount > 0;
-          console.log('WorkflowFAB visibility check:', {
-            isSelectionMode: contentSelection.isSelectionMode,
-            selectedCount: contentSelection.selectedCount,
-            isVisible
-          });
-          return isVisible;
-        })()}
+        isVisible={contentSelection.isSelectionMode && contentSelection.selectedCount > 0}
         actions={workflowActions}
         selectedCount={contentSelection.selectedCount}
       />

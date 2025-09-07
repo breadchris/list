@@ -64,6 +64,14 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   }
 });
 
+// Expose globally for iOS OAuth and JavaScript execution
+if (typeof window !== 'undefined') {
+  (window as any).supabase = supabase;
+  (window as any).createClient = createClient;
+  (window as any).SUPABASE_URL = SUPABASE_URL;
+  (window as any).SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
+}
+
 // For future extensibility: function to create a client with runtime config
 export const createSupabaseClientWithConfig = async () => {
   const config = await getSupabaseConfig();
@@ -90,10 +98,25 @@ export const createSupabaseClientWithConfig = async () => {
 export const signInWithGoogle = async () => {
   console.log("🔍 SupabaseClient: Starting Google OAuth sign in...");
   try {
+    // Check if we're in iOS app (has webkit message handlers)
+    const isIOSApp = typeof window.webkit !== 'undefined' && 
+                     window.webkit.messageHandlers && 
+                     window.webkit.messageHandlers.authHandler;
+    
+    let redirectTo: string;
+    if (isIOSApp) {
+      redirectTo = 'list://auth/success';
+    } else {
+      // For web browsers, use the current origin
+      redirectTo = window.location.origin;
+    }
+    
+    console.log("🔧 SupabaseClient: Using redirect URL:", redirectTo);
+    
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: redirectTo
       }
     });
     

@@ -12,6 +12,8 @@ export const UserAuth: React.FC<UserAuthProps> = ({ onAuthSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+  const [pendingEmailConfirmation, setPendingEmailConfirmation] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
 
   // Check for pending invite code
   useEffect(() => {
@@ -31,15 +33,27 @@ export const UserAuth: React.FC<UserAuthProps> = ({ onAuthSuccess }) => {
           password,
         });
         if (error) throw error;
+        onAuthSuccess();
       } else {
+        // Prepare signup options
+        const signupOptions: any = {};
+        
+        if (pendingInvite) {
+          // Include invite code in the confirmation URL so it's embedded in the email
+          signupOptions.emailRedirectTo = `${window.location.origin}/invite/${pendingInvite}/confirm`;
+        }
+        
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          options: signupOptions
         });
         if (error) throw error;
+        
+        // After successful signup, show email confirmation UI instead of calling onAuthSuccess
+        setSignupEmail(email);
+        setPendingEmailConfirmation(true);
       }
-      
-      onAuthSuccess();
     } catch (error: any) {
       setError(error.message);
     } finally {
@@ -53,11 +67,145 @@ export const UserAuth: React.FC<UserAuthProps> = ({ onAuthSuccess }) => {
 
     try {
       await signInWithGoogle();
+      // OAuth redirects away from page, so loading state will reset
+      // No need to call onAuthSuccess here - auth state change will handle it
     } catch (error: any) {
       setError(error.message);
       setLoading(false);
     }
   };
+
+  const handleResendConfirmation = async () => {
+    if (!signupEmail) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: signupEmail,
+      });
+      if (error) throw error;
+      
+      // Show success feedback without error state
+      console.log('Confirmation email resent successfully');
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getEmailProviderLink = (email: string) => {
+    const domain = email.split('@')[1]?.toLowerCase();
+    const providers = {
+      'gmail.com': 'https://mail.google.com',
+      'outlook.com': 'https://outlook.live.com',
+      'hotmail.com': 'https://outlook.live.com',
+      'yahoo.com': 'https://mail.yahoo.com',
+      'icloud.com': 'https://www.icloud.com/mail'
+    };
+    return providers[domain as keyof typeof providers] || null;
+  };
+
+  // If showing email confirmation UI, render that instead of auth form
+  if (pendingEmailConfirmation) {
+    const emailProvider = getEmailProviderLink(signupEmail);
+    
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8">
+          <div className="text-center">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100">
+              <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+              Check your email
+            </h2>
+            <p className="mt-2 text-center text-sm text-gray-600">
+              We sent a confirmation link to
+            </p>
+            <p className="font-medium text-gray-900">{signupEmail}</p>
+          </div>
+
+          {pendingInvite && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 119.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <div>
+                  <span className="text-sm text-blue-900 font-medium">
+                    You'll join the group after confirming your email
+                  </span>
+                  <p className="text-xs text-blue-700 mt-1">
+                    The confirmation email includes your group invitation. Click the link to complete signup and automatically join the group.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600">
+                <p className="mb-3">Click the confirmation link in the email to complete your signup.</p>
+                
+                {emailProvider ? (
+                  <div className="mb-4">
+                    <a
+                      href={emailProvider}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-4 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Open Email
+                    </a>
+                  </div>
+                ) : null}
+                
+                <p className="text-xs text-gray-500 mb-3">
+                  Can't find the email? Check your spam folder or try resending.
+                </p>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleResendConfirmation}
+                  disabled={loading}
+                  className="flex-1 py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Sending...' : 'Resend Email'}
+                </button>
+                <button
+                  onClick={() => {
+                    setPendingEmailConfirmation(false);
+                    setSignupEmail('');
+                    setError(null);
+                  }}
+                  className="flex-1 py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Back to Login
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -67,7 +215,7 @@ export const UserAuth: React.FC<UserAuthProps> = ({ onAuthSuccess }) => {
             {isLogin ? 'Sign in to your account' : 'Create new account'}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            {pendingInvite ? 'Sign in to join the group' : 'Welcome to List App'}
+            {pendingInvite ? (isLogin ? 'Sign in to join the group' : 'Create account to join the group') : 'Welcome to List App'}
           </p>
           {pendingInvite && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">

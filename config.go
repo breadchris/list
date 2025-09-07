@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -64,7 +65,13 @@ func LoadDatabaseConfig(configPath string) (string, error) {
 	}
 
 	// Convert Supabase URL to PostgreSQL database URL
-	// This is a simplified conversion - in production you'd need proper database credentials
-	dbURL := config.SupabaseURL + "/rest/v1/"
+	// Extract the project ID from the Supabase URL
+	// Example: https://zazsrepfnamdmibcyenx.supabase.co -> zazsrepfnamdmibcyenx
+	url := strings.TrimPrefix(config.SupabaseURL, "https://")
+	url = strings.TrimPrefix(url, "http://")
+	projectID := strings.Split(url, ".")[0]
+	
+	// Construct the PostgreSQL connection string for Supabase
+	dbURL := fmt.Sprintf("postgresql://postgres:postgres@db.%s.supabase.co:5432/postgres?sslmode=require", projectID)
 	return dbURL, nil
 }

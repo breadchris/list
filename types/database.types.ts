@@ -67,6 +67,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "content_parent_content_id_fkey"
+            columns: ["parent_content_id"]
+            isOneToOne: false
+            referencedRelation: "public_content"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "content_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -97,6 +104,13 @@ export type Database = {
             columns: ["content_id"]
             isOneToOne: false
             referencedRelation: "content"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_tags_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "public_content"
             referencedColumns: ["id"]
           },
           {
@@ -231,7 +245,39 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      public_content: {
+        Row: {
+          created_at: string | null
+          data: string | null
+          id: string | null
+          metadata: Json | null
+          shared_at: string | null
+          shared_by: string | null
+          type: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          data?: string | null
+          id?: string | null
+          metadata?: Json | null
+          shared_at?: never
+          shared_by?: never
+          type?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          data?: string | null
+          id?: string | null
+          metadata?: Json | null
+          shared_at?: never
+          shared_by?: never
+          type?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       extract_urls: {
@@ -265,6 +311,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      get_public_content_url: {
+        Args: { content_id: string }
+        Returns: string
+      }
       gtrgm_compress: {
         Args: { "": unknown }
         Returns: unknown
@@ -288,6 +338,10 @@ export type Database = {
       is_group_creator: {
         Args: { group_uuid: string; user_uuid: string }
         Returns: boolean
+      }
+      join_group_safe: {
+        Args: { p_join_code: string; p_user_id?: string }
+        Returns: Json
       }
       search_content: {
         Args: {
@@ -351,6 +405,10 @@ export type Database = {
           updated_at: string
           user_id: string
         }[]
+      }
+      toggle_content_sharing: {
+        Args: { content_id: string; is_public: boolean; user_id: string }
+        Returns: Json
       }
       unaccent: {
         Args: { "": string }

@@ -24,14 +24,88 @@ class ShareViewController: SLComposeServiceViewController {
     override func didSelectPost() {
         // This is called after the user selects Post. Do the upload of contentText and/or NSExtensionContext attachments.
         
-        // First, get the session token from Keychain  
-        guard let sessionToken = getSessionFromKeychain() else {
+        // First, get the session token from shared container or API key from Keychain  
+        var sessionToken: String?
+        
+        print("🔍 ShareExtension: Starting authentication lookup...")
+        
+        // Try to get Supabase access token from shared container first
+        if let sharedContainer = UserDefaults(suiteName: "group.com.breadchris.share") {
+            print("✅ ShareExtension: Shared container accessible")
+            
+            // Force refresh from disk before reading
+            sharedContainer.synchronize()
+            print("🔄 ShareExtension: Forced synchronization")
+            
+            // Try up to 3 times with small delays for process synchronization
+            var accessToken: String?
+            var refreshToken: String?
+            var userId: String?
+            var apiKey: String?
+            var authTimestamp: Any?
+            
+            for attempt in 1...3 {
+                print("🔍 ShareExtension: Attempt \(attempt)/3 - Reading shared container...")
+                
+                accessToken = sharedContainer.string(forKey: "supabase_access_token")
+                refreshToken = sharedContainer.string(forKey: "supabase_refresh_token")
+                userId = sharedContainer.string(forKey: "supabase_user_id")
+                apiKey = sharedContainer.string(forKey: "api_key")
+                authTimestamp = sharedContainer.object(forKey: "auth_timestamp")
+                
+                // If we found any auth data, break out of retry loop
+                if accessToken != nil || apiKey != nil {
+                    print("✅ ShareExtension: Found auth data on attempt \(attempt)")
+                    break
+                }
+                
+                // Wait briefly and force another sync before next attempt
+                if attempt < 3 {
+                    print("⏳ ShareExtension: No data found, waiting 0.5s before retry...")
+                    Thread.sleep(forTimeInterval: 0.5)
+                    sharedContainer.synchronize()
+                }
+            }
+            
+            print("📊 ShareExtension: Final shared container contents:")
+            print("  - supabase_access_token: \(accessToken?.prefix(20) ?? "nil")...")
+            print("  - supabase_refresh_token: \(refreshToken?.prefix(20) ?? "nil")...")
+            print("  - supabase_user_id: \(userId ?? "nil")")
+            print("  - api_key: \(apiKey?.prefix(20) ?? "nil")...")
+            print("  - auth_timestamp: \(authTimestamp ?? "nil")")
+            
+            if let accessToken = accessToken {
+                sessionToken = accessToken
+                print("✅ ShareExtension: Using Supabase access token")
+            } else if let apiKey = apiKey {
+                sessionToken = apiKey
+                print("✅ ShareExtension: Using API key from shared container")
+            }
+        } else {
+            print("❌ ShareExtension: Failed to access shared container")
+        }
+        
+        // Fallback to API key from Keychain
+        if sessionToken == nil {
+            print("🔑 ShareExtension: Checking Keychain for API key...")
+            if let apiKey = getAPIKeyFromKeychain() {
+                sessionToken = apiKey
+                print("✅ ShareExtension: Found API key in Keychain: \(apiKey.prefix(20))...")
+            } else {
+                print("❌ ShareExtension: No API key found in Keychain")
+            }
+        }
+        
+        guard let token = sessionToken else {
+            print("❌ ShareExtension: No authentication found anywhere")
             self.showError("Please open the main app and log in first to enable sharing.")
             return
         }
         
+        print("🎯 ShareExtension: Using token: \(token.prefix(20))...")
+        
         // Get default group first, then process the shared content
-        getDefaultGroup(session: sessionToken) { [weak self] groupID in
+        getDefaultGroup(session: token) { [weak self] groupID in
             guard let self = self else { return }
             
             self.defaultGroupID = groupID
@@ -42,7 +116,7 @@ class ShareViewController: SLComposeServiceViewController {
                 if itemProvider.hasItemConformingToTypeIdentifier("public.url") {
                     itemProvider.loadItem(forTypeIdentifier: "public.url", options: nil) { (url, error) in
                         if let shareURL = url as? URL {
-                            self.sendToSupabase(url: shareURL, session: sessionToken)
+                            self.sendToSupabase(url: shareURL, session: token)
                         } else {
                             DispatchQueue.main.async {
                                 self.showError("Failed to get URL from shared content")
@@ -52,7 +126,7 @@ class ShareViewController: SLComposeServiceViewController {
                 } else if itemProvider.hasItemConformingToTypeIdentifier("public.plain-text") {
                     itemProvider.loadItem(forTypeIdentifier: "public.plain-text", options: nil) { (text, error) in
                         if let sharedText = text as? String {
-                            self.sendTextToSupabase(text: sharedText, session: sessionToken)
+                            self.sendTextToSupabase(text: sharedText, session: token)
                         } else {
                             DispatchQueue.main.async {
                                 self.showError("Failed to get text from shared content")
@@ -68,9 +142,9 @@ class ShareViewController: SLComposeServiceViewController {
         }
     }
     
-    private func getSessionFromKeychain() -> String? {
+    private func getAPIKeyFromKeychain() -> String? {
         let service = "list.app"
-        let account = "supabase_session"
+        let account = "api_key"
         
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
