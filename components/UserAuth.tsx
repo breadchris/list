@@ -40,7 +40,7 @@ export const UserAuth: React.FC<UserAuthProps> = ({ onAuthSuccess }) => {
         
         if (pendingInvite) {
           // Include invite code in the confirmation URL so it's embedded in the email
-          signupOptions.emailRedirectTo = `${window.location.origin}/invite/${pendingInvite}/confirm`;
+          signupOptions.emailRedirectTo = `${window.location.origin}/invite/${pendingInvite}`;
         }
         
         const { error } = await supabase.auth.signUp({
@@ -142,7 +142,7 @@ export const UserAuth: React.FC<UserAuthProps> = ({ onAuthSuccess }) => {
                     You'll join the group after confirming your email
                   </span>
                   <p className="text-xs text-blue-700 mt-1">
-                    The confirmation email includes your group invitation. Click the link to complete signup and automatically join the group.
+                    Click the confirmation link in your email to complete signup and automatically join the group.
                   </p>
                 </div>
               </div>

@@ -8,6 +8,7 @@ import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentM
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from '../hooks/queryKeys';
 import { ContentSelectionState } from '../hooks/useContentSelection';
+import { ContentListSkeleton } from './SkeletonComponents';
 
 interface ContentListProps {
   groupId: string;
@@ -409,6 +410,42 @@ export const ContentList: React.FC<ContentListProps> = ({
                           {formatRelativeTime(item.created_at)}
                         </p>
                       </div>
+                    ) : item.type === 'prompt' ? (
+                      <div>
+                        <div className="flex items-start space-x-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="mb-2">
+                              <div className="flex items-center space-x-2 mb-2">
+                                <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                                </svg>
+                                <span className="text-xs font-medium text-purple-600 uppercase tracking-wide">AI Prompt</span>
+                                {item.metadata?.generated_count && (
+                                  <span className="text-xs text-gray-500">
+                                    ({item.metadata.generated_count} items generated)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                                <p className="text-sm text-purple-800 whitespace-pre-wrap break-words">
+                                  {item.data}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          {isContentPublic(item) && (
+                            <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">
+                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        <TagDisplay tags={item.tags || []} />
+                        <p className="text-xs text-gray-500 mt-2">
+                          {formatRelativeTime(item.created_at)}
+                        </p>
+                      </div>
                     ) : (
                       <div>
                         <div className="flex items-start space-x-2">
@@ -454,14 +491,9 @@ export const ContentList: React.FC<ContentListProps> = ({
               );
             })}
             
-            {/* Show different loading states */}
+            {/* Show skeleton loading for initial content load */}
             {currentLoading && (
-              <div className="flex justify-center py-8">
-                <div className="text-center">
-                  <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-                  <p className="text-sm text-gray-600">Loading content...</p>
-                </div>
-              </div>
+              <ContentListSkeleton />
             )}
             
             {/* Background refresh indicator (less prominent) */}

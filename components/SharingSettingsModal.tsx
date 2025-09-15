@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Content, contentRepository, SharingResponse } from './ContentRepository';
 import { useToast } from './ToastProvider';
+import { SharingSettingsSkeleton } from './SkeletonComponents';
 
 interface SharingSettingsModalProps {
   isVisible: boolean;
@@ -139,9 +140,7 @@ export const SharingSettingsModal: React.FC<SharingSettingsModalProps> = ({
           </div>
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-            </div>
+            <SharingSettingsSkeleton />
           ) : !canModify ? (
             <div className="text-center py-4">
               <div className="text-gray-500 text-sm">

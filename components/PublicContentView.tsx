@@ -1,34 +1,27 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Content, contentRepository } from './ContentRepository';
 import { SEOCard } from './SEOCard';
 import { LinkifiedText } from './LinkifiedText';
 import { UserAuth } from './UserAuth';
+import { ContentListSkeleton } from './SkeletonComponents';
 
 export const PublicContentView: React.FC = () => {
-  const [contentId, setContentId] = useState<string | null>(null);
+  const { contentId } = useParams<{ contentId: string }>();
+  const navigate = useNavigate();
   const [content, setContent] = useState<Content | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
 
   useEffect(() => {
-    // Extract contentId from URL path /public/content/{contentId}
-    const extractContentId = () => {
-      const pathname = window.location.pathname;
-      const match = pathname.match(/^\/public\/content\/([^\/]+)$/);
-      return match ? match[1] : null;
-    };
-
-    const id = extractContentId();
-    setContentId(id);
-    
-    if (id) {
-      loadPublicContent(id);
+    if (contentId) {
+      loadPublicContent(contentId);
     } else {
       setError('Invalid public content URL');
       setIsLoading(false);
     }
-  }, []);
+  }, [contentId]);
 
   const loadPublicContent = async (id: string) => {
     setIsLoading(true);
@@ -73,10 +66,20 @@ export const PublicContentView: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading content...</p>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Simple Header */}
+        <header className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <h1 className="text-lg font-semibold text-gray-900">Public Content</h1>
+              </div>
+            </div>
+          </div>
+        </header>
+        
+        <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm">
+          <ContentListSkeleton />
         </div>
       </div>
     );
@@ -127,8 +130,8 @@ export const PublicContentView: React.FC = () => {
               <UserAuth 
                 onAuthSuccess={() => {
                   setShowAuth(false);
-                  // Redirect to main app
-                  window.location.href = '/';
+                  // Navigate to main app using React Router
+                  navigate('/');
                 }}
               />
             </div>
@@ -247,8 +250,8 @@ export const PublicContentView: React.FC = () => {
             <UserAuth 
               onAuthSuccess={() => {
                 setShowAuth(false);
-                // Redirect to main app
-                window.location.href = '/';
+                // Navigate to main app using React Router
+                navigate('/');
               }}
             />
           </div>

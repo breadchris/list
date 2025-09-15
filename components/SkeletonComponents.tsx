@@ -115,6 +115,35 @@ export const SelectionHeaderSkeleton: React.FC = () => (
   </div>
 );
 
+// Sharing settings modal skeleton
+export const SharingSettingsSkeleton: React.FC = () => (
+  <div className="space-y-6 py-4">
+    {/* Public Access Toggle Skeleton */}
+    <div className="flex items-center justify-between">
+      <div className="space-y-2">
+        <SkeletonPulse className="h-4 w-24" />
+        <SkeletonPulse className="h-3 w-48" />
+      </div>
+      <SkeletonPulse className="h-6 w-11 rounded-full" />
+    </div>
+    
+    {/* Public Link Section Skeleton */}
+    <div className="space-y-2">
+      <SkeletonPulse className="h-4 w-20" />
+      <div className="flex items-center space-x-2">
+        <SkeletonPulse className="h-10 flex-1 rounded-lg" />
+        <SkeletonPulse className="h-10 w-20 rounded-lg" />
+      </div>
+    </div>
+    
+    {/* Note Section Skeleton */}
+    <div className="space-y-2">
+      <SkeletonPulse className="h-3 w-full" />
+      <SkeletonPulse className="h-3 w-3/4" />
+    </div>
+  </div>
+);
+
 // Loading transition component for smooth skeleton-to-content swapping
 export const LoadingTransition: React.FC<{ 
   isLoading: boolean; 

@@ -14,6 +14,19 @@ func createHTTPServer() *http.ServeMux {
 		serveReactApp(w, r, "index.tsx", "App")
 	})
 
+	// Legal pages
+	mux.HandleFunc("/terms-of-service", func(w http.ResponseWriter, r *http.Request) {
+		serveReactApp(w, r, "index.tsx", "App")
+	})
+
+	mux.HandleFunc("/privacy-policy", func(w http.ResponseWriter, r *http.Request) {
+		serveReactApp(w, r, "index.tsx", "App")
+	})
+
+	mux.HandleFunc("/refund-policy", func(w http.ResponseWriter, r *http.Request) {
+		serveReactApp(w, r, "index.tsx", "App")
+	})
+
 	// Component renderer endpoint for debugging
 	mux.HandleFunc("/render/", handleRenderComponent)
 

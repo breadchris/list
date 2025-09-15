@@ -85,7 +85,7 @@ func serveCommand(c *cli.Context) error {
 	if port != "3002" {
 		config.Port = port
 	}
-	
+
 	// Override Supabase config if provided
 	if supabaseURL != "" {
 		config.SupabaseURL = supabaseURL
@@ -93,7 +93,7 @@ func serveCommand(c *cli.Context) error {
 	if supabaseKey != "" {
 		config.SupabaseKey = supabaseKey
 	}
-	
+
 	// Set global config for HTTP handlers
 	currentConfig = config
 
@@ -396,6 +396,7 @@ func buildWithEsbuild(inputPath, outputPath string, writeToDisk bool) api.BuildR
 		JSX:              api.JSXAutomatic,
 		JSXImportSource:  "react",
 		LogLevel:         api.LogLevelInfo,
+		Sourcemap:        api.SourceMapInline,
 		External:         []string{},
 		TsconfigRaw: `{
 			"compilerOptions": {
@@ -408,6 +409,7 @@ func buildWithEsbuild(inputPath, outputPath string, writeToDisk bool) api.BuildR
 				"allowJs": true,
 				"skipLibCheck": true,
 				"strict": false,
+				"sourcemap": "inline",
 				"forceConsistentCasingInFileNames": true,
 				"noEmit": true,
 				"incremental": true,
@@ -501,6 +503,7 @@ func buildAsESModule(sourceCode, resolveDir, sourcefile string) api.BuildResult 
 				"allowJs": true,
 				"skipLibCheck": true,
 				"strict": false,
+				"sourcemap": "inline",
 				"forceConsistentCasingInFileNames": true,
 				"noEmit": true,
 				"incremental": true,
@@ -692,7 +695,7 @@ func handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
-	
+
 	if err := json.NewEncoder(w).Encode(configResponse); err != nil {
 		http.Error(w, "Failed to encode configuration", http.StatusInternalServerError)
 		return
@@ -713,7 +716,7 @@ func injectSupabaseConfig(sourceCode string) string {
 	}
 
 	// Replace hardcoded SUPABASE_URL
-	sourceCode = strings.ReplaceAll(sourceCode, 
+	sourceCode = strings.ReplaceAll(sourceCode,
 		"const SUPABASE_URL = 'https://zazsrepfnamdmibcyenx.supabase.co';",
 		fmt.Sprintf("const SUPABASE_URL = '%s';", config.SupabaseURL))
 
