@@ -502,6 +502,8 @@ export const ListApp: React.FC = () => {
   const handleGroupChange = (group: Group) => {
     setCurrentGroup(group);
     setShowInput(false); // Hide input when switching groups
+    // Clear content selection when switching groups
+    contentSelection.clearSelection();
     // Navigate to the new group's URL
     navigate(`/group/${group.id}`);
   };
@@ -688,9 +690,9 @@ export const ListApp: React.FC = () => {
     }
   }, [params.groupId, params.contentId, user, groups, currentGroup, currentParentId]);
 
-  // Reset navigation and search when group changes
+  // Reset navigation and search when group changes (but not when navigating to content)
   useEffect(() => {
-    if (currentGroup) {
+    if (currentGroup && !params.contentId) {
       setCurrentParentId(null);
       setCurrentJsContent(null);
       setNavigationStack([{id: null, name: 'Root'}]);
@@ -698,10 +700,9 @@ export const ListApp: React.FC = () => {
       // Clear search
       setSearchQuery('');
       setIsSearching(false);
-      // Clear content selection
-      contentSelection.clearSelection();
+      // Note: contentSelection.clearSelection() moved to handleGroupChange
     }
-  }, [currentGroup, contentSelection]);
+  }, [currentGroup, params.contentId]);
 
   // Navigation handled by React Router - no manual URL management needed
 
