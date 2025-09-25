@@ -50,8 +50,8 @@
 		4C6D285D2CE5CCE100FCED19 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		4C6D28602CE5CCE200FCED19 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/MainInterface.storyboard; sourceTree = "<group>"; };
 		4C6D28622CE5CCE200FCED19 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		4CC4D5512E6BF6FC007C1BF4 /* ext.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ext.entitlements; sourceTree = "<group>"; };
 		4CC4D5502E6BF5FC007C1BF4 /* share.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = share.entitlements; sourceTree = "<group>"; };
+		4CC4D5512E6BF6FC007C1BF4 /* ext.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ext.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +75,7 @@
 		4C6D283D2CE5CCAF00FCED19 = {
 			isa = PBXGroup;
 			children = (
+				4C6D28702CE5DD0000FCED19 /* Shared */,
 				4C6D28482CE5CCAF00FCED19 /* share */,
 				4C6D285C2CE5CCE100FCED19 /* ext */,
 				4C6D28472CE5CCAF00FCED19 /* Products */,
@@ -119,6 +120,16 @@
 				4C6D28622CE5CCE200FCED19 /* Info.plist */,
 			);
 			path = ext;
+			sourceTree = "<group>";
+		};
+		4C6D28702CE5DD0000FCED19 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				4C6D286D2CE5DD0000FCED19 /* TokenStorage.swift */,
+				4C6D286E2CE5DD0000FCED19 /* ShareQueue.swift */,
+				4C6D286F2CE5DD0000FCED19 /* QueueProcessor.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -389,6 +400,7 @@
 				DEVELOPMENT_TEAM = GXTMGDAFNK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleIconName = "AppIcon";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -400,7 +412,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.breadchris.share;
+				PRODUCT_BUNDLE_IDENTIFIER = com.breadchris.list;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -421,6 +433,7 @@
 				DEVELOPMENT_TEAM = GXTMGDAFNK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleIconName = "AppIcon";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -432,7 +445,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.breadchris.share;
+				PRODUCT_BUNDLE_IDENTIFIER = com.breadchris.list;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -457,7 +470,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.breadchris.share.ext;
+				PRODUCT_BUNDLE_IDENTIFIER = com.breadchris.list.ext;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -483,7 +496,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.breadchris.share.ext;
+				PRODUCT_BUNDLE_IDENTIFIER = com.breadchris.list.ext;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

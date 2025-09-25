@@ -64,7 +64,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
     setError(null);
 
     try {
-      const group = await contentRepository.joinGroupByCode(joinCode.trim());
+      const group = await contentRepository.joinGroupWithUserCode(joinCode.trim());
       
       // Check if user was already a member
       if ((group as any).alreadyMember) {
@@ -103,11 +103,11 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
           <div className="flex-1 min-w-0">
             {currentGroup ? (
               <div>
-                <h2 className="text-lg font-medium text-gray-900 truncate">
+                <h2 data-testid="current-group-name" className="text-lg font-medium text-gray-900 truncate">
                   {currentGroup.name}
                 </h2>
                 <p className="text-sm text-gray-500">
-                  Code: {currentGroup.join_code}
+                  Click to view your invite code
                 </p>
               </div>
             ) : (
@@ -125,6 +125,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
           <div className="flex items-center space-x-2">
             {groups.length > 1 && (
               <select
+                data-testid="group-selector"
                 value={currentGroup?.id || ''}
                 onChange={(e) => {
                   const group = groups.find(g => g.id === e.target.value);
@@ -181,7 +182,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
                 </h3>
 
                 {error && (
-                  <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                  <div data-testid="join-error-message" className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
                     {error}
                   </div>
                 )}
@@ -229,6 +230,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
                         Join Code
                       </label>
                       <input
+                        data-testid="join-code-input"
                         type="text"
                         value={joinCode}
                         onChange={(e) => setJoinCode(formatJoinCode(e.target.value))}
@@ -250,6 +252,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
                         Cancel
                       </button>
                       <button
+                        data-testid="join-group-submit"
                         type="submit"
                         disabled={joinCode.length !== 6 || loading}
                         className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"

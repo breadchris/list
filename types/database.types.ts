@@ -22,6 +22,7 @@ export type Database = {
           id: string
           metadata: Json | null
           parent_content_id: string | null
+          path: unknown | null
           search_vector: unknown | null
           type: string
           updated_at: string
@@ -34,6 +35,7 @@ export type Database = {
           id?: string
           metadata?: Json | null
           parent_content_id?: string | null
+          path?: unknown | null
           search_vector?: unknown | null
           type?: string
           updated_at?: string
@@ -46,6 +48,7 @@ export type Database = {
           id?: string
           metadata?: Json | null
           parent_content_id?: string | null
+          path?: unknown | null
           search_vector?: unknown | null
           type?: string
           updated_at?: string
@@ -122,6 +125,55 @@ export type Database = {
           },
         ]
       }
+      group_invitations: {
+        Row: {
+          group_id: string
+          id: string
+          invite_code_used: string
+          invitee_user_id: string
+          inviter_user_id: string
+          joined_at: string
+        }
+        Insert: {
+          group_id: string
+          id?: string
+          invite_code_used: string
+          invitee_user_id: string
+          inviter_user_id: string
+          joined_at?: string
+        }
+        Update: {
+          group_id?: string
+          id?: string
+          invite_code_used?: string
+          invitee_user_id?: string
+          inviter_user_id?: string
+          joined_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_invitations_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_invitations_invitee_user_id_fkey"
+            columns: ["invitee_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_invitations_inviter_user_id_fkey"
+            columns: ["inviter_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_memberships: {
         Row: {
           created_at: string
@@ -193,6 +245,50 @@ export type Database = {
           },
         ]
       }
+      repl_history: {
+        Row: {
+          command: string
+          error_message: string | null
+          executed_at: string | null
+          execution_time_ms: number | null
+          id: string
+          metadata: Json | null
+          result: Json | null
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          command: string
+          error_message?: string | null
+          executed_at?: string | null
+          execution_time_ms?: number | null
+          id?: string
+          metadata?: Json | null
+          result?: Json | null
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          command?: string
+          error_message?: string | null
+          executed_at?: string | null
+          execution_time_ms?: number | null
+          id?: string
+          metadata?: Json | null
+          result?: Json | null
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repl_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tags: {
         Row: {
           color: string | null
@@ -218,6 +314,57 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "tags_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_invite_codes: {
+        Row: {
+          created_at: string
+          current_uses: number
+          expires_at: string | null
+          group_id: string
+          id: string
+          invite_code: string
+          is_active: boolean
+          max_uses: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_uses?: number
+          expires_at?: string | null
+          group_id: string
+          id?: string
+          invite_code: string
+          is_active?: boolean
+          max_uses?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_uses?: number
+          expires_at?: string | null
+          group_id?: string
+          id?: string
+          invite_code?: string
+          is_active?: boolean
+          max_uses?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_invite_codes_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_invite_codes_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -280,6 +427,31 @@ export type Database = {
       }
     }
     Functions: {
+      _ltree_compress: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      _ltree_gist_options: {
+        Args: { "": unknown }
+        Returns: undefined
+      }
+      check_content_has_public_ancestor: {
+        Args: { content_path: unknown }
+        Returns: boolean
+      }
+      cleanup_old_repl_history: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      create_user_invite_code: {
+        Args: {
+          p_expires_at?: string
+          p_group_id?: string
+          p_max_uses?: number
+          p_user_id?: string
+        }
+        Returns: Json
+      }
       extract_urls: {
         Args: { input_text: string }
         Returns: string[]
@@ -307,13 +479,49 @@ export type Database = {
           user_id: string
         }[]
       }
+      generate_content_path: {
+        Args: {
+          p_content_id: string
+          p_group_id: string
+          p_parent_content_id: string
+        }
+        Returns: unknown
+      }
       generate_join_code: {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      generate_user_invite_code: {
+        Args: { p_group_id: string; p_user_id: string }
+        Returns: string
+      }
+      get_invite_graph: {
+        Args: { p_group_id: string }
+        Returns: {
+          invite_code_used: string
+          invitee_user_id: string
+          invitee_username: string
+          inviter_user_id: string
+          inviter_username: string
+          joined_at: string
+        }[]
+      }
       get_public_content_url: {
         Args: { content_id: string }
         Returns: string
+      }
+      get_user_invite_stats: {
+        Args: { p_group_id?: string; p_user_id?: string }
+        Returns: {
+          created_at: string
+          current_uses: number
+          expires_at: string
+          group_id: string
+          group_name: string
+          invite_code: string
+          max_uses: number
+          successful_invites: number
+        }[]
       }
       gtrgm_compress: {
         Args: { "": unknown }
@@ -335,6 +543,14 @@ export type Database = {
         Args: { "": unknown }
         Returns: unknown
       }
+      hash_ltree: {
+        Args: { "": unknown }
+        Returns: number
+      }
+      is_admin_user: {
+        Args: { user_uuid?: string }
+        Returns: boolean
+      }
       is_group_creator: {
         Args: { group_uuid: string; user_uuid: string }
         Returns: boolean
@@ -342,6 +558,90 @@ export type Database = {
       join_group_safe: {
         Args: { p_join_code: string; p_user_id?: string }
         Returns: Json
+      }
+      join_group_with_user_code: {
+        Args: { p_invite_code: string; p_user_id?: string }
+        Returns: Json
+      }
+      lca: {
+        Args: { "": unknown[] }
+        Returns: unknown
+      }
+      lquery_in: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      lquery_out: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      lquery_recv: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      lquery_send: {
+        Args: { "": unknown }
+        Returns: string
+      }
+      ltree_compress: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltree_decompress: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltree_gist_in: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltree_gist_options: {
+        Args: { "": unknown }
+        Returns: undefined
+      }
+      ltree_gist_out: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltree_in: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltree_out: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltree_recv: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltree_send: {
+        Args: { "": unknown }
+        Returns: string
+      }
+      ltree2text: {
+        Args: { "": unknown }
+        Returns: string
+      }
+      ltxtq_in: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltxtq_out: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltxtq_recv: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ltxtq_send: {
+        Args: { "": unknown }
+        Returns: string
+      }
+      nlevel: {
+        Args: { "": unknown }
+        Returns: number
       }
       search_content: {
         Args: {
@@ -400,11 +700,16 @@ export type Database = {
           id: string
           metadata: Json | null
           parent_content_id: string | null
+          path: unknown | null
           search_vector: unknown | null
           type: string
           updated_at: string
           user_id: string
         }[]
+      }
+      text2ltree: {
+        Args: { "": string }
+        Returns: unknown
       }
       toggle_content_sharing: {
         Args: { content_id: string; is_public: boolean; user_id: string }

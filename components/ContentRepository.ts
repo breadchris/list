@@ -11,8 +11,49 @@ export interface Group {
   id: string;
   created_at: string;
   name: string;
-  join_code: string;
   created_by?: string;
+}
+
+// New interfaces for invite graph system
+export interface UserInviteCode {
+  id: string;
+  user_id: string;
+  group_id: string;
+  invite_code: string;
+  created_at: string;
+  expires_at?: string;
+  max_uses?: number;
+  current_uses: number;
+  is_active: boolean;
+}
+
+export interface GroupInvitation {
+  id: string;
+  group_id: string;
+  inviter_user_id: string;
+  invitee_user_id: string;
+  invite_code_used: string;
+  joined_at: string;
+}
+
+export interface InviteGraphNode {
+  inviter_user_id: string;
+  inviter_username?: string;
+  invitee_user_id: string;
+  invitee_username?: string;
+  joined_at: string;
+  invite_code_used: string;
+}
+
+export interface InviteStats {
+  group_id: string;
+  group_name: string;
+  invite_code: string;
+  created_at: string;
+  expires_at?: string;
+  max_uses?: number;
+  current_uses: number;
+  successful_invites: number;
 }
 
 export interface Content {
@@ -244,13 +285,10 @@ export class ContentRepository {
   // Group methods
   async createGroup(name: string): Promise<Group> {
     try {
-      // Generate a unique join code
-      const joinCode = await this.generateJoinCode();
-      
       const { data, error } = await withRetry(async () => {
         return await supabase
           .from('groups')
-          .insert([{ name, join_code: joinCode }])
+          .insert([{ name }])
           .select()
           .single();
       });
@@ -261,7 +299,15 @@ export class ContentRepository {
       }
 
       // Automatically add the creator as a member
-      await this.joinGroupByCode(joinCode);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('group_memberships')
+          .insert([{ user_id: user.id, group_id: data.id, role: 'admin' }]);
+
+        // Create the first invite code for the group creator
+        await this.createUserInviteCode(data.id);
+      }
 
       return data;
     } catch (error) {
@@ -270,12 +316,11 @@ export class ContentRepository {
     }
   }
 
-  async joinGroupByCode(joinCode: string): Promise<Group> {
+  async joinGroupWithUserCode(inviteCode: string): Promise<Group & { inviter?: { user_id: string } }> {
     try {
-      // Use the safe join function that checks for existing membership
       const { data, error } = await withRetry(async () => {
-        return await supabase.rpc('join_group_safe', {
-          p_join_code: joinCode
+        return await supabase.rpc('join_group_with_user_code', {
+          p_invite_code: inviteCode
         });
       });
 
@@ -285,44 +330,32 @@ export class ContentRepository {
       }
 
       if (!data.success) {
-        // Handle specific error cases
         if (data.status === 'invalid_code') {
-          throw new Error('Invalid join code');
+          throw new Error('Invalid or expired invite code');
+        }
+        if (data.status === 'own_code') {
+          throw new Error('You cannot use your own invite code');
         }
         throw new Error(data.message || 'Failed to join group');
       }
 
-      // Check if user was already a member
-      if (data.status === 'already_member') {
-        // Still fetch and return the group, but the caller can check the status
-        const { data: group, error: groupError } = await supabase
-          .from('groups')
-          .select('*')
-          .eq('id', data.group.id)
-          .single();
-        
-        if (groupError) {
-          console.error('Error fetching group details:', groupError);
-          throw new Error('Failed to fetch group details');
-        }
-
-        // Add a flag to indicate the user was already a member
-        return { ...group, alreadyMember: true } as Group & { alreadyMember?: boolean };
-      }
-
-      // Fetch the full group details for newly joined members
+      // Fetch the full group details
       const { data: group, error: groupError } = await supabase
         .from('groups')
         .select('*')
         .eq('id', data.group.id)
         .single();
-      
+
       if (groupError) {
         console.error('Error fetching group details:', groupError);
         throw new Error('Failed to fetch group details');
       }
 
-      return group;
+      return {
+        ...group,
+        alreadyMember: data.status === 'already_member',
+        inviter: data.inviter
+      } as Group & { alreadyMember?: boolean; inviter?: { user_id: string } };
     } catch (error) {
       console.error('Failed to join group after retries:', error);
       throw error;
@@ -331,6 +364,11 @@ export class ContentRepository {
 
   async getUserGroups(): Promise<Group[]> {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
       const { data, error } = await withRetry(async () => {
         return await supabase
           .from('group_memberships')
@@ -343,7 +381,8 @@ export class ContentRepository {
               join_code,
               created_by
             )
-          `);
+          `)
+          .eq('user_id', user.id);
       });
 
       if (error) {
@@ -467,28 +506,93 @@ export class ContentRepository {
     }
   }
 
-  // Utility methods
-  private async generateJoinCode(): Promise<string> {
-    // Generate a 6-character random code
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
+  // Invite methods for the new graph system
+  async createUserInviteCode(groupId: string, maxUses: number = 50, expiresAt?: string): Promise<UserInviteCode> {
+    try {
+      const { data, error } = await withRetry(async () => {
+        return await supabase.rpc('create_user_invite_code', {
+          p_group_id: groupId,
+          p_max_uses: maxUses,
+          p_expires_at: expiresAt ? new Date(expiresAt).toISOString() : null
+        });
+      });
+
+      if (error) {
+        console.error('Error creating invite code:', error);
+        throw new Error('Failed to create invite code');
+      }
+
+      if (!data.success) {
+        if (data.status === 'already_exists') {
+          throw new Error('You already have an active invite code for this group');
+        }
+        throw new Error(data.message || 'Failed to create invite code');
+      }
+
+      return data.data as UserInviteCode;
+    } catch (error) {
+      console.error('Failed to create invite code after retries:', error);
+      throw error;
     }
+  }
 
-    // Check if code already exists
-    const { data } = await supabase
-      .from('groups')
-      .select('id')
-      .eq('join_code', result)
-      .single();
+  async getUserInviteCodes(groupId?: string): Promise<InviteStats[]> {
+    try {
+      const { data, error } = await withRetry(async () => {
+        return await supabase.rpc('get_user_invite_stats', {
+          p_group_id: groupId || null
+        });
+      });
 
-    // If code exists, generate a new one
-    if (data) {
-      return this.generateJoinCode();
+      if (error) {
+        console.error('Error fetching invite stats:', error);
+        throw new Error(error.message);
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Failed to fetch invite stats after retries:', error);
+      throw error;
     }
+  }
 
-    return result;
+  async getInviteGraph(groupId: string): Promise<InviteGraphNode[]> {
+    try {
+      const { data, error } = await withRetry(async () => {
+        return await supabase.rpc('get_invite_graph', {
+          p_group_id: groupId
+        });
+      });
+
+      if (error) {
+        console.error('Error fetching invite graph:', error);
+        throw new Error(error.message);
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Failed to fetch invite graph after retries:', error);
+      throw error;
+    }
+  }
+
+  async deactivateInviteCode(inviteCodeId: string): Promise<void> {
+    try {
+      const { error } = await withRetry(async () => {
+        return await supabase
+          .from('user_invite_codes')
+          .update({ is_active: false })
+          .eq('id', inviteCodeId);
+      });
+
+      if (error) {
+        console.error('Error deactivating invite code:', error);
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      console.error('Failed to deactivate invite code after retries:', error);
+      throw error;
+    }
   }
 
   // Real-time subscriptions

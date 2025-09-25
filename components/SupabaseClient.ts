@@ -1,8 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Configuration - these values may be injected at build time by the Go server
-const SUPABASE_URL = 'https://zazsrepfnamdmibcyenx.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM';
+// For local development and testing, use local Supabase
+const SUPABASE_URL = process.env.NODE_ENV === 'test' ?
+  'http://127.0.0.1:54321' :
+  'https://zazsrepfnamdmibcyenx.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NODE_ENV === 'test' ?
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' :
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM';
 
 // Runtime configuration cache
 let runtimeConfig: { supabase_url: string; supabase_key: string } | null = null;
@@ -99,10 +104,10 @@ export const signInWithGoogle = async () => {
   console.log("🔍 SupabaseClient: Starting Google OAuth sign in...");
   try {
     // Check if we're in iOS app (has webkit message handlers)
-    const isIOSApp = typeof window.webkit !== 'undefined' && 
-                     window.webkit.messageHandlers && 
-                     window.webkit.messageHandlers.authHandler;
-    
+    const isIOSApp = typeof (window as any).webkit !== 'undefined' &&
+                     (window as any).webkit.messageHandlers &&
+                     (window as any).webkit.messageHandlers.authHandler;
+
     let redirectTo: string;
     if (isIOSApp) {
       redirectTo = 'list://auth/success';
@@ -110,25 +115,63 @@ export const signInWithGoogle = async () => {
       // For web browsers, use the current origin
       redirectTo = window.location.origin;
     }
-    
+
     console.log("🔧 SupabaseClient: Using redirect URL:", redirectTo);
-    
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectTo
       }
     });
-    
+
     if (error) {
       console.error('❌ SupabaseClient: Google OAuth error:', error);
       throw error;
     }
-    
+
     console.log("✅ SupabaseClient: Google OAuth initiated successfully");
     return data;
   } catch (error) {
     console.error('❌ SupabaseClient: signInWithGoogle failed:', error);
+    throw error;
+  }
+};
+
+export const signInWithApple = async () => {
+  console.log("🔍 SupabaseClient: Starting Apple OAuth sign in...");
+  try {
+    // Check if we're in iOS app (has webkit message handlers)
+    const isIOSApp = typeof (window as any).webkit !== 'undefined' &&
+                     (window as any).webkit.messageHandlers &&
+                     (window as any).webkit.messageHandlers.authHandler;
+
+    let redirectTo: string;
+    if (isIOSApp) {
+      redirectTo = 'list://auth/success';
+    } else {
+      // For web browsers, use the current origin
+      redirectTo = window.location.origin;
+    }
+
+    console.log("🔧 SupabaseClient: Using redirect URL:", redirectTo);
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'apple',
+      options: {
+        redirectTo: redirectTo
+      }
+    });
+
+    if (error) {
+      console.error('❌ SupabaseClient: Apple OAuth error:', error);
+      throw error;
+    }
+
+    console.log("✅ SupabaseClient: Apple OAuth initiated successfully");
+    return data;
+  } catch (error) {
+    console.error('❌ SupabaseClient: signInWithApple failed:', error);
     throw error;
   }
 };

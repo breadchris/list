@@ -85,6 +85,10 @@ export const ListApp: React.FC = () => {
   const [showLLMPromptModal, setShowLLMPromptModal] = useState(false);
   const [selectedContentForLLM, setSelectedContentForLLM] = useState<Content[]>([]);
   
+  // Track signup completion to prevent false toast notifications
+  const hasShownWelcomeRef = useRef(false);
+  const isFirstAuthRef = useRef(true);
+  
   // Workflow action handlers
   const handleSEOExtraction = async () => {
     console.log('🔍 SEO Extraction button clicked!');
@@ -387,11 +391,17 @@ export const ListApp: React.FC = () => {
         // Handle auth state changes with small delay to prevent DOM conflicts
         try {
           if (session?.user) {
-            // Check if this is a signup completion (new user signing in for first time)
-            const isSignupCompletion = event === 'SIGNED_IN' && !user;
+            // Check if this is a genuine signup completion (first time login after email confirmation)
+            const isActualSignupCompletion = event === 'SIGNED_IN' && 
+              isFirstAuthRef.current && 
+              !hasShownWelcomeRef.current &&
+              (localStorage.getItem('pendingSignupConfirmation') === 'true' || 
+               sessionStorage.getItem('pendingInviteCode'));
             
-            if (isSignupCompletion) {
-              console.log('Signup completion detected - email confirmed');
+            if (isActualSignupCompletion) {
+              console.log('Genuine signup completion detected - email confirmed');
+              hasShownWelcomeRef.current = true;
+              localStorage.removeItem('pendingSignupConfirmation');
               
               // Check if there's a pending invite to process or if we're on an invite URL
               const pendingInviteCode = sessionStorage.getItem('pendingInviteCode');
@@ -404,6 +414,9 @@ export const ListApp: React.FC = () => {
                 toast.success('Email confirmed!', 'Welcome to List App!');
               }
             }
+            
+            // Mark that we've processed the first auth event
+            isFirstAuthRef.current = false;
             
             // Small delay before re-initializing to prevent DOM conflicts
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -453,8 +466,8 @@ export const ListApp: React.FC = () => {
       sessionStorage.removeItem('pendingInviteCode');
       
       // Show different messages based on whether this was a signup completion
-      const isSignupCompletion = !user; // If no current user, this is likely signup completion
-      if (isSignupCompletion) {
+      const wasSignupCompletion = hasShownWelcomeRef.current || localStorage.getItem('pendingSignupConfirmation') === 'true';
+      if (wasSignupCompletion) {
         toast.success('Welcome! You\'ve joined the group', `Successfully joined "${group.name}" after confirming your email.`);
       } else {
         toast.success('Joined group!', `Welcome to "${group.name}".`);
@@ -605,16 +618,6 @@ export const ListApp: React.FC = () => {
     }
   };
 
-  const handleBreadcrumbClick = async (index: number) => {
-    const targetItem = navigationStack[index];
-    
-    // Use the unified navigation logic
-    await handleNavigate(targetItem.id);
-    
-    // Override the navigation stack to match breadcrumb expectations
-    // handleNavigate builds the stack from scratch, but breadcrumbs should slice existing stack
-    setNavigationStack(navigationStack.slice(0, index + 1));
-  };
 
   // Handle search input with debouncing
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -664,14 +667,18 @@ export const ListApp: React.FC = () => {
   // Handle React Router param changes for navigation synchronization
   useEffect(() => {
     if (!user || !groups.length) return;
-    
+
     const { groupId, contentId } = params;
-    
+
     // Handle group changes from URL
     if (groupId && (!currentGroup || currentGroup.id !== groupId)) {
       const targetGroup = groups.find(g => g.id === groupId);
       if (targetGroup) {
-        setCurrentGroup(targetGroup);
+        // Only update if it's actually a different group instance
+        // This prevents unnecessary re-renders and state updates
+        if (!currentGroup || currentGroup.id !== targetGroup.id) {
+          setCurrentGroup(targetGroup);
+        }
         return; // Let the group change effect handle content navigation
       }
     }
@@ -727,12 +734,31 @@ export const ListApp: React.FC = () => {
         // User is authenticated, try to join the group
         try {
           setError(null);
+          console.log(`Attempting to join group with code: ${joinCode}`);
           const group = await joinGroupMutation.mutateAsync(joinCode);
-          setCurrentGroup(group);
-          // Clear any stored invite code
+
+          // Ensure we have the correct group ID from the response
+          if (!group || !group.id) {
+            throw new Error('Invalid group response');
+          }
+
+          console.log(`Successfully joined/retrieved group:`, {
+            id: group.id,
+            name: group.name,
+            joinCode: group.join_code,
+            alreadyMember: (group as any).alreadyMember
+          });
+
+          // Clear any stored invite code first
           sessionStorage.removeItem('pendingInviteCode');
-          // Navigate to the new group using React Router
-          navigate(`/group/${group.id}`);
+
+          // Set the current group explicitly
+          setCurrentGroup(group);
+
+          // Navigate to the new group using React Router with the correct ID
+          // Use replace to avoid back button issues
+          console.log(`Navigating to /group/${group.id}`);
+          navigate(`/group/${group.id}`, { replace: true });
           return;
         } catch (error) {
           console.error('Error joining group from invite:', error);
@@ -762,7 +788,7 @@ export const ListApp: React.FC = () => {
 
   // Stable container pattern - always return same structure, conditionally show content
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col transition-all duration-200 ease-in-out">
+    <div data-testid="main-app" className="min-h-screen bg-gray-50 flex flex-col transition-all duration-200 ease-in-out">
       
       {/* Error State */}
       {appState === 'error' && (
@@ -805,6 +831,7 @@ export const ListApp: React.FC = () => {
                 <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
               {/* Hamburger Menu */}
               <button
+                data-testid="sidebar-toggle"
                 onClick={() => setShowSidebar(true)}
                 className="text-gray-500 hover:text-gray-700 p-1"
               >
@@ -925,32 +952,20 @@ export const ListApp: React.FC = () => {
           </header>
 
           <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out">
-            {/* Breadcrumb Navigation */}
+            {/* Back Button Navigation */}
             {currentGroup && navigationStack.length > 1 && (
               <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2">
-            <div className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm overflow-x-auto">
-              {navigationStack.map((item, index) => (
-                <div key={index} className="flex items-center space-x-1 sm:space-x-2">
-                  {index > 0 && (
-                    <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  )}
-                  <button
-                    onClick={() => handleBreadcrumbClick(index)}
-                    className={`hover:text-blue-600 transition-colors whitespace-nowrap touch-manipulation px-1 py-0.5 rounded ${
-                      index === navigationStack.length - 1 
-                        ? 'text-gray-900 font-medium' 
-                        : 'text-gray-500 hover:text-blue-600'
-                    }`}
-                  >
-                    {item.name}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+                <button
+                  onClick={() => handleNavigate(navigationStack[navigationStack.length - 2]?.id || null)}
+                  className="flex items-center space-x-2 text-sm text-gray-600 hover:text-blue-600 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  <span>Back</span>
+                </button>
+              </div>
+            )}
 
         {/* Selection Header */}
         {contentSelection.isSelectionMode && currentGroup && (

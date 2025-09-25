@@ -6,5 +6,9 @@
 	<array>
 		<string>group.com.breadchris.share</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.breadchris.list.shared</string>
+	</array>
 </dict>
 </plist>

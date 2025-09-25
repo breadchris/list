@@ -2,12 +2,11 @@
 //  ContentView.swift
 //  share
 //
-//  Created by hacked on 11/13/24.
+//  Simple WebView wrapper for List app
 //
 
 import SwiftUI
 import WebKit
-import Security
 import AuthenticationServices
 import UIKit
 
@@ -17,7 +16,7 @@ struct ContentView: View {
     @State private var apiKeyMessage = ""
     @State private var isAuthenticating = false
     private let presentationContextProvider = ASWebAuthenticationPresentationContextProvider()
-    
+
     var body: some View {
         NavigationView {
             WebView(webView: webViewStore.webView)
@@ -41,12 +40,12 @@ struct ContentView: View {
                 }
         }
     }
-    
+
     private func loadListApp() {
         let appURL = getAppURL()
         print("🔍 ContentView: Loading app from: \(appURL)")
         print("🏗️ ContentView: Environment: \(isRunningInSimulator() ? "Simulator" : "Physical Device")")
-        
+
         // Test server connectivity first
         testServerConnectivity(appURL: appURL) { isReachable in
             DispatchQueue.main.async {
@@ -56,17 +55,17 @@ struct ContentView: View {
                         print("❌ ContentView: Failed to create URL from: \(appURL)")
                         return
                     }
-                    
+
                     print("🔧 ContentView: Creating URLRequest for: \(url)")
                     let request = URLRequest(url: url)
-                    
+
                     print("🔧 ContentView: WKWebView delegate assigned: \(self.webViewStore.webView.navigationDelegate != nil)")
                     print("🔧 ContentView: Starting WKWebView.load() call...")
-                    
+
                     self.webViewStore.webView.load(request)
-                    
+
                     print("🔧 ContentView: WKWebView.load() call completed")
-                    
+
                     // Add a timeout check to see if navigation starts
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         let currentURL = self.webViewStore.webView.url?.absoluteString ?? "nil"
@@ -81,26 +80,27 @@ struct ContentView: View {
             }
         }
     }
-    
+
     private func testServerConnectivity(appURL: String, completion: @escaping (Bool) -> Void) {
         guard let url = URL(string: appURL) else {
             completion(false)
             return
         }
-        
+
         var request = URLRequest(url: url)
         request.timeoutInterval = 15.0  // Increased timeout for production HTTPS connections
         request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-        
+
         print("🌐 ContentView: Testing connectivity to: \(url)")
         print("⏱️ ContentView: Timeout set to: \(request.timeoutInterval)s")
-        
+
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 let nsError = error as NSError
                 print("❌ ContentView: Server connectivity test failed: \(error.localizedDescription)")
                 print("📊 ContentView: Error domain: \(nsError.domain), code: \(nsError.code)")
-                if let userInfo = nsError.userInfo as? [String: Any] {
+                let userInfo = nsError.userInfo
+                if !userInfo.isEmpty {
                     print("📋 ContentView: Error details: \(userInfo)")
                 }
                 completion(false)
@@ -114,7 +114,7 @@ struct ContentView: View {
             }
         }.resume()
     }
-    
+
     private func isRunningInSimulator() -> Bool {
         #if targetEnvironment(simulator)
         return true
@@ -122,7 +122,7 @@ struct ContentView: View {
         return false
         #endif
     }
-    
+
     private func getAppURL() -> String {
         if isRunningInSimulator() {
             return "http://localhost:3002"  // Local development
@@ -130,7 +130,7 @@ struct ContentView: View {
             return "https://justshare.io"   // Production
         }
     }
-    
+
     private func setupNotificationObserver() {
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("APIKeyStored"),
@@ -142,7 +142,7 @@ struct ContentView: View {
                 showingAPIKeyAlert = true
             }
         }
-        
+
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("GoogleAuthRequired"),
             object: nil,
@@ -153,41 +153,41 @@ struct ContentView: View {
             }
         }
     }
-    
+
     private func performGoogleAuthentication(authURL: String) {
         guard !isAuthenticating else { return }
-        
+
         print("🔧 OAuth: Original auth URL: \(authURL)")
-        
+
         // Replace redirect_to parameter with our custom scheme
         var urlComponents = URLComponents(string: authURL)
         var queryItems = urlComponents?.queryItems ?? []
-        
+
         // Remove existing redirect_to parameter and replace with our custom scheme
         queryItems.removeAll { $0.name == "redirect_to" }
         queryItems.append(URLQueryItem(name: "redirect_to", value: "list://auth/success"))
-        
+
         urlComponents?.queryItems = queryItems
-        
-        guard let url = urlComponents?.url else { 
+
+        guard let url = urlComponents?.url else {
             print("❌ OAuth: Failed to construct URL with custom redirect")
-            return 
+            return
         }
-        
+
         print("🔧 OAuth: Modified auth URL: \(url)")
-        
+
         isAuthenticating = true
-        
+
         let session = ASWebAuthenticationSession(
             url: url,
             callbackURLScheme: "list"
         ) { callbackURL, error in
             DispatchQueue.main.async {
                 isAuthenticating = false
-                
+
                 if let error = error {
                     print("❌ ASWebAuthenticationSession error: \(error.localizedDescription)")
-                    
+
                     if let authError = error as? ASWebAuthenticationSessionError {
                         switch authError.code {
                         case .canceledLogin:
@@ -212,50 +212,38 @@ struct ContentView: View {
                     }
                     return
                 }
-                
+
                 if let callbackURL = callbackURL {
                     print("✅ Google authentication callback: \(callbackURL)")
-                    
+
                     // Extract OAuth code from the callback URL
                     if let urlComponents = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
                        let queryItems = urlComponents.queryItems,
                        let authCode = queryItems.first(where: { $0.name == "code" })?.value {
                         print("🔑 OAuth: Received authorization code: \(authCode)")
-                        
-                        // Inject JavaScript to exchange the code for a session (with polling for Supabase availability)
+
+                        // Inject JavaScript to exchange the code for a session
                         let script = """
                             (function() {
                                 const authCode = '\(authCode)';
                                 let attemptCount = 0;
                                 const maxAttempts = 20; // 10 seconds with 500ms intervals
-                                
+
                                 console.log('🔄 OAuth: Starting code exchange for:', authCode);
-                                
+
                                 function attemptCodeExchange() {
                                     attemptCount++;
                                     console.log('🔍 OAuth: Attempt', attemptCount + '/' + maxAttempts, '- Checking for Supabase...');
-                                    
+
                                     if (typeof window.supabase !== 'undefined' && window.supabase && window.supabase.auth) {
                                         console.log('✅ OAuth: Supabase client found, exchanging code...');
-                                        
+
                                         window.supabase.auth.exchangeCodeForSession(authCode)
                                             .then(({ data, error }) => {
                                                 if (error) {
                                                     console.error('❌ OAuth: Code exchange failed:', error);
                                                 } else {
                                                     console.log('✅ OAuth: Session established successfully:', data);
-                                                    
-                                                    // Store session info for share extension
-                                                    if (data.session && data.session.access_token) {
-                                                        window.webkit.messageHandlers.authHandler.postMessage({
-                                                            type: 'sessionEstablished',
-                                                            accessToken: data.session.access_token,
-                                                            refreshToken: data.session.refresh_token,
-                                                            userId: data.user ? data.user.id : null
-                                                        });
-                                                    }
-                                                    
-                                                    // Trigger a page reload to update auth state
                                                     window.location.reload();
                                                 }
                                             })
@@ -271,12 +259,11 @@ struct ContentView: View {
                                         }
                                     }
                                 }
-                                
-                                // Start the first attempt
+
                                 attemptCodeExchange();
                             })();
                         """
-                        
+
                         webViewStore.webView.evaluateJavaScript(script) { result, error in
                             if let error = error {
                                 print("❌ OAuth: JavaScript execution error: \(error.localizedDescription)")
@@ -292,13 +279,13 @@ struct ContentView: View {
                 }
             }
         }
-        
+
         session.presentationContextProvider = presentationContextProvider
-        
+
         print("🚀 ASWebAuthenticationSession: Starting session with URL: \(url)")
         print("🔗 ASWebAuthenticationSession: Callback scheme: list")
         print("🖼️ ASWebAuthenticationSession: Presentation context provider set: \(session.presentationContextProvider != nil)")
-        
+
         session.start()
     }
 }
@@ -306,10 +293,10 @@ struct ContentView: View {
 class WebViewStore: ObservableObject {
     let webView: WKWebView
     private let navigationDelegate: NavigationDelegate
-    
+
     init() {
         let configuration = WKWebViewConfiguration()
-        
+
         // Add JavaScript handlers
         let contentController = WKUserContentController()
         let messageHandler = MessageHandler()
@@ -317,7 +304,7 @@ class WebViewStore: ObservableObject {
         contentController.add(messageHandler, name: "authHandler")
         contentController.add(messageHandler, name: "consoleHandler")
         configuration.userContentController = contentController
-        
+
         // Inject JavaScript to detect API key creation, Google auth attempts, and console messages
         let script = WKUserScript(
             source: """
@@ -325,7 +312,7 @@ class WebViewStore: ObservableObject {
                 const originalLog = console.log;
                 const originalError = console.error;
                 const originalWarn = console.warn;
-                
+
                 console.log = function(...args) {
                     window.webkit.messageHandlers.consoleHandler.postMessage({
                         type: 'log',
@@ -334,7 +321,7 @@ class WebViewStore: ObservableObject {
                     });
                     return originalLog.apply(console, args);
                 };
-                
+
                 console.error = function(...args) {
                     window.webkit.messageHandlers.consoleHandler.postMessage({
                         type: 'log',
@@ -343,7 +330,7 @@ class WebViewStore: ObservableObject {
                     });
                     return originalError.apply(console, args);
                 };
-                
+
                 console.warn = function(...args) {
                     window.webkit.messageHandlers.consoleHandler.postMessage({
                         type: 'log',
@@ -352,22 +339,22 @@ class WebViewStore: ObservableObject {
                     });
                     return originalWarn.apply(console, args);
                 };
-                
+
                 // Log page load events
                 console.log('🔍 WKWebView: JavaScript injected successfully');
-                
+
                 window.addEventListener('load', function() {
                     console.log('✅ WKWebView: Page loaded successfully');
                 });
-                
+
                 window.addEventListener('error', function(e) {
                     console.error('❌ WKWebView: JavaScript error:', e.message, 'at', e.filename + ':' + e.lineno);
                 });
-                
+
                 window.addEventListener('DOMContentLoaded', function() {
                     console.log('📄 WKWebView: DOM content loaded');
                 });
-                
+
                 // Monitor for API key creation responses
                 const originalFetch = window.fetch;
                 window.fetch = function(...args) {
@@ -386,36 +373,7 @@ class WebViewStore: ObservableObject {
                         return response;
                     });
                 };
-                
-                // Monitor for XMLHttpRequest responses
-                const originalXHROpen = XMLHttpRequest.prototype.open;
-                const originalXHRSend = XMLHttpRequest.prototype.send;
-                
-                XMLHttpRequest.prototype.open = function(method, url, ...args) {
-                    this._url = url;
-                    return originalXHROpen.apply(this, [method, url, ...args]);
-                };
-                
-                XMLHttpRequest.prototype.send = function(...args) {
-                    this.addEventListener('load', function() {
-                        if (this._url && this._url.includes('/api/auth/keys') && this.status === 200) {
-                            try {
-                                const data = JSON.parse(this.responseText);
-                                if (data.token && data.token.startsWith('ak_')) {
-                                    window.webkit.messageHandlers.apiKeyHandler.postMessage({
-                                        type: 'apiKey',
-                                        token: data.token,
-                                        name: data.name || 'Mobile App Key'
-                                    });
-                                }
-                            } catch (e) {
-                                console.log('Error parsing API key response:', e);
-                            }
-                        }
-                    });
-                    return originalXHRSend.apply(this, args);
-                };
-                
+
                 // Intercept Google authentication attempts
                 function interceptGoogleAuth() {
                     const links = document.querySelectorAll('a[href*="/auth/google"], button[onclick*="/auth/google"]');
@@ -429,12 +387,12 @@ class WebViewStore: ObservableObject {
                             });
                         });
                     });
-                    
+
                     // Also watch for programmatic redirects to Google auth and Supabase OAuth
                     const originalAssign = window.location.assign;
                     window.location.assign = function(url) {
-                        if (url.includes('/auth/google') || 
-                            url.includes('supabase.co/auth') || 
+                        if (url.includes('/auth/google') ||
+                            url.includes('supabase.co/auth') ||
                             url.includes('accounts.google.com')) {
                             window.webkit.messageHandlers.authHandler.postMessage({
                                 type: 'googleAuth',
@@ -444,45 +402,15 @@ class WebViewStore: ObservableObject {
                         }
                         return originalAssign.call(this, url);
                     };
-                    
-                    const originalReplace = window.location.replace;
-                    window.location.replace = function(url) {
-                        if (url.includes('/auth/google') || 
-                            url.includes('supabase.co/auth') || 
-                            url.includes('accounts.google.com')) {
-                            window.webkit.messageHandlers.authHandler.postMessage({
-                                type: 'googleAuth',
-                                authURL: url
-                            });
-                            return;
-                        }
-                        return originalReplace.call(this, url);
-                    };
-                    
-                    // Also intercept window.open calls for OAuth popups
-                    const originalOpen = window.open;
-                    window.open = function(url, ...args) {
-                        if (typeof url === 'string' && (
-                            url.includes('/auth/google') || 
-                            url.includes('supabase.co/auth') || 
-                            url.includes('accounts.google.com'))) {
-                            window.webkit.messageHandlers.authHandler.postMessage({
-                                type: 'googleAuth',
-                                authURL: url
-                            });
-                            return null;
-                        }
-                        return originalOpen.call(this, url, ...args);
-                    };
                 }
-                
+
                 // Run interceptor when DOM is ready
                 if (document.readyState === 'loading') {
                     document.addEventListener('DOMContentLoaded', interceptGoogleAuth);
                 } else {
                     interceptGoogleAuth();
                 }
-                
+
                 // Re-run interceptor when content changes (for SPAs)
                 const observer = new MutationObserver(function(mutations) {
                     interceptGoogleAuth();
@@ -493,11 +421,11 @@ class WebViewStore: ObservableObject {
             forMainFrameOnly: false
         )
         contentController.addUserScript(script)
-        
+
         self.navigationDelegate = NavigationDelegate()
         self.webView = WKWebView(frame: .zero, configuration: configuration)
         self.webView.navigationDelegate = self.navigationDelegate
-        
+
         print("🔧 WebViewStore: WKWebView created with delegate: \(self.webView.navigationDelegate != nil)")
         print("🔧 WebViewStore: WKWebView configuration set: \(self.webView.configuration.userContentController.userScripts.count) scripts")
     }
@@ -509,40 +437,37 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
               let type = body["type"] as? String else {
             return
         }
-        
+
         switch type {
         case "apiKey":
             handleAPIKey(body: body)
         case "googleAuth":
             handleGoogleAuth(body: body)
-        case "sessionEstablished":
-            handleSessionEstablished(body: body)
         case "log":
             handleConsoleMessage(body: body)
         default:
             print("Unknown message type: \(type)")
         }
     }
-    
+
     private func handleAPIKey(body: [String: Any]) {
         guard let token = body["token"] as? String else {
             return
         }
-        
+
         let name = body["name"] as? String ?? "Mobile App Key"
-        
+
         // Store API key in Keychain and shared container
         if storeAPIKeyInKeychain(token: token, name: name) {
             print("API key stored successfully in Keychain")
-            
+
             // Also store in shared container for share extension
             if let sharedContainer = UserDefaults(suiteName: "group.com.breadchris.share") {
                 sharedContainer.set(token, forKey: "api_key")
                 sharedContainer.synchronize()
                 print("✅ API key also stored in shared container")
-                print("🔄 Forced API key synchronization")
             }
-            
+
             // Show success alert
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
@@ -555,11 +480,11 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
             print("Failed to store API key in Keychain")
         }
     }
-    
+
     private func handleGoogleAuth(body: [String: Any]) {
         if let authURL = body["authURL"] as? String {
             print("Google authentication intercepted: \(authURL)")
-            
+
             // Trigger native Google authentication
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
@@ -568,76 +493,23 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
                     userInfo: ["authURL": authURL]
                 )
             }
-        } else if let type = body["type"] as? String, type == "sessionEstablished" {
-            // Handle successful session establishment
-            let accessToken = body["accessToken"] as? String
-            let refreshToken = body["refreshToken"] as? String
-            let userId = body["userId"] as? String
-            
-            print("✅ Session established - storing auth data for share extension")
-            
-            if let accessToken = accessToken {
-                storeAuthDataInSharedContainer(
-                    accessToken: accessToken,
-                    refreshToken: refreshToken,
-                    userId: userId
-                )
-            }
         }
     }
-    
-    private func handleSessionEstablished(body: [String: Any]) {
-        let accessToken = body["accessToken"] as? String
-        let refreshToken = body["refreshToken"] as? String
-        let userId = body["userId"] as? String
-        
-        print("✅ MessageHandler: Session established - storing auth data")
-        print("📊 MessageHandler: Access token: \(accessToken?.prefix(20) ?? "nil")...")
-        print("📊 MessageHandler: User ID: \(userId ?? "nil")")
-        
-        if let accessToken = accessToken {
-            storeAuthDataInSharedContainer(
-                accessToken: accessToken,
-                refreshToken: refreshToken,
-                userId: userId
-            )
-        } else {
-            print("❌ MessageHandler: No access token in session data")
-        }
-    }
-    
+
     private func handleConsoleMessage(body: [String: Any]) {
         guard let level = body["level"] as? String,
               let message = body["message"] as? String else {
             return
         }
-        
+
         let emoji = level == "error" ? "❌" : level == "warn" ? "⚠️" : "📝"
         print("\(emoji) WebView Console [\(level.uppercased())]: \(message)")
     }
-    
-    private func storeAuthDataInSharedContainer(accessToken: String, refreshToken: String?, userId: String?) {
-        guard let sharedContainer = UserDefaults(suiteName: "group.com.breadchris.share") else {
-            print("❌ Failed to access shared container")
-            return
-        }
-        
-        sharedContainer.set(accessToken, forKey: "supabase_access_token")
-        sharedContainer.set(refreshToken, forKey: "supabase_refresh_token")
-        sharedContainer.set(userId, forKey: "supabase_user_id")
-        sharedContainer.set(Date(), forKey: "auth_timestamp")
-        
-        // Force synchronization to disk immediately
-        sharedContainer.synchronize()
-        
-        print("✅ Auth data stored in shared container for share extension")
-        print("🔄 Forced UserDefaults synchronization")
-    }
-    
+
     private func storeAPIKeyInKeychain(token: String, name: String) -> Bool {
         let service = "list.app"
         let account = "api_key"
-        
+
         // Create query
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -646,10 +518,10 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
             kSecValueData as String: token.data(using: .utf8)!,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
-        
+
         // Delete any existing key first
         SecItemDelete(query as CFDictionary)
-        
+
         // Add new key
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
@@ -660,33 +532,33 @@ class NavigationDelegate: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("✅ NavigationDelegate: Page finished loading: \(webView.url?.absoluteString ?? "unknown")")
     }
-    
+
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         print("🔄 NavigationDelegate: Started loading: \(webView.url?.absoluteString ?? "unknown")")
     }
-    
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         print("❌ NavigationDelegate: Failed to load page: \(error.localizedDescription)")
         print("📍 NavigationDelegate: Failed URL: \(webView.url?.absoluteString ?? "unknown")")
     }
-    
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         print("❌ NavigationDelegate: Navigation failed: \(error.localizedDescription)")
         print("📍 NavigationDelegate: Failed URL: \(webView.url?.absoluteString ?? "unknown")")
     }
-    
+
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else {
             decisionHandler(.allow)
             return
         }
-        
+
         // Intercept Google OAuth URLs to prevent them from loading in WKWebView
         if url.host?.contains("accounts.google.com") == true ||
            url.absoluteString.contains("supabase.co/auth") ||
            url.absoluteString.contains("/auth/google") {
             print("🚫 NavigationDelegate: Blocking OAuth URL from WKWebView: \(url)")
-            
+
             // Trigger the JavaScript interception instead
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
@@ -695,22 +567,22 @@ class NavigationDelegate: NSObject, WKNavigationDelegate {
                     userInfo: ["authURL": url.absoluteString]
                 )
             }
-            
+
             decisionHandler(.cancel)
             return
         }
-        
+
         decisionHandler(.allow)
     }
 }
 
 struct WebView: UIViewRepresentable {
     let webView: WKWebView
-    
+
     func makeUIView(context: Context) -> WKWebView {
         return webView
     }
-    
+
     func updateUIView(_ uiView: WKWebView, context: Context) {
         // Updates handled by WebViewStore
     }
@@ -720,14 +592,14 @@ struct WebView: UIViewRepresentable {
 class ASWebAuthenticationPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         print("🔍 PresentationContextProvider: Finding presentation anchor...")
-        
+
         // Get the key window for iOS 13+
         if #available(iOS 13.0, *) {
             let window = UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
                 .flatMap { $0.windows }
                 .first { $0.isKeyWindow }
-            
+
             if let window = window {
                 print("✅ PresentationContextProvider: Found key window: \(window)")
                 return window

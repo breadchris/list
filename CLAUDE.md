@@ -89,6 +89,16 @@ When encountering errors or issues, always follow this hierarchy:
 3. **Use Standard Patterns** - Prefer React/library conventions over custom solutions
 4. **Avoid Defensive Programming** - Don't add elaborate error handling that masks real issues
 
+### Minimalist Implementation Bias
+
+**CRITICAL**: Always prefer the simplest solution that solves the problem
+
+- **Start with minimal changes** - Add the least code necessary to fix the issue
+- **Question complex solutions** - If a fix requires many new components or patterns, look for simpler alternatives
+- **Prefer deletions over additions** - Remove unnecessary complexity rather than working around it
+- **Single responsibility fixes** - Each change should address one specific problem
+- **Standard library over custom** - Use built-in browser/React features before creating custom solutions
+
 ### Examples of Good vs Bad Approaches
 
 #### ❌ Bad: Defensive Programming
@@ -144,6 +154,128 @@ useEffect(() => {
 - **Data corruption recovery** - Database inconsistencies, corrupt local storage
 
 Remember: If you're writing complex error handling for React state updates, you're probably solving the wrong problem.
+
+## React Query Guidelines
+
+**CRITICAL**: Never implement optimistic updates
+
+### Prohibition on Optimistic Updates
+- **Never use `onMutate` for optimistic updates** - causes state inconsistencies and duplicate data
+- **Always use simple `onSuccess` with `invalidateQueries`** - ensures clean, consistent state
+- **Let loading states handle UX** - users prefer reliable data over perceived speed
+- **Optimistic updates cause hard-to-debug issues** - state corruption, duplicates, race conditions
+
+### Correct Mutation Pattern
+```typescript
+export const useExampleMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data) => await repository.performAction(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['relevant-key'] });
+    }
+  });
+};
+```
+
+### Why No Optimistic Updates?
+- **Data consistency** - Server is always the source of truth
+- **Simpler debugging** - Predictable data flow without rollback complexity
+- **Prevents race conditions** - No conflicts between optimistic and real data
+- **Reliable state** - Users see accurate information, not temporary illusions
+- **Easier maintenance** - Less complex code with fewer edge cases
+
+This follows our core principle: Fix root causes (slow UX), don't mask symptoms (with optimistic updates).
+
+## Apple OAuth Configuration
+
+**CRITICAL**: Manual setup required in Apple Developer Console and Supabase Dashboard
+
+### Apple Developer Console Setup (Required)
+
+**Prerequisites:**
+- Active Apple Developer Account (paid membership required)
+- Access to developer.apple.com
+
+**Steps:**
+1. **Create App ID with Sign in with Apple capability**
+   - Go to Certificates, Identifiers & Profiles > Identifiers
+   - Create new App ID with bundle identifier (e.g., com.acme.listapp)
+   - Enable "Sign in with Apple" capability
+
+2. **Create Service ID (becomes client_id)**
+   - Create Services ID with different identifier (e.g., app.com.acme.listapp)
+   - **SAVE THIS ID** - this becomes your `client_id` in Supabase
+   - Configure with callback URL: `https://zazsrepfnamdmibcyenx.supabase.co/auth/v1/callback`
+
+3. **Generate Secret Key**
+   - Go to Keys section, create new key
+   - Enable "Sign in with Apple", link to your Service ID
+   - Download the .p8 file (only chance to get it)
+   - Use this to generate client_secret JWT
+
+4. **Generate Client Secret**
+   - Follow Supabase docs to create JWT using the .p8 file
+   - Use online tools or custom script to generate the client_secret
+
+### Supabase Dashboard Configuration
+
+1. **Enable Apple OAuth Provider**
+   - Go to Authentication > Providers > Apple
+   - Toggle Apple to enabled
+   - Enter `client_id` (Service ID from Apple Developer Console)
+   - Enter `client_secret` (Generated JWT)
+   - Click Save
+
+### Implementation Details
+
+**Client-side Usage:**
+```typescript
+import { signInWithApple } from './SupabaseClient';
+
+// Trigger Apple OAuth flow
+await signInWithApple();
+```
+
+**Callback URL Format:**
+- Production: `https://zazsrepfnamdmibcyenx.supabase.co/auth/v1/callback`
+- Local: `https://localhost:3000/auth/v1/callback` (for testing)
+
+### Testing and Verification
+
+**Web Testing:**
+- Requires actual Apple ID for testing
+- Works in Safari and Chrome on macOS/iOS
+- Test both sign-up and sign-in flows
+
+**iOS App Testing:**
+- Native Sign in with Apple integration
+- Custom redirect URL: `list://auth/success`
+- Test in iOS Simulator and real devices
+
+### Security Considerations
+
+- **Client Secret Rotation**: Apple recommends rotating client secrets every 6 months
+- **Bundle ID Verification**: Ensure Apple Developer Console bundle ID matches app configuration
+- **Domain Verification**: Verify callback domains are properly configured in Apple Console
+
+### Common Issues and Solutions
+
+**"Invalid client" error:**
+- Verify Service ID matches client_id in Supabase
+- Check callback URL is exactly: `https://zazsrepfnamdmibcyenx.supabase.co/auth/v1/callback`
+- Ensure Service ID is linked to App ID with Sign in with Apple enabled
+
+**"Invalid client_secret" error:**
+- Regenerate client_secret JWT with correct private key
+- Verify key ID, team ID, and Service ID in JWT claims
+- Check JWT expiration (Apple recommends 6-month maximum)
+
+**Testing limitations:**
+- Apple OAuth requires production Apple Developer account
+- Cannot test in Expo Go app (requires custom build)
+- Web testing requires actual Apple ID login
 
 ## JSON Naming Convention
 

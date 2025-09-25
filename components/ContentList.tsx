@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Content, contentRepository, Tag, SEOMetadata, SharingMetadata } from './ContentRepository';
 import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
@@ -58,6 +58,12 @@ export const ContentList: React.FC<ContentListProps> = ({
   const queryClient = useQueryClient();
   const deleteContentMutation = useDeleteContentMutation();
   const toast = useToast();
+
+  // Skeleton delay state to prevent flashing
+  const [showSkeleton, setShowSkeleton] = useState(false);
+
+  // Content persistence state to prevent immediate clearing during navigation
+  const [persistentItems, setPersistentItems] = useState<Content[]>([]);
 
   // Regular content query for non-search mode
   const {
@@ -295,14 +301,41 @@ export const ContentList: React.FC<ContentListProps> = ({
   // Flatten the paginated data
   const contentItems = contentData?.pages.flatMap(page => page.items) ?? [];
   const searchItems = searchData?.pages.flatMap(page => page.items) ?? [];
-  
+
   const currentItems = isSearching ? searchItems : contentItems;
   const currentLoading = isSearching ? searchLoading : contentLoading;
+  // Use persistent items during loading to avoid clearing content immediately
+  const displayItems = currentLoading && persistentItems.length > 0 ? persistentItems : currentItems;
   const currentFetching = isSearching ? searchFetching : contentFetching;
   const currentFetchingNext = isSearching ? searchFetchingNext : contentFetchingNext;
   const currentHasMore = isSearching ? searchHasMore : contentHasMore;
   const currentError = isSearching ? searchError : contentError;
   const currentStatus = isSearching ? searchStatus : contentStatus;
+
+  // Skeleton delay effect to prevent flashing
+  // useEffect(() => {
+  //   if (currentLoading) {
+  //     setShowSkeleton(false);
+  //     const timer = setTimeout(() => {
+  //       setShowSkeleton(true);
+  //     }, 200);
+  //     return () => clearTimeout(timer);
+  //   } else {
+  //     setShowSkeleton(false);
+  //   }
+  // }, [currentLoading]);
+
+  // Memoize items to avoid useEffect dependency issues
+  // const memoizedItems = useMemo(() => currentItems, [currentItems.length, parentContentId, isSearching]);
+  //
+  // // Content persistence effect to maintain smooth transitions
+  // useEffect(() => {
+  //   if (!currentLoading && memoizedItems.length > 0) {
+  //     // Update persistent items when new content is loaded
+  //     setPersistentItems(memoizedItems);
+  //   }
+  //   // Don't update persistent items during loading to maintain current view
+  // }, [currentLoading, memoizedItems]);
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50">
@@ -313,7 +346,7 @@ export const ContentList: React.FC<ContentListProps> = ({
         className="flex-1 overflow-y-auto"
         onScroll={handleScroll}
       >
-        {currentItems.length === 0 && !currentLoading ? (
+        {displayItems.length === 0 && !currentLoading ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               {isSearching ? (
@@ -330,8 +363,16 @@ export const ContentList: React.FC<ContentListProps> = ({
             </div>
           </div>
         ) : (
-          <div className="p-3 sm:p-4 space-y-3">
-            {currentItems.map((item) => {
+          <div className={`p-3 sm:p-4 space-y-3 ${currentLoading && persistentItems.length > 0 ? 'opacity-75' : ''}`}>
+            {currentLoading && persistentItems.length > 0 && (
+              <div className="flex justify-center py-2">
+                <div className="flex items-center text-xs text-gray-600">
+                  <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full mr-2"></div>
+                  Loading...
+                </div>
+              </div>
+            )}
+            {displayItems.map((item) => {
               const isSelected = selection.selectedItems.has(item.id);
               return (
                 <div 
@@ -491,13 +532,13 @@ export const ContentList: React.FC<ContentListProps> = ({
               );
             })}
             
-            {/* Show skeleton loading for initial content load */}
-            {currentLoading && (
+            {/* Show skeleton loading for initial content load (with delay to prevent flashing) */}
+            {showSkeleton && (
               <ContentListSkeleton />
             )}
             
             {/* Background refresh indicator (less prominent) */}
-            {currentFetching && !currentLoading && !currentFetchingNext && currentItems.length > 0 && (
+            {currentFetching && !currentLoading && !currentFetchingNext && displayItems.length > 0 && (
               <div className="flex justify-center py-2">
                 <div className="flex items-center text-xs text-gray-500">
                   <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full mr-2"></div>

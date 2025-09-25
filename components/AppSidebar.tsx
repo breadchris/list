@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Group, contentRepository } from './ContentRepository';
+import { useUserInviteStatsQuery, useCreateInviteCodeMutation } from '../hooks/useGroupQueries';
 
 interface AppSidebarProps {
   isOpen: boolean;
@@ -25,19 +26,35 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   const [showInviteUrl, setShowInviteUrl] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
-  const generateInviteUrl = () => {
-    if (!currentGroup) return '';
+  const { data: inviteStats } = useUserInviteStatsQuery(currentGroup?.id);
+  const createInviteCodeMutation = useCreateInviteCodeMutation();
+
+  const currentInviteCode = inviteStats?.find(stat => stat.group_id === currentGroup?.id);
+
+  const generateInviteUrl = (inviteCode: string) => {
     const baseUrl = window.location.origin;
-    return `${baseUrl}/invite/${currentGroup.join_code}`;
+    return `${baseUrl}/invite/${inviteCode}`;
   };
 
-  const copyInviteUrl = async () => {
+  const copyInviteUrl = async (inviteCode: string) => {
     try {
-      await navigator.clipboard.writeText(generateInviteUrl());
+      await navigator.clipboard.writeText(generateInviteUrl(inviteCode));
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     } catch (error) {
       console.error('Failed to copy invite URL:', error);
+    }
+  };
+
+  const handleCreateInviteCode = async () => {
+    if (!currentGroup) return;
+
+    try {
+      await createInviteCodeMutation.mutateAsync({
+        groupId: currentGroup.id
+      });
+    } catch (error) {
+      console.error('Failed to create invite code:', error);
     }
   };
 
@@ -52,7 +69,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       />
 
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 z-50 w-80 bg-white shadow-lg transform transition-transform duration-300 ease-in-out">
+      <div data-testid="app-sidebar" className="fixed inset-y-0 left-0 z-50 w-80 bg-white shadow-lg transform transition-transform duration-300 ease-in-out">
         <div className="flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
@@ -72,34 +89,42 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <div className="p-4 bg-gray-50 border-b border-gray-200">
               <h3 className="font-medium text-gray-900 mb-2">{currentGroup.name}</h3>
               <div className="space-y-2">
-                <div className="text-sm text-gray-600">
-                  <span className="font-medium">Join Code:</span> {currentGroup.join_code}
-                </div>
-                
-                {!showInviteUrl ? (
-                  <button
-                    onClick={() => setShowInviteUrl(true)}
-                    className="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    Show invite link
-                  </button>
-                ) : (
-                  <div className="space-y-2">
+                {currentInviteCode ? (
+                  <>
                     <div className="text-sm text-gray-600">
-                      <span className="font-medium">Invite URL:</span>
+                      <span className="font-medium">Your Invite Code:</span> <span data-testid="user-invite-code">{currentInviteCode.invite_code}</span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={generateInviteUrl()}
-                        readOnly
-                        className="flex-1 text-xs bg-white border border-gray-300 rounded px-2 py-1 font-mono"
-                      />
+                    <div className="text-xs text-gray-500" data-testid="invite-stats-container">
+                      Used: <span data-testid="current-uses-stat">{currentInviteCode.current_uses}</span>/<span data-testid="max-uses-stat">{currentInviteCode.max_uses || '∞'}</span> times
+                    </div>
+
+                    {!showInviteUrl ? (
                       <button
-                        onClick={copyInviteUrl}
-                        className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                        data-testid="show-invite-url-button"
+                        onClick={() => setShowInviteUrl(true)}
+                        className="text-sm text-blue-600 hover:text-blue-800"
                       >
-                        {copySuccess ? 'Copied!' : 'Copy'}
+                        Show invite link
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="text-sm text-gray-600">
+                          <span className="font-medium">Invite URL:</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            data-testid="invite-url-input"
+                            type="text"
+                            value={generateInviteUrl(currentInviteCode.invite_code)}
+                            readOnly
+                            className="flex-1 text-xs bg-white border border-gray-300 rounded px-2 py-1 font-mono"
+                          />
+                          <button
+                            data-testid="copy-invite-code-button"
+                            onClick={() => copyInviteUrl(currentInviteCode.invite_code)}
+                            className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                          >
+                            {copySuccess ? 'Copied!' : 'Copy'}
                       </button>
                     </div>
                     <button
@@ -107,6 +132,22 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                       className="text-sm text-gray-500 hover:text-gray-700"
                     >
                       Hide invite link
+                    </button>
+                  </div>
+                )}
+                </>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-600">
+                      You don't have an invite code for this group yet.
+                    </div>
+                    <button
+                      data-testid="create-invite-code-button"
+                      onClick={handleCreateInviteCode}
+                      disabled={createInviteCodeMutation.isPending}
+                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {createInviteCodeMutation.isPending ? 'Creating...' : 'Create Invite Code'}
                     </button>
                   </div>
                 )}
@@ -132,6 +173,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                   groups.map((group) => (
                     <button
                       key={group.id}
+                      data-testid="group-button"
                       onClick={() => {
                         onGroupChange(group);
                         onClose();
@@ -144,7 +186,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                       }`}
                     >
                       <div className="font-medium">{group.name}</div>
-                      <div className="text-xs text-gray-500">{group.join_code}</div>
+                      <div className="text-xs text-gray-500">Click to view invite options</div>
                     </button>
                   ))
                 )}
@@ -155,6 +197,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           {/* Actions */}
           <div className="p-4 border-t border-gray-200 space-y-2">
             <button
+              data-testid="create-group-button"
               onClick={() => {
                 onCreateGroup();
                 onClose();
@@ -165,6 +208,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               Create New Group
             </button>
             <button
+              data-testid="join-group-button"
               onClick={() => {
                 onJoinGroup();
                 onClose();

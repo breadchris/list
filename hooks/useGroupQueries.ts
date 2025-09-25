@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Group, contentRepository } from '../components/ContentRepository';
+import { Group, InviteStats, InviteGraphNode, contentRepository } from '../components/ContentRepository';
 import { QueryKeys, QueryInvalidation } from './queryKeys';
 
 /**
@@ -36,43 +36,15 @@ export const useGroupByIdQuery = (groupId: string, options?: { enabled?: boolean
  */
 export const useCreateGroupMutation = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (name: string) => {
       return await contentRepository.createGroup(name);
     },
-    onMutate: async (groupName) => {
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: QueryKeys.groups });
-
-      // Snapshot the previous value
-      const previousGroups = queryClient.getQueryData(QueryKeys.groups);
-
-      // Optimistically update to the new value
-      const optimisticGroup: Group = {
-        id: `temp-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        name: groupName,
-        join_code: 'TEMP',
-        created_by: undefined,
-      };
-
-      queryClient.setQueryData(QueryKeys.groups, (old: Group[] | undefined) => {
-        return old ? [optimisticGroup, ...old] : [optimisticGroup];
-      });
-
-      return { previousGroups };
-    },
-    onError: (err, newGroup, context) => {
-      // If the mutation fails, use the context to roll back
-      if (context?.previousGroups) {
-        queryClient.setQueryData(QueryKeys.groups, context.previousGroups);
-      }
-    },
     onSuccess: (data) => {
-      // Remove optimistic update and add real data
+      // Invalidate groups query to refetch the updated list
       queryClient.invalidateQueries({ queryKey: QueryKeys.groups });
-      
+
       // Cache the new group individually
       queryClient.setQueryData(QueryKeys.groupById(data.id), data);
     },
@@ -80,21 +52,91 @@ export const useCreateGroupMutation = () => {
 };
 
 /**
- * Mutation for joining a group by code
+ * Mutation for joining a group with user invite code
  */
 export const useJoinGroupMutation = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: async (joinCode: string) => {
-      return await contentRepository.joinGroupByCode(joinCode);
+    mutationFn: async (inviteCode: string) => {
+      return await contentRepository.joinGroupWithUserCode(inviteCode);
     },
     onSuccess: (data) => {
       // Invalidate groups query to refetch the updated list
       queryClient.invalidateQueries({ queryKey: QueryKeys.groups });
-      
+
       // Cache the joined group individually
       queryClient.setQueryData(QueryKeys.groupById(data.id), data);
+
+      // Invalidate invite-related queries
+      queryClient.invalidateQueries({ queryKey: ['invite-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['invite-graph', data.id] });
+    },
+  });
+};
+
+/**
+ * Hook for fetching user invite codes/stats
+ */
+export const useUserInviteStatsQuery = (groupId?: string) => {
+  return useQuery({
+    queryKey: ['invite-stats', groupId],
+    queryFn: async () => {
+      return await contentRepository.getUserInviteCodes(groupId);
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+};
+
+/**
+ * Hook for fetching invite graph for a group
+ */
+export const useInviteGraphQuery = (groupId: string, options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: ['invite-graph', groupId],
+    queryFn: async () => {
+      return await contentRepository.getInviteGraph(groupId);
+    },
+    enabled: !!groupId && options?.enabled !== false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+/**
+ * Mutation for creating user invite code
+ */
+export const useCreateInviteCodeMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ groupId, maxUses, expiresAt }: {
+      groupId: string;
+      maxUses?: number;
+      expiresAt?: string;
+    }) => {
+      return await contentRepository.createUserInviteCode(groupId, maxUses, expiresAt);
+    },
+    onSuccess: (data, variables) => {
+      // Invalidate invite stats
+      queryClient.invalidateQueries({ queryKey: ['invite-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['invite-stats', variables.groupId] });
+    },
+  });
+};
+
+/**
+ * Mutation for deactivating an invite code
+ */
+export const useDeactivateInviteCodeMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (inviteCodeId: string) => {
+      return await contentRepository.deactivateInviteCode(inviteCodeId);
+    },
+    onSuccess: () => {
+      // Invalidate invite stats to refresh the list
+      queryClient.invalidateQueries({ queryKey: ['invite-stats'] });
     },
   });
 };
