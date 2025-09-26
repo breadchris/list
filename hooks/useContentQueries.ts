@@ -291,8 +291,48 @@ export const useDeleteContentMutation = () => {
         queryClient.removeQueries({ queryKey: QueryKeys.contentById(deletedContent.id) });
         
         // Invalidate content lists
-        queryClient.invalidateQueries({ 
-          queryKey: QueryInvalidation.allContentForGroup(deletedContent.group_id) 
+        queryClient.invalidateQueries({
+          queryKey: QueryInvalidation.allContentForGroup(deletedContent.group_id)
+        });
+      }
+    },
+  });
+};
+
+/**
+ * Mutation for bulk deleting multiple content items
+ */
+export const useBulkDeleteContentMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (contentIds: string[]) => {
+      if (contentIds.length === 0) return [];
+
+      // Get all content items first to know which groups to invalidate
+      const contentItems = contentIds.map(id =>
+        queryClient.getQueryData(QueryKeys.contentById(id)) as Content
+      ).filter(Boolean);
+
+      await contentRepository.bulkDeleteContent(contentIds);
+      return contentItems;
+    },
+    onSuccess: (deletedContent) => {
+      if (deletedContent && deletedContent.length > 0) {
+        // Remove all items from individual caches
+        deletedContent.forEach(content => {
+          queryClient.removeQueries({ queryKey: QueryKeys.contentById(content.id) });
+        });
+
+        // Invalidate content lists for all affected groups
+        const affectedGroups = Array.from(
+          new Set(deletedContent.map(content => content.group_id))
+        );
+
+        affectedGroups.forEach(groupId => {
+          queryClient.invalidateQueries({
+            queryKey: QueryInvalidation.allContentForGroup(groupId)
+          });
         });
       }
     },

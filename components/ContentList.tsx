@@ -4,7 +4,7 @@ import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
 import { JsContentDisplay } from './JsContentDisplay';
 import { useToast } from './ToastProvider';
-import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation } from '../hooks/useContentQueries';
+import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from '../hooks/queryKeys';
 import { ContentSelectionState } from '../hooks/useContentSelection';
@@ -88,6 +88,15 @@ export const ContentList: React.FC<ContentListProps> = ({
     error: searchError,
     status: searchStatus
   } = useInfiniteSearchContent(groupId, searchQuery, parentContentId, { enabled: isSearching });
+
+  // Query for parent content when viewing children
+  const {
+    data: parentContent,
+    isLoading: parentLoading
+  } = useContentById(
+    parentContentId || '',
+    { enabled: !!parentContentId && !isSearching }
+  );
 
   // Handle optimistic updates for new content
   useEffect(() => {
@@ -341,12 +350,100 @@ export const ContentList: React.FC<ContentListProps> = ({
     <div className="flex-1 flex flex-col bg-gray-50">
 
       {/* Content Area */}
-      <div 
+      <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto"
         onScroll={handleScroll}
       >
-        {displayItems.length === 0 && !currentLoading ? (
+        {/* Parent Content Display - Always shown when exists, regardless of children */}
+        {parentContent && !isSearching && (
+          <div className="bg-blue-50 border-b-2 border-blue-200">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center mb-3">
+                <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                <span className="text-sm font-semibold text-blue-800 uppercase tracking-wide">Parent Item</span>
+              </div>
+              <div className="bg-white rounded-lg border border-blue-200 p-4">
+                {parentContent.type === 'seo' ? (
+                  <div>
+                    <SEOCard
+                      metadata={parentContent.metadata as SEOMetadata}
+                      onClick={() => {}}
+                    />
+                    <TagDisplay tags={parentContent.tags || []} />
+                    <p className="text-xs text-gray-500 mt-2">
+                      {formatRelativeTime(parentContent.created_at)}
+                    </p>
+                  </div>
+                ) : parentContent.type === 'js' ? (
+                  <div>
+                    <div className="mb-2">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                        <span className="text-xs font-medium text-green-600 uppercase tracking-wide">JavaScript</span>
+                      </div>
+                      <JsContentDisplay code={parentContent.data} maxLines={8} />
+                    </div>
+                    <TagDisplay tags={parentContent.tags || []} />
+                    <p className="text-xs text-gray-500 mt-2">
+                      {formatRelativeTime(parentContent.created_at)}
+                    </p>
+                  </div>
+                ) : parentContent.type === 'prompt' ? (
+                  <div>
+                    <div className="mb-2">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                        </svg>
+                        <span className="text-xs font-medium text-purple-600 uppercase tracking-wide">AI Prompt</span>
+                        {parentContent.metadata?.generated_count && (
+                          <span className="text-xs text-gray-500">
+                            ({parentContent.metadata.generated_count} items generated)
+                          </span>
+                        )}
+                      </div>
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                        <p className="text-sm text-purple-800 whitespace-pre-wrap break-words">
+                          {parentContent.data}
+                        </p>
+                      </div>
+                    </div>
+                    <TagDisplay tags={parentContent.tags || []} />
+                    <p className="text-xs text-gray-500 mt-2">
+                      {formatRelativeTime(parentContent.created_at)}
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <LinkifiedText
+                      text={parentContent.data}
+                      className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
+                    />
+                    <TagDisplay tags={parentContent.tags || []} />
+                    <p className="text-xs text-gray-500 mt-2">
+                      {formatRelativeTime(parentContent.created_at)}
+                    </p>
+                  </div>
+                )}
+                {isContentPublic(parentContent) && (
+                  <div className="mt-2 flex items-center text-xs text-blue-600">
+                    <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    This content is public
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {displayItems.length === 0 && !currentLoading && (!parentContent || isSearching) ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               {isSearching ? (
@@ -363,16 +460,18 @@ export const ContentList: React.FC<ContentListProps> = ({
             </div>
           </div>
         ) : (
-          <div className={`p-3 sm:p-4 space-y-3 ${currentLoading && persistentItems.length > 0 ? 'opacity-75' : ''}`}>
-            {currentLoading && persistentItems.length > 0 && (
-              <div className="flex justify-center py-2">
-                <div className="flex items-center text-xs text-gray-600">
-                  <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full mr-2"></div>
-                  Loading...
+          <div className="p-3 sm:p-4 space-y-3">
+            {/* Child Content Items */}
+            <div className={`${parentContent ? 'p-3 sm:p-4' : ''}`}>
+              {currentLoading && persistentItems.length > 0 && (
+                <div className="flex justify-center py-2">
+                  <div className="flex items-center text-xs text-gray-600">
+                    <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full mr-2"></div>
+                    Loading...
+                  </div>
                 </div>
-              </div>
-            )}
-            {displayItems.map((item) => {
+              )}
+              {displayItems.map((item) => {
               const isSelected = selection.selectedItems.has(item.id);
               return (
                 <div 
@@ -511,34 +610,19 @@ export const ContentList: React.FC<ContentListProps> = ({
                       </div>
                     )}
                   </div>
-                  
-                  {/* Delete button - hide in selection mode to avoid confusion */}
-                  {!selection.isSelectionMode && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(item.id);
-                      }}
-                      className="ml-2 sm:ml-3 text-gray-400 hover:text-red-500 transition-colors p-1 touch-manipulation"
-                      title="Delete item"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
                 </div>
               </div>
               );
             })}
-            
-            {/* Show skeleton loading for initial content load (with delay to prevent flashing) */}
-            {showSkeleton && (
-              <ContentListSkeleton />
-            )}
-            
-            {/* Background refresh indicator (less prominent) */}
-            {currentFetching && !currentLoading && !currentFetchingNext && displayItems.length > 0 && (
+            </div>
+
+              {/* Show skeleton loading for initial content load (with delay to prevent flashing) */}
+              {showSkeleton && (
+                <ContentListSkeleton />
+              )}
+
+              {/* Background refresh indicator (less prominent) */}
+              {currentFetching && !currentLoading && !currentFetchingNext && displayItems.length > 0 && (
               <div className="flex justify-center py-2">
                 <div className="flex items-center text-xs text-gray-500">
                   <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full mr-2"></div>

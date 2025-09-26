@@ -19,6 +19,7 @@ import { Footer } from './Footer';
 import { LLMPromptModal } from './LLMPromptModal';
 import { Group, Content, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
+import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
 import { useToast } from './ToastProvider';
@@ -55,6 +56,7 @@ export const ListApp: React.FC = () => {
   });
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
+  const bulkDeleteMutation = useBulkDeleteContentMutation();
   const seoExtractionMutation = useSEOExtraction();
   
   // Search state  
@@ -246,8 +248,42 @@ export const ListApp: React.FC = () => {
   };
 
   const handleBulkDelete = async () => {
-    // TODO: Implement bulk delete workflow
-    console.log('Bulk delete for selected items:', contentSelection.selectedItems);
+    const selectedIds = Array.from(contentSelection.selectedItems);
+
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    // Show confirmation dialog
+    const itemText = selectedIds.length === 1 ? 'item' : 'items';
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${selectedIds.length} selected ${itemText}? This action cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      // Perform bulk delete
+      await bulkDeleteMutation.mutateAsync(selectedIds);
+
+      // Clear selection after successful deletion
+      contentSelection.clearSelection();
+
+      // Show success message
+      toast.success(
+        'Items deleted',
+        `Successfully deleted ${selectedIds.length} ${itemText}`
+      );
+
+    } catch (error) {
+      console.error('Bulk delete failed:', error);
+      toast.error(
+        'Delete failed',
+        error instanceof Error ? error.message : 'Failed to delete items'
+      );
+    }
   };
 
   const handleCloseSEOProgress = () => {
