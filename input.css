@@ -1,6 +1,43 @@
 @import "./public/satoshi.css";
 @import "tailwindcss";
 
+/* Lexical Editor Styles */
+.lexical-content-editable {
+  min-height: 40px;
+  max-height: 120px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.lexical-content-editable:empty::before {
+  content: attr(aria-placeholder);
+  position: absolute;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.lexical-root {
+  position: relative;
+  outline: none;
+}
+
+.lexical-paragraph {
+  margin: 0;
+  position: relative;
+}
+
+.lexical-paragraph + .lexical-paragraph {
+  margin-top: 0.5rem;
+}
+
+.lexical-placeholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
 @theme {
   /* Colors - Warm Editorial Palette */
   --color-surface: rgb(255, 255, 227);

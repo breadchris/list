@@ -460,9 +460,9 @@ export const ContentList: React.FC<ContentListProps> = ({
             </div>
           </div>
         ) : (
-          <div className="p-3 sm:p-4 space-y-3">
+          <div className="p-3 sm:p-4">
             {/* Child Content Items */}
-            <div className={`${parentContent ? 'p-3 sm:p-4' : ''}`}>
+            <div className={`${parentContent ? 'p-3 sm:p-4' : ''} space-y-3`}>
               {currentLoading && persistentItems.length > 0 && (
                 <div className="flex justify-center py-2">
                   <div className="flex items-center text-xs text-gray-600">

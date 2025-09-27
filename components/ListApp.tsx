@@ -519,12 +519,21 @@ export const ListApp: React.FC = () => {
   };
 
 
-  // Auto-select first group when groups are loaded
+  // Auto-select group when groups are loaded (with localStorage persistence)
   useEffect(() => {
     if (!currentGroup && groups.length > 0) {
-      setCurrentGroup(groups[0]);
+      const savedGroupId = localStorage.getItem('lastViewedGroupId');
+      const savedGroup = groups.find(g => g.id === savedGroupId);
+      setCurrentGroup(savedGroup || groups[0]);
     }
   }, [groups, currentGroup]);
+
+  // Save current group to localStorage when it changes
+  useEffect(() => {
+    if (currentGroup?.id) {
+      localStorage.setItem('lastViewedGroupId', currentGroup.id);
+    }
+  }, [currentGroup]);
 
   const handleSignOut = async () => {
     try {

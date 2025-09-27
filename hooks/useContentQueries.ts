@@ -168,11 +168,11 @@ export const useInfiniteSearchContent = (
 };
 
 /**
- * Mutation for creating content with optimistic updates
+ * Mutation for creating content - no optimistic updates per CLAUDE.md guidelines
  */
 export const useCreateContentMutation = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (content: {
       type: string;
@@ -182,69 +182,13 @@ export const useCreateContentMutation = () => {
     }) => {
       return await contentRepository.createContent(content);
     },
-    onMutate: async (newContent) => {
-      // Cancel any outgoing refetches for this query
-      const queryKey = QueryKeys.contentByParent(newContent.group_id, newContent.parent_content_id || null);
-      await queryClient.cancelQueries({ queryKey });
-
-      // Snapshot the previous value
-      const previousContent = queryClient.getQueryData(queryKey);
-
-      // Optimistically update to the new value
-      const optimisticContent: Content = {
-        id: `temp-${Date.now()}`, // Temporary ID
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        type: newContent.type,
-        data: newContent.data,
-        group_id: newContent.group_id,
-        user_id: '', // Will be filled by the server
-        parent_content_id: newContent.parent_content_id || null,
-        tags: [],
-      };
-
-      // Update infinite query cache (this is what the app actually uses)
-      queryClient.setQueryData(queryKey, (old: any) => {
-        if (old?.pages) {
-          // Handle infinite query structure
-          return {
-            ...old,
-            pages: old.pages.map((page: any, index: number) => 
-              index === 0 
-                ? { ...page, items: [optimisticContent, ...page.items] }
-                : page
-            ),
-          };
-        } else if (Array.isArray(old)) {
-          // Handle simple array structure (fallback for non-infinite queries)
-          return [optimisticContent, ...old];
-        }
-        // If no existing data, create initial structure
-        return {
-          pages: [{ items: [optimisticContent], hasMore: false, nextOffset: 1 }],
-          pageParams: [0]
-        };
-      });
-
-      // Return a context object with the snapshotted value
-      return { previousContent, queryKey };
-    },
-    onError: (err, newContent, context) => {
-      // If the mutation fails, use the context returned from onMutate to roll back
-      if (context?.previousContent) {
-        queryClient.setQueryData(context.queryKey, context.previousContent);
-      }
-    },
     onSuccess: (data, variables) => {
-      // Invalidate and refetch relevant queries
-      queryClient.invalidateQueries({ 
-        queryKey: QueryInvalidation.allContentForGroup(variables.group_id) 
-      });
-    },
-    onSettled: (data, error, variables) => {
-      // Always refetch after error or success
-      queryClient.invalidateQueries({ 
+      // After successful creation, invalidate relevant queries
+      queryClient.invalidateQueries({
         queryKey: QueryKeys.contentByParent(variables.group_id, variables.parent_content_id || null)
+      });
+      queryClient.invalidateQueries({
+        queryKey: QueryInvalidation.allContentForGroup(variables.group_id)
       });
     },
   });
