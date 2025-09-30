@@ -3,12 +3,14 @@ import { Content, contentRepository, Tag, SEOMetadata, SharingMetadata } from '.
 import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
 import { JsContentDisplay } from './JsContentDisplay';
+import { UrlPreviewCard } from './UrlPreviewCard';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from '../hooks/queryKeys';
 import { ContentSelectionState } from '../hooks/useContentSelection';
 import { ContentListSkeleton } from './SkeletonComponents';
+import { ContentInput } from './ContentInput';
 
 interface ContentListProps {
   groupId: string;
@@ -18,6 +20,9 @@ interface ContentListProps {
   searchQuery: string;
   isSearching: boolean;
   selection: ContentSelectionState;
+  showInput?: boolean;
+  onInputClose?: () => void;
+  onContentAdded?: (content: Content) => void;
 }
 
 interface TagDisplayProps {
@@ -45,14 +50,17 @@ const TagDisplay: React.FC<TagDisplayProps> = ({ tags }) => {
   );
 };
 
-export const ContentList: React.FC<ContentListProps> = ({ 
-  groupId, 
-  newContent, 
-  parentContentId = null, 
+export const ContentList: React.FC<ContentListProps> = ({
+  groupId,
+  newContent,
+  parentContentId = null,
   onNavigate,
   searchQuery,
   isSearching,
-  selection
+  selection,
+  showInput = false,
+  onInputClose,
+  onContentAdded
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -443,6 +451,17 @@ export const ContentList: React.FC<ContentListProps> = ({
           </div>
         )}
 
+        {/* Sub-item Input - Show below parent content when adding sub-items */}
+        {showInput && parentContentId && onContentAdded && onInputClose && (
+          <ContentInput
+            groupId={groupId}
+            parentContentId={parentContentId}
+            onContentAdded={onContentAdded}
+            isVisible={showInput}
+            onClose={onInputClose}
+          />
+        )}
+
         {displayItems.length === 0 && !currentLoading && (!parentContent || isSearching) ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
@@ -461,6 +480,19 @@ export const ContentList: React.FC<ContentListProps> = ({
           </div>
         ) : (
           <div className="p-3 sm:p-4">
+            {/* Root-level Input - Show at top when adding root items */}
+            {showInput && !parentContentId && onContentAdded && onInputClose && (
+              <div className="mb-4">
+                <ContentInput
+                  groupId={groupId}
+                  parentContentId={parentContentId}
+                  onContentAdded={onContentAdded}
+                  isVisible={showInput}
+                  onClose={onInputClose}
+                />
+              </div>
+            )}
+
             {/* Child Content Items */}
             <div className={`${parentContent ? 'p-3 sm:p-4' : ''} space-y-3`}>
               {currentLoading && persistentItems.length > 0 && (
@@ -594,6 +626,10 @@ export const ContentList: React.FC<ContentListProps> = ({
                               text={item.data}
                               className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
                             />
+                            {/* URL Preview Image */}
+                            {item.metadata?.url_preview && (
+                              <UrlPreviewCard previewUrl={item.metadata.url_preview} />
+                            )}
                           </div>
                           {isContentPublic(item) && (
                             <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">

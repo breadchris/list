@@ -9,9 +9,10 @@
 ## Project Structure
 
 - `/components/` - React components
-- `/data/` - Test configuration files
+- `/data/` - Test configuration files and Playwright test results
 - `/supabase/` - Supabase configuration and migrations
 - `/types/` - TypeScript type definitions
+- `/tests/` - Playwright E2E tests
 
 ## Key Features
 
@@ -28,6 +29,31 @@
 - Uses Row Level Security (RLS) policies in Supabase
 - URL-based navigation for nested content
 - Real-time subscriptions for live updates
+
+## Testing Configuration
+
+**CRITICAL**: Playwright test results are saved to `./data/` directory
+
+### Test Output Configuration
+- Test results: `./data/test-results/`
+- HTML reports: `./data/playwright-report/`
+- Screenshots and videos on failure stored in test results
+- Tests run against local Supabase instance (`http://127.0.0.1:54321`)
+- Frontend tests run against `http://localhost:3004`
+
+### Running Tests
+```bash
+npm run test:e2e                    # Run all E2E tests
+npm run test:e2e:headed            # Run with browser UI visible
+npm run test:e2e:ui                # Run with Playwright UI
+npm run test:e2e -- tests/specific-test.spec.ts  # Run specific test
+```
+
+### Test Data Management
+- Tests use DatabaseHelper for setup and cleanup
+- Test users created with unique identifiers to prevent conflicts
+- All test data automatically cleaned up after test completion
+- Mock authentication used via localStorage for faster test execution
 
 ## Go HTTP Server Guidelines
 

@@ -12,6 +12,10 @@ struct shareApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onOpenURL { url in
+                    // Handle URL schemes from share extension
+                    SharedURLManager.shared.handleURLScheme(url)
+                }
         }
     }
 }

@@ -429,6 +429,31 @@ export class ContentRepository {
     return data;
   }
 
+  async leaveGroup(groupId: string): Promise<void> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const { error } = await withRetry(async () => {
+        return await supabase
+          .from('group_memberships')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('group_id', groupId);
+      });
+
+      if (error) {
+        console.error('Error leaving group:', error);
+        throw new Error('Failed to leave group');
+      }
+    } catch (error) {
+      console.error('Failed to leave group after retries:', error);
+      throw error;
+    }
+  }
+
   // Tag methods
   async createTag(name: string, color?: string): Promise<Tag> {
     const { data, error } = await supabase
@@ -793,7 +818,7 @@ export class ContentRepository {
   async canModifyContentSharing(contentId: string): Promise<boolean> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         return false;
       }
@@ -812,6 +837,82 @@ export class ContentRepository {
     } catch (error) {
       console.error('Failed to check content sharing permissions:', error);
       return false;
+    }
+  }
+
+  // URL Preview / Screenshot functionality
+  async generateUrlPreview(contentId: string, url: string): Promise<{ success: boolean; screenshot_url?: string; error?: string }> {
+    try {
+      console.log(`Generating URL preview for content ${contentId} with URL: ${url}`);
+
+      const response = await fetch('https://content-worker.chrislegolife.workers.dev', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url: url,
+          contentId: contentId
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        console.error('Screenshot worker failed:', result.error);
+        return {
+          success: false,
+          error: result.error || `HTTP ${response.status}`
+        };
+      }
+
+      console.log(`Successfully generated screenshot: ${result.screenshot_url}`);
+      return {
+        success: true,
+        screenshot_url: result.screenshot_url
+      };
+    } catch (error) {
+      console.error('Failed to generate URL preview:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Update content metadata with URL preview
+  async updateContentUrlPreview(contentId: string, screenshotUrl: string): Promise<void> {
+    try {
+      // First get current metadata
+      const { data: content, error: fetchError } = await supabase
+        .from('content')
+        .select('metadata')
+        .eq('id', contentId)
+        .single();
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch content: ${fetchError.message}`);
+      }
+
+      // Update metadata with url_preview
+      const updatedMetadata = {
+        ...content.metadata,
+        url_preview: screenshotUrl
+      };
+
+      const { error: updateError } = await supabase
+        .from('content')
+        .update({ metadata: updatedMetadata })
+        .eq('id', contentId);
+
+      if (updateError) {
+        throw new Error(`Failed to update metadata: ${updateError.message}`);
+      }
+
+      console.log(`Updated content ${contentId} with url_preview: ${screenshotUrl}`);
+    } catch (error) {
+      console.error('Failed to update content URL preview:', error);
+      throw error;
     }
   }
 }

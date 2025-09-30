@@ -76,6 +76,34 @@ export const useJoinGroupMutation = () => {
 };
 
 /**
+ * Mutation for leaving a group
+ */
+export const useLeaveGroupMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (groupId: string) => {
+      return await contentRepository.leaveGroup(groupId);
+    },
+    onSuccess: (_, groupId) => {
+      // Invalidate groups query to refetch the updated list
+      queryClient.invalidateQueries({ queryKey: QueryKeys.groups });
+
+      // Remove the group from cache
+      queryClient.removeQueries({ queryKey: QueryKeys.groupById(groupId) });
+
+      // Invalidate invite-related queries
+      queryClient.invalidateQueries({ queryKey: ['invite-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['invite-graph', groupId] });
+
+      // Invalidate content queries for this group
+      queryClient.removeQueries({ queryKey: ['content-by-parent', groupId] });
+      queryClient.removeQueries({ queryKey: ['content-search', groupId] });
+    },
+  });
+};
+
+/**
  * Hook for fetching user invite codes/stats
  */
 export const useUserInviteStatsQuery = (groupId?: string) => {

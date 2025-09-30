@@ -1,0 +1,11 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "content-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-18"
+compatibility_flags = ["nodejs_compat"]
+
+[browser]
+binding = "BROWSER"
+
+[vars]
+SUPABASE_URL = "https://zazsrepfnamdmibcyenx.supabase.co"

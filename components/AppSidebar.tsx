@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Group, contentRepository } from './ContentRepository';
-import { useUserInviteStatsQuery, useCreateInviteCodeMutation } from '../hooks/useGroupQueries';
+import { useUserInviteStatsQuery, useCreateInviteCodeMutation, useLeaveGroupMutation } from '../hooks/useGroupQueries';
 
 interface AppSidebarProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ interface AppSidebarProps {
   onGroupChange: (group: Group) => void;
   onCreateGroup: () => void;
   onJoinGroup: () => void;
+  onLeaveGroup?: (groupId: string) => void;
   isLoading?: boolean;
 }
 
@@ -21,6 +22,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onGroupChange,
   onCreateGroup,
   onJoinGroup,
+  onLeaveGroup,
   isLoading = false
 }) => {
   const [showInviteUrl, setShowInviteUrl] = useState(false);
@@ -28,6 +30,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
   const { data: inviteStats } = useUserInviteStatsQuery(currentGroup?.id);
   const createInviteCodeMutation = useCreateInviteCodeMutation();
+  const leaveGroupMutation = useLeaveGroupMutation();
 
   const currentInviteCode = inviteStats?.find(stat => stat.group_id === currentGroup?.id);
 
@@ -55,6 +58,28 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       });
     } catch (error) {
       console.error('Failed to create invite code:', error);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!currentGroup) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to leave "${currentGroup.name}"? You will lose access to all content in this group.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await leaveGroupMutation.mutateAsync(currentGroup.id);
+      // Callback to handle navigation after leaving
+      if (onLeaveGroup) {
+        onLeaveGroup(currentGroup.id);
+      }
+      onClose(); // Close sidebar after leaving
+    } catch (error) {
+      console.error('Failed to leave group:', error);
+      // Error handling is done by the mutation
     }
   };
 
@@ -151,6 +176,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     </button>
                   </div>
                 )}
+
+                {/* Leave Group Button */}
+                <div className="pt-3 mt-3 border-t border-gray-200">
+                  <button
+                    onClick={handleLeaveGroup}
+                    disabled={leaveGroupMutation.isPending}
+                    className="w-full px-3 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded border border-red-200 hover:border-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {leaveGroupMutation.isPending ? 'Leaving...' : 'Leave Group'}
+                  </button>
+                </div>
               </div>
             </div>
           )}

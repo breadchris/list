@@ -68,7 +68,7 @@ export const PublicContentView: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         {/* Simple Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200">
+        <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
           <div className="max-w-4xl mx-auto px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
@@ -78,7 +78,7 @@ export const PublicContentView: React.FC = () => {
           </div>
         </header>
         
-        <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm">
+        <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm pt-20">
           <ContentListSkeleton />
         </div>
       </div>
@@ -89,7 +89,7 @@ export const PublicContentView: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-50">
         {/* Simple Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200">
+        <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
           <div className="max-w-4xl mx-auto px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
@@ -105,7 +105,7 @@ export const PublicContentView: React.FC = () => {
           </div>
         </header>
 
-        <div className="flex items-center justify-center h-96">
+        <div className="flex items-center justify-center h-96 pt-20">
           <div className="text-center max-w-md">
             <div className="mb-4">
               <svg className="w-16 h-16 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,7 +148,7 @@ export const PublicContentView: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Simple Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
+      <header className="sticky top-0 z-50 bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -171,7 +171,7 @@ export const PublicContentView: React.FC = () => {
       </header>
 
       {/* Content Area */}
-      <div className="max-w-4xl mx-auto p-4">
+      <div className="max-w-4xl mx-auto p-4 pt-24">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="p-6">
             {/* Content Display */}

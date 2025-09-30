@@ -29,6 +29,7 @@
   },
   "scripts": {
     "dev": "go run . serve",
+    "dev:test": "go run . serve --port 8080",
     "build": "npm run css:build && go run . build",
     "css:build": "npx @tailwindcss/cli -i ./input.css -o ./public/styles.css --minify",
     "css:watch": "npx @tailwindcss/cli -i ./input.css -o ./public/styles.css --watch",

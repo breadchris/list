@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4C5AE86A2E8B63FE005D092E /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5AE8692E8B63FE005D092E /* ShareViewController.swift */; };
+		4C5AE86C2E8B6417005D092E /* SharedURLManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5AE86B2E8B6417005D092E /* SharedURLManager.swift */; };
+		4C5AE86E2E8B644F005D092E /* ShareExtension-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4C5AE86D2E8B644F005D092E /* ShareExtension-Info.plist */; };
+		4C5AE8702E8B6458005D092E /* MainApp-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4C5AE86F2E8B6458005D092E /* MainApp-Info.plist */; };
 		4C6D284A2CE5CCAF00FCED19 /* shareApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6D28492CE5CCAF00FCED19 /* shareApp.swift */; };
 		4C6D284C2CE5CCAF00FCED19 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */; };
 		4C6D284E2CE5CCB000FCED19 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C6D284D2CE5CCB000FCED19 /* Assets.xcassets */; };
@@ -41,6 +45,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		4C5AE8692E8B63FE005D092E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		4C5AE86B2E8B6417005D092E /* SharedURLManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedURLManager.swift; sourceTree = "<group>"; };
+		4C5AE86D2E8B644F005D092E /* ShareExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "ShareExtension-Info.plist"; sourceTree = "<group>"; };
+		4C5AE86F2E8B6458005D092E /* MainApp-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "MainApp-Info.plist"; sourceTree = "<group>"; };
+		4C5AE8712E8B6464005D092E /* Share 2.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Share 2.entitlements"; sourceTree = "<group>"; };
 		4C6D28462CE5CCAF00FCED19 /* share.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = share.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4C6D28492CE5CCAF00FCED19 /* shareApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = shareApp.swift; sourceTree = "<group>"; };
 		4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -75,7 +84,6 @@
 		4C6D283D2CE5CCAF00FCED19 = {
 			isa = PBXGroup;
 			children = (
-				4C6D28702CE5DD0000FCED19 /* Shared */,
 				4C6D28482CE5CCAF00FCED19 /* share */,
 				4C6D285C2CE5CCE100FCED19 /* ext */,
 				4C6D28472CE5CCAF00FCED19 /* Products */,
@@ -99,6 +107,11 @@
 				4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */,
 				4C6D284D2CE5CCB000FCED19 /* Assets.xcassets */,
 				4C6D284F2CE5CCB000FCED19 /* Preview Content */,
+				4C5AE8692E8B63FE005D092E /* ShareViewController.swift */,
+				4C5AE86B2E8B6417005D092E /* SharedURLManager.swift */,
+				4C5AE86D2E8B644F005D092E /* ShareExtension-Info.plist */,
+				4C5AE86F2E8B6458005D092E /* MainApp-Info.plist */,
+				4C5AE8712E8B6464005D092E /* Share 2.entitlements */,
 			);
 			path = share;
 			sourceTree = "<group>";
@@ -120,16 +133,6 @@
 				4C6D28622CE5CCE200FCED19 /* Info.plist */,
 			);
 			path = ext;
-			sourceTree = "<group>";
-		};
-		4C6D28702CE5DD0000FCED19 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				4C6D286D2CE5DD0000FCED19 /* TokenStorage.swift */,
-				4C6D286E2CE5DD0000FCED19 /* ShareQueue.swift */,
-				4C6D286F2CE5DD0000FCED19 /* QueueProcessor.swift */,
-			);
-			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -213,8 +216,10 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4C5AE86E2E8B644F005D092E /* ShareExtension-Info.plist in Resources */,
 				4C6D28512CE5CCB000FCED19 /* Preview Assets.xcassets in Resources */,
 				4C6D284E2CE5CCB000FCED19 /* Assets.xcassets in Resources */,
+				4C5AE8702E8B6458005D092E /* MainApp-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -233,7 +238,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4C5AE86A2E8B63FE005D092E /* ShareViewController.swift in Sources */,
 				4C6D284C2CE5CCAF00FCED19 /* ContentView.swift in Sources */,
+				4C5AE86C2E8B6417005D092E /* SharedURLManager.swift in Sources */,
 				4C6D284A2CE5CCAF00FCED19 /* shareApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -393,6 +400,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = share/share.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -400,13 +408,14 @@
 				DEVELOPMENT_TEAM = GXTMGDAFNK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleIconName = "AppIcon";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -426,6 +435,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = share/share.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -433,13 +443,14 @@
 				DEVELOPMENT_TEAM = GXTMGDAFNK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleIconName = "AppIcon";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

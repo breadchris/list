@@ -7,7 +7,7 @@ const SkeletonPulse: React.FC<{ className?: string }> = ({ className = '' }) => 
 
 // Header skeleton that matches the real header layout
 export const HeaderSkeleton: React.FC = () => (
-  <header className="bg-white shadow-sm border-b border-gray-200">
+  <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
     <div className="max-w-4xl mx-auto px-4 py-3">
       <div className="flex justify-between items-center">
         {/* Left side - Menu button + Group selector skeleton */}
@@ -70,9 +70,9 @@ export const BreadcrumbSkeleton: React.FC = () => (
 
 // Full app skeleton that maintains layout structure
 export const AppSkeleton: React.FC = () => (
-  <div className="min-h-screen bg-gray-50 flex flex-col transition-all duration-200 ease-in-out">
+  <div className="h-screen bg-gray-50 flex flex-col transition-all duration-200 ease-in-out overflow-hidden">
     <HeaderSkeleton />
-    <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out">
+    <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out overflow-y-auto pt-20">
       <BreadcrumbSkeleton />
       <ContentListSkeleton />
     </div>

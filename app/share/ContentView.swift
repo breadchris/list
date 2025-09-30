@@ -12,6 +12,7 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var webViewStore = WebViewStore()
+    @StateObject private var sharedURLManager = SharedURLManager.shared
     @State private var showingAPIKeyAlert = false
     @State private var apiKeyMessage = ""
     @State private var isAuthenticating = false
@@ -32,6 +33,9 @@ struct ContentView: View {
                 .onAppear {
                     loadListApp()
                     setupNotificationObserver()
+                    
+                    // Check for shared URLs when the app appears
+                    sharedURLManager.checkForSharedURLs()
                 }
                 .alert("API Key", isPresented: $showingAPIKeyAlert) {
                     Button("OK") { }
@@ -150,6 +154,30 @@ struct ContentView: View {
         ) { notification in
             if let authURL = notification.userInfo?["authURL"] as? String {
                 performGoogleAuthentication(authURL: authURL)
+            }
+        }
+
+        // Handle shared URL processing
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ProcessSharedURL"),
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let payload = notification.userInfo?["payload"] as? [String: Any],
+               let apiKey = notification.userInfo?["apiKey"] as? String {
+                processSharedURLInWebView(payload: payload, apiKey: apiKey)
+            }
+        }
+
+        // Handle shared URL errors
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("SharedURLError"),
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let message = notification.userInfo?["message"] as? String {
+                apiKeyMessage = message
+                showingAPIKeyAlert = true
             }
         }
     }
@@ -287,6 +315,90 @@ struct ContentView: View {
         print("🖼️ ASWebAuthenticationSession: Presentation context provider set: \(session.presentationContextProvider != nil)")
 
         session.start()
+    }
+
+    /// Process shared URL by injecting it into the WebView
+    private func processSharedURLInWebView(payload: [String: Any], apiKey: String) {
+        guard let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+              let payloadJSON = String(data: payloadData, encoding: .utf8) else {
+            print("❌ ContentView: Failed to serialize shared URL payload")
+            return
+        }
+
+        let script = """
+            (function() {
+                const payload = \(payloadJSON);
+                const apiKey = '\(apiKey)';
+
+                console.log('📤 Processing shared URL:', payload);
+
+                // Wait for the app to be ready
+                let attemptCount = 0;
+                const maxAttempts = 20;
+
+                function attemptToShareURL() {
+                    attemptCount++;
+                    console.log('🔍 Shared URL: Attempt', attemptCount + '/' + maxAttempts, '- Checking for app readiness...');
+
+                    // Check if we have Supabase client and are authenticated
+                    if (typeof window.supabase !== 'undefined' && window.supabase && window.supabase.auth) {
+                        console.log('✅ Shared URL: Supabase client found, checking auth...');
+
+                        window.supabase.auth.getSession().then(({ data: { session }, error }) => {
+                            if (error) {
+                                console.error('❌ Shared URL: Auth check failed:', error);
+                                return;
+                            }
+
+                            if (session) {
+                                console.log('✅ Shared URL: User authenticated, sending to Supabase...');
+                                
+                                // Insert the shared URL into Supabase
+                                window.supabase
+                                    .from('shared_urls') // Adjust table name as needed
+                                    .insert([{
+                                        url: payload.url,
+                                        title: payload.title || '',
+                                        shared_at: payload.shared_at,
+                                        source: payload.source,
+                                        user_id: session.user.id
+                                    }])
+                                    .then(({ data, error }) => {
+                                        if (error) {
+                                            console.error('❌ Shared URL: Supabase insert failed:', error);
+                                        } else {
+                                            console.log('✅ Shared URL: Successfully saved to Supabase:', data);
+                                            
+                                            // Optionally refresh the page to show the new content
+                                            // window.location.reload();
+                                        }
+                                    });
+                            } else {
+                                console.log('⚠️ Shared URL: User not authenticated');
+                                // Optionally handle non-authenticated case
+                            }
+                        });
+                    } else {
+                        if (attemptCount < maxAttempts) {
+                            console.log('⏳ Shared URL: App not ready yet, retrying in 500ms...');
+                            setTimeout(attemptToShareURL, 500);
+                        } else {
+                            console.error('❌ Shared URL: Timeout waiting for app after', (maxAttempts * 0.5), 'seconds');
+                        }
+                    }
+                }
+
+                attemptToShareURL();
+            })();
+        """
+
+        webViewStore.webView.evaluateJavaScript(script) { result, error in
+            if let error = error {
+                print("❌ ContentView: Failed to execute shared URL script: \(error.localizedDescription)")
+            } else {
+                print("✅ ContentView: Shared URL script executed successfully")
+            }
+        }
     }
 }
 

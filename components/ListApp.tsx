@@ -23,6 +23,7 @@ import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
 import { useToast } from './ToastProvider';
+import { extractUrls, getFirstUrl } from '../utils/urlDetection';
 
 // Simplified app loading states to prevent rapid transitions
 type AppLoadingState = 'loading' | 'ready' | 'error';
@@ -38,6 +39,8 @@ export const ListApp: React.FC = () => {
   
   // Prevent concurrent initializations
   const isInitializingRef = useRef(false);
+  // Prevent concurrent join attempts
+  const isJoiningGroupRef = useRef(false);
 
   // Standard React state management - no defensive programming needed
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
@@ -57,6 +60,12 @@ export const ListApp: React.FC = () => {
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
   const bulkDeleteMutation = useBulkDeleteContentMutation();
+
+  // Store joinGroupMutation in a ref to avoid dependency issues
+  const joinGroupMutationRef = useRef(joinGroupMutation);
+  useEffect(() => {
+    joinGroupMutationRef.current = joinGroupMutation;
+  }, [joinGroupMutation]);
   const seoExtractionMutation = useSEOExtraction();
   
   // Search state  
@@ -323,6 +332,123 @@ export const ListApp: React.FC = () => {
     contentSelection.clearSelection();
     setNewContent(undefined);
   };
+
+  const handleScreenshotGeneration = async () => {
+    console.log('📸 Screenshot Generation button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    try {
+      // Fetch selected content items
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          const content = await contentRepository.getContentById(id);
+          return content;
+        })
+      );
+
+      // Filter valid content and extract URLs
+      const validContent = selectedContent.filter(Boolean) as Content[];
+      console.log('Valid content items:', validContent.length);
+
+      let urlsToProcess: { url: string; contentId: string }[] = [];
+      let contentWithoutUrls = 0;
+      let contentWithExistingScreenshots = 0;
+
+      validContent.forEach((content) => {
+        const urls = extractUrls(content.data);
+
+        if (urls.length === 0) {
+          contentWithoutUrls++;
+          return;
+        }
+
+        // Check if content already has a screenshot
+        if (content.metadata?.url_preview) {
+          contentWithExistingScreenshots++;
+          console.log(`Content ${content.id} already has screenshot: ${content.metadata.url_preview}`);
+          return;
+        }
+
+        // Use first URL found in content
+        const firstUrl = urls[0].normalizedUrl;
+        urlsToProcess.push({
+          url: firstUrl,
+          contentId: content.id
+        });
+      });
+
+      console.log('URLs to process:', urlsToProcess.length);
+      console.log('Content without URLs:', contentWithoutUrls);
+      console.log('Content with existing screenshots:', contentWithExistingScreenshots);
+
+      if (urlsToProcess.length === 0) {
+        if (contentWithoutUrls > 0 && contentWithExistingScreenshots === 0) {
+          toast.info('No URLs Found', 'Selected content items do not contain any URLs to screenshot.');
+        } else if (contentWithExistingScreenshots > 0) {
+          toast.info('Already Complete', 'All selected content items already have screenshots.');
+        } else {
+          toast.info('Nothing to Process', 'No content items available for screenshot generation.');
+        }
+        return;
+      }
+
+      // Show initial progress notification
+      toast.info('Generating Screenshots', `Starting screenshot generation for ${urlsToProcess.length} URL${urlsToProcess.length > 1 ? 's' : ''}...`);
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      // Process each URL
+      for (const { url, contentId } of urlsToProcess) {
+        try {
+          console.log(`Generating screenshot for ${url} (content: ${contentId})`);
+
+          const result = await contentRepository.generateUrlPreview(contentId, url);
+
+          if (result.success && result.screenshot_url) {
+            await contentRepository.updateContentUrlPreview(contentId, result.screenshot_url);
+            console.log(`Successfully generated screenshot for ${contentId}: ${result.screenshot_url}`);
+            successCount++;
+          } else {
+            console.error(`Failed to generate screenshot for ${contentId}:`, result.error);
+            failureCount++;
+          }
+        } catch (error) {
+          console.error(`Error generating screenshot for ${contentId}:`, error);
+          failureCount++;
+        }
+      }
+
+      // Show completion notification
+      if (successCount > 0 && failureCount === 0) {
+        toast.success('Screenshots Generated', `Successfully generated ${successCount} screenshot${successCount > 1 ? 's' : ''}!`);
+      } else if (successCount > 0 && failureCount > 0) {
+        toast.warning('Partially Complete', `Generated ${successCount} screenshot${successCount > 1 ? 's' : ''}, ${failureCount} failed.`);
+      } else {
+        toast.error('Generation Failed', 'Failed to generate any screenshots. Please try again later.');
+      }
+
+      // Exit selection mode and refresh content list
+      contentSelection.clearSelection();
+      setNewContent(undefined);
+
+    } catch (error) {
+      console.error('Error in screenshot generation:', error);
+      toast.error('Error', 'Failed to process selected content for screenshot generation');
+    }
+  };
   
   // Define available workflow actions
   const workflowActions = [
@@ -344,6 +470,16 @@ export const ListApp: React.FC = () => {
       onClick: () => {
         console.log('🔍 WorkflowAction onClick triggered for SEO extraction');
         handleSEOExtraction();
+      }
+    },
+    {
+      id: 'screenshot-generate',
+      name: 'Take Screenshot',
+      description: 'Generate screenshots for URLs in selected content',
+      icon: '📸',
+      onClick: () => {
+        console.log('📸 WorkflowAction onClick triggered for screenshot generation');
+        handleScreenshotGeneration();
       }
     },
     {
@@ -576,6 +712,25 @@ export const ListApp: React.FC = () => {
     setShowGroupModal(true);
   };
 
+  const handleLeaveGroup = (leftGroupId: string) => {
+    // If user left the current group, switch to another group or clear current group
+    if (currentGroup?.id === leftGroupId) {
+      const remainingGroups = groups.filter(g => g.id !== leftGroupId);
+      if (remainingGroups.length > 0) {
+        // Switch to the first remaining group
+        setCurrentGroup(remainingGroups[0]);
+        navigate(`/group/${remainingGroups[0].id}`);
+      } else {
+        // No groups left, clear current group
+        setCurrentGroup(null);
+        navigate('/');
+      }
+    }
+
+    // Clear any cached data for the left group
+    localStorage.removeItem('lastViewedGroupId');
+  };
+
   const handleCreateGroupSubmit = async (groupName: string) => {
     try {
       const newGroup = await createGroupMutation.mutateAsync(groupName);
@@ -776,11 +931,18 @@ export const ListApp: React.FC = () => {
           return;
         }
 
+        // Prevent concurrent join attempts
+        if (isJoiningGroupRef.current) {
+          console.log('Join already in progress, skipping duplicate attempt');
+          return;
+        }
+
         // User is authenticated, try to join the group
         try {
+          isJoiningGroupRef.current = true;
           setError(null);
           console.log(`Attempting to join group with code: ${joinCode}`);
-          const group = await joinGroupMutation.mutateAsync(joinCode);
+          const group = await joinGroupMutationRef.current.mutateAsync(joinCode);
 
           // Ensure we have the correct group ID from the response
           if (!group || !group.id) {
@@ -811,6 +973,9 @@ export const ListApp: React.FC = () => {
           // Clear stored invite code on error
           sessionStorage.removeItem('pendingInviteCode');
           return;
+        } finally {
+          // Always reset the flag after join attempt completes
+          isJoiningGroupRef.current = false;
         }
       }
     };
@@ -829,11 +994,11 @@ export const ListApp: React.FC = () => {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [user, navigate, joinGroupMutation]);
+  }, [user, navigate]);
 
   // Stable container pattern - always return same structure, conditionally show content
   return (
-    <div data-testid="main-app" className="min-h-screen bg-gray-50 flex flex-col transition-all duration-200 ease-in-out">
+    <div data-testid="main-app" className="h-screen bg-gray-50 flex flex-col transition-all duration-200 ease-in-out overflow-hidden">
       
       {/* Error State */}
       {appState === 'error' && (
@@ -870,7 +1035,7 @@ export const ListApp: React.FC = () => {
       {appState === 'ready' && user && (
         <>
           {/* Header */}
-          <header className="bg-white shadow-sm border-b border-gray-200">
+          <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
             <div className="max-w-4xl mx-auto px-4 py-3">
               <div className="flex justify-between items-center">
                 <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
@@ -996,7 +1161,7 @@ export const ListApp: React.FC = () => {
             </div>
           </header>
 
-          <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out">
+          <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out overflow-y-auto pt-20">
             {/* Back Button Navigation */}
             {currentGroup && navigationStack.length > 1 && (
               <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2">
@@ -1093,26 +1258,18 @@ export const ListApp: React.FC = () => {
             onInputClose={handleInputClose}
           />
         ) : (
-          <>
-            {/* FAB Content Input - Only show for regular content view */}
-            <ContentInput
-              groupId={currentGroup?.id || ''}
-              parentContentId={currentParentId}
-              onContentAdded={handleContentAdded}
-              isVisible={showInput}
-              onClose={handleInputClose}
-            />
-            
-            <ContentList
-              groupId={currentGroup?.id || ''}
-              newContent={newContent}
-              parentContentId={currentParentId}
-              onNavigate={handleNavigate}
-              searchQuery={searchQuery}
-              isSearching={isSearching}
-              selection={contentSelection}
-            />
-          </>
+          <ContentList
+            groupId={currentGroup?.id || ''}
+            newContent={newContent}
+            parentContentId={currentParentId}
+            onNavigate={handleNavigate}
+            searchQuery={searchQuery}
+            isSearching={isSearching}
+            selection={contentSelection}
+            showInput={showInput}
+            onInputClose={handleInputClose}
+            onContentAdded={handleContentAdded}
+          />
         )}
       </div>
 
@@ -1138,6 +1295,7 @@ export const ListApp: React.FC = () => {
         onGroupChange={handleGroupChange}
         onCreateGroup={handleCreateGroup}
         onJoinGroup={handleJoinGroup}
+        onLeaveGroup={handleLeaveGroup}
         isLoading={groupsLoading || createGroupMutation.isPending || joinGroupMutation.isPending}
       />
 

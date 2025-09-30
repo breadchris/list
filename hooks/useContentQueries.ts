@@ -1,6 +1,7 @@
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Content, contentRepository } from '../components/ContentRepository';
 import { QueryKeys, QueryInvalidation } from './queryKeys';
+import { getFirstUrl } from '../utils/urlDetection';
 
 /**
  * Hook for fetching paginated content by parent
@@ -169,6 +170,7 @@ export const useInfiniteSearchContent = (
 
 /**
  * Mutation for creating content - no optimistic updates per CLAUDE.md guidelines
+ * Automatically generates URL previews for content containing URLs
  */
 export const useCreateContentMutation = () => {
   const queryClient = useQueryClient();
@@ -180,7 +182,17 @@ export const useCreateContentMutation = () => {
       group_id: string;
       parent_content_id?: string;
     }) => {
-      return await contentRepository.createContent(content);
+      // Create the content first
+      const createdContent = await contentRepository.createContent(content);
+
+      // Check if content contains URLs and generate preview asynchronously
+      const firstUrl = getFirstUrl(content.data);
+      if (firstUrl) {
+        // Don't await this - let it run in background
+        generateUrlPreviewAsync(createdContent.id, firstUrl);
+      }
+
+      return createdContent;
     },
     onSuccess: (data, variables) => {
       // After successful creation, invalidate relevant queries
@@ -193,6 +205,46 @@ export const useCreateContentMutation = () => {
     },
   });
 };
+
+/**
+ * Async function to generate URL preview without blocking content creation
+ * Includes retry logic for rate limiting
+ */
+async function generateUrlPreviewAsync(contentId: string, url: string) {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS = [5000, 30000, 60000]; // 5s, 30s, 1m
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      console.log(`Starting URL preview generation for ${contentId} (attempt ${attempt + 1})`);
+
+      const result = await contentRepository.generateUrlPreview(contentId, url);
+
+      if (result.success && result.screenshot_url) {
+        await contentRepository.updateContentUrlPreview(contentId, result.screenshot_url);
+        console.log(`Successfully generated and saved URL preview for ${contentId}`);
+        return; // Success - exit retry loop
+      } else if (result.error?.includes('Rate limit') && attempt < MAX_RETRIES - 1) {
+        // Rate limited - wait and retry
+        const delay = RETRY_DELAYS[attempt];
+        console.log(`Rate limited for ${contentId}, retrying in ${delay/1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      } else {
+        console.warn(`URL preview generation failed for ${contentId}:`, result.error);
+        return; // Non-retriable error
+      }
+    } catch (error) {
+      if (attempt === MAX_RETRIES - 1) {
+        console.error(`Background URL preview generation failed for ${contentId} after ${MAX_RETRIES} attempts:`, error);
+      } else {
+        console.warn(`URL preview attempt ${attempt + 1} failed for ${contentId}:`, error);
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt]));
+      }
+    }
+  }
+}
 
 /**
  * Mutation for updating content
