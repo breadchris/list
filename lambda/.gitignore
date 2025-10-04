@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+package-lock.json
+function/node_modules/
+function/package-lock.json
+
+# Build output
+function/dist/
+*.js
+*.js.map
+*.d.ts
+
+# Pulumi
+.pulumi/
+
+# Tests
+playwright-report/
+test-results/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

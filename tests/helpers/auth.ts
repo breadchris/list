@@ -54,7 +54,141 @@ export class AuthHelper {
   }
 
   /**
-   * Login via UI form
+   * Login via form-based authentication (recommended for tests)
+   */
+  async loginProgrammatically(page: Page, email: string, password: string): Promise<void> {
+    console.log(`🔐 Attempting login for: ${email}`);
+
+    // Navigate to the home page first
+    await page.goto('/');
+
+    // Wait for the authentication form to be visible
+    await page.waitForSelector('text="Sign in to your account"', { timeout: 10000 });
+    console.log('📋 Auth form visible');
+
+    // Click on "Continue with email" to reveal the email/password form
+    const emailButton = page.locator('button:has-text("Continue with email")');
+    if (await emailButton.isVisible()) {
+      console.log('📧 Clicking "Continue with email"');
+      await emailButton.click();
+
+      // Wait for the email form to be fully rendered with specific IDs
+      await page.waitForSelector('#email', { timeout: 10000 });
+      await page.waitForSelector('#password', { timeout: 5000 });
+      console.log('📝 Email form revealed with proper elements');
+    }
+
+    // Ensure we're on the login tab (in case there are sign in/sign up tabs)
+    const loginTab = page.locator('button:has-text("Already have an account? Sign in")');
+    if (await loginTab.isVisible()) {
+      console.log('🔄 Switching to Sign In tab');
+      await loginTab.click();
+      // Wait for any state change
+      await page.waitForTimeout(500);
+    }
+
+    // Verify form is ready for interaction
+    const emailInput = page.locator('#email');
+    const passwordInput = page.locator('#password');
+
+    // Wait for elements to be enabled and visible
+    await emailInput.waitFor({ state: 'visible', timeout: 5000 });
+    await passwordInput.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Verify elements are enabled
+    const emailEnabled = await emailInput.isEnabled();
+    const passwordEnabled = await passwordInput.isEnabled();
+
+    if (!emailEnabled || !passwordEnabled) {
+      throw new Error(`Form inputs not enabled: email=${emailEnabled}, password=${passwordEnabled}`);
+    }
+
+    console.log('✅ Form inputs are ready and enabled');
+
+    // Fill in the email field using specific ID
+    await emailInput.fill(email);
+    console.log(`✉️ Email filled: ${email}`);
+
+    // Fill in the password field using specific ID
+    await passwordInput.fill(password);
+    console.log('🔑 Password filled');
+
+    // Submit the form using the exact button text and type
+    const submitButton = page.locator('button[type="submit"]:has-text("Sign in")');
+    await submitButton.waitFor({ state: 'visible', timeout: 5000 });
+
+    const submitEnabled = await submitButton.isEnabled();
+    if (!submitEnabled) {
+      throw new Error('Submit button is not enabled');
+    }
+
+    await submitButton.click();
+    console.log('🚀 Form submitted');
+
+    // Wait for form submission to complete (look for loading state first)
+    console.log('⏳ Waiting for form submission to process...');
+    await page.waitForTimeout(2000); // Allow form submission to process
+
+    // Wait for authentication to complete - auth form should disappear
+    try {
+      await page.waitForSelector('text="Sign in to your account"', { state: 'hidden', timeout: 20000 });
+      console.log('✅ Authentication completed - auth form disappeared');
+    } catch (error) {
+      console.error('❌ Auth form did not disappear after login');
+
+      // Take screenshot before checking error details
+      const timestamp = Date.now();
+      await page.screenshot({ path: `./data/auth-failure-${timestamp}.png` });
+      console.error(`📸 Debug screenshot saved to ./data/auth-failure-${timestamp}.png`);
+
+      // Check for error messages on the form - use more specific selectors
+      let errorMessage = null;
+
+      try {
+        const errorElement = page.locator('.bg-red-50, .text-red-700, .border-red-200, [role="alert"]');
+        if (await errorElement.isVisible()) {
+          errorMessage = await errorElement.textContent();
+        }
+      } catch (e) {
+        console.warn('Could not check for error message:', e);
+      }
+
+      if (errorMessage && errorMessage.trim()) {
+        console.error(`🚨 Error message found: ${errorMessage.trim()}`);
+        throw new Error(`Authentication failed: ${errorMessage.trim()}`);
+      }
+
+      // Check if form is still in loading state
+      const loadingButton = page.locator('button:has-text("Please wait...")');
+      if (await loadingButton.isVisible()) {
+        console.log('🔄 Form still in loading state, waiting longer...');
+        await page.waitForTimeout(5000);
+
+        // Try waiting for auth form to disappear again
+        try {
+          await page.waitForSelector('text="Sign in to your account"', { state: 'hidden', timeout: 10000 });
+          console.log('✅ Authentication completed after extended wait');
+        } catch (e) {
+          throw new Error('Authentication timed out - form still loading');
+        }
+      } else {
+        // Check current page state for debugging
+        const currentUrl = page.url();
+        const pageContent = await page.content();
+        console.error(`📄 Current URL: ${currentUrl}`);
+        console.error(`📄 Page title: ${await page.title()}`);
+
+        throw new Error('Authentication did not complete properly - no error message found');
+      }
+    }
+
+    // Additional verification - ensure we're in authenticated state
+    await page.waitForTimeout(2000); // Longer delay for auth state to stabilize
+    console.log('🎉 Authentication process completed');
+  }
+
+  /**
+   * Login via UI form (fallback method)
    */
   async loginViaUI(page: Page, email: string, password: string): Promise<void> {
     // Navigate to the home page which should show the auth form
@@ -122,13 +256,20 @@ export class AuthHelper {
   }
 
   /**
-   * Check if user is logged in by looking for authenticated content
+   * Check if user is logged in by looking for absence of auth form
    */
   async isLoggedIn(page: Page): Promise<boolean> {
     try {
-      // Look for elements that only appear when authenticated
-      await page.waitForSelector('[data-testid="main-app"]', { timeout: 3000 });
-      return true;
+      // Check if auth form is NOT visible (more reliable indicator)
+      const authFormVisible = await page.locator('text="Sign in to your account"').isVisible();
+
+      if (authFormVisible) {
+        return false;
+      }
+
+      // Additionally check for authenticated UI elements
+      const sidebarToggle = await page.locator('[data-testid="sidebar-toggle"]').isVisible();
+      return sidebarToggle;
     } catch {
       return false;
     }

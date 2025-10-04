@@ -131,8 +131,14 @@ export class ContentRepository {
     return data;
   }
 
-  async getContentByParent(groupId: string, parentId: string | null, offset = 0, limit = 20): Promise<Content[]> {
-    const query = supabase
+  async getContentByParent(
+    groupId: string,
+    parentId: string | null,
+    offset = 0,
+    limit = 20,
+    viewMode: 'chronological' | 'random' | 'alphabetical' | 'oldest' = 'chronological'
+  ): Promise<Content[]> {
+    let query = supabase
       .from('content')
       .select(`
         *,
@@ -146,16 +152,35 @@ export class ContentRepository {
           )
         )
       `)
-      .eq('group_id', groupId)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-    
+      .eq('group_id', groupId);
+
     // Use different filter based on whether parentId is null
     if (parentId === null) {
       query.is('parent_content_id', null);
     } else {
       query.eq('parent_content_id', parentId);
     }
+
+    // Apply ordering based on view mode
+    switch (viewMode) {
+      case 'chronological':
+        query = query.order('created_at', { ascending: false });
+        break;
+      case 'oldest':
+        query = query.order('created_at', { ascending: true });
+        break;
+      case 'alphabetical':
+        query = query.order('data', { ascending: true });
+        break;
+      case 'random':
+        // For random mode, we'll fetch more items and shuffle client-side
+        // This ensures pagination works consistently
+        break;
+      default:
+        query = query.order('created_at', { ascending: false });
+    }
+
+    query = query.range(offset, offset + limit - 1);
 
     const { data, error } = await query;
 
@@ -165,12 +190,29 @@ export class ContentRepository {
     }
 
     // Transform the data to include tags properly
-    const contentWithTags = data?.map(item => ({
+    let contentWithTags = data?.map(item => ({
       ...item,
       tags: (item as any).content_tags?.map((ct: any) => ct.tags).filter(Boolean) || []
     })) || [];
 
+    // Apply random shuffle if in random mode
+    if (viewMode === 'random' && contentWithTags.length > 0) {
+      // Use seeded random based on group ID for consistent randomization within session
+      const seed = groupId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const random = this.seededRandom(seed + offset);
+      contentWithTags = contentWithTags.sort(() => random() - 0.5);
+    }
+
     return contentWithTags;
+  }
+
+  // Seeded random number generator for consistent randomization
+  private seededRandom(seed: number) {
+    let state = seed;
+    return () => {
+      state = (state * 9301 + 49297) % 233280;
+      return state / 233280;
+    };
   }
 
   async getContentById(id: string): Promise<Content | null> {
@@ -191,11 +233,18 @@ export class ContentRepository {
     return data;
   }
 
-  async searchContent(groupId: string, searchQuery: string, parentId: string | null = null, offset = 0, limit = 20): Promise<Content[]> {
+  async searchContent(
+    groupId: string,
+    searchQuery: string,
+    parentId: string | null = null,
+    offset = 0,
+    limit = 20,
+    viewMode: 'chronological' | 'random' | 'alphabetical' | 'oldest' = 'chronological'
+  ): Promise<Content[]> {
     // Use the new fuzzy search function for more forgiving search results
     // Falls back to the original search_content if fuzzy search is not available
     let data, error;
-    
+
     try {
       // Try fuzzy search first (requires migration 20250826195340_improve_fuzzy_search.sql)
       const fuzzyResult = await supabase.rpc('search_content_fuzzy', {
@@ -203,19 +252,19 @@ export class ContentRepository {
         group_uuid: groupId,
         result_limit: limit + offset // Get all results up to the desired page
       });
-      
+
       data = fuzzyResult.data;
       error = fuzzyResult.error;
     } catch (fuzzyError) {
       console.warn('Fuzzy search not available, falling back to exact search:', fuzzyError);
-      
+
       // Fallback to original search function
       const exactResult = await supabase.rpc('search_content', {
         search_query: searchQuery,
         group_uuid: groupId,
         result_limit: limit + offset // Get all results up to the desired page
       });
-      
+
       data = exactResult.data;
       error = exactResult.error;
     }
@@ -235,9 +284,32 @@ export class ContentRepository {
       results = results.filter((item: Content) => item.parent_content_id === null);
     }
 
+    // Apply ordering based on view mode (search results are pre-ranked by relevance)
+    switch (viewMode) {
+      case 'chronological':
+        results.sort((a: Content, b: Content) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        break;
+      case 'oldest':
+        results.sort((a: Content, b: Content) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        break;
+      case 'alphabetical':
+        results.sort((a: Content, b: Content) => a.data.localeCompare(b.data));
+        break;
+      case 'random':
+        // Use seeded random for consistent results
+        const seed = groupId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const random = this.seededRandom(seed + offset);
+        results.sort(() => random() - 0.5);
+        break;
+    }
+
     // Apply pagination - slice the results to get the requested page
     const paginatedResults = results.slice(offset, offset + limit);
-    
+
     // For each result, fetch and attach tags
     const contentWithTags = await Promise.all(
       paginatedResults.map(async (item: Content) => {
@@ -250,7 +322,7 @@ export class ContentRepository {
         }
       })
     );
-    
+
     return contentWithTags;
   }
 
@@ -651,28 +723,41 @@ export class ContentRepository {
       .subscribe();
   }
 
-  // SEO extraction functionality
-  async extractSEOInformation(contentId: string): Promise<{
+  // SEO extraction functionality using consolidated content function
+  async extractSEOInformation(contentId: string, useQueue: boolean = false): Promise<{
     seo_children: Content[],
     urls_processed: number,
     total_urls_found: number,
-    message: string
+    message: string,
+    queued?: boolean
   }> {
     try {
+      // Get the content item to extract URLs from
+      const contentItem = await this.getContentById(contentId);
+      if (!contentItem) {
+        throw new Error('Content not found');
+      }
+
       // Get the current user session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
+
       if (sessionError || !session?.access_token) {
         throw new Error('User not authenticated');
       }
 
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/extract-seo`, {
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ content_id: contentId }),
+        body: JSON.stringify({
+          action: 'seo-extract',
+          payload: {
+            selectedContent: [contentItem]
+          },
+          useQueue
+        }),
       });
 
       if (!response.ok) {
@@ -681,7 +766,38 @@ export class ContentRepository {
       }
 
       const result = await response.json();
-      return result;
+
+      if (!result.success) {
+        throw new Error(result.error || 'SEO extraction failed');
+      }
+
+      if (result.queued) {
+        return {
+          seo_children: [],
+          urls_processed: 0,
+          total_urls_found: 0,
+          message: 'SEO extraction queued for processing',
+          queued: true
+        };
+      }
+
+      // Process the response data for immediate processing
+      const data = result.data?.[0];
+      if (data) {
+        return {
+          seo_children: data.seo_children || [],
+          urls_processed: data.urls_processed || 0,
+          total_urls_found: data.total_urls_found || 0,
+          message: `Processed ${data.urls_processed} of ${data.total_urls_found} URLs`
+        };
+      }
+
+      return {
+        seo_children: [],
+        urls_processed: 0,
+        total_urls_found: 0,
+        message: 'No URLs found to process'
+      };
     } catch (error) {
       console.error('Failed to extract SEO information:', error);
       throw error;
@@ -753,6 +869,7 @@ export class ContentRepository {
           type,
           data,
           metadata,
+          parent_content_id,
           shared_at,
           shared_by
         `)
@@ -772,11 +889,48 @@ export class ContentRepository {
         ...data,
         group_id: '', // Not exposed for public content
         user_id: data.shared_by || '', // Use shared_by as user_id
-        parent_content_id: null, // Simplified for public view
+        parent_content_id: data.parent_content_id || null,
         tags: [] // Tags not exposed for public content
       };
     } catch (error) {
       console.error('Failed to fetch public content:', error);
+      throw error;
+    }
+  }
+
+  // Get public content children (accessible to anonymous users)
+  async getPublicContentChildren(parentId: string): Promise<Content[]> {
+    try {
+      const { data, error } = await supabase
+        .from('public_content')
+        .select(`
+          id,
+          created_at,
+          updated_at,
+          type,
+          data,
+          metadata,
+          parent_content_id,
+          shared_at,
+          shared_by
+        `)
+        .eq('parent_content_id', parentId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching public content children:', error);
+        throw new Error(error.message);
+      }
+
+      return (data || []).map(item => ({
+        ...item,
+        group_id: '', // Not exposed for public content
+        user_id: item.shared_by || '', // Use shared_by as user_id
+        parent_content_id: item.parent_content_id || null,
+        tags: [] // Tags not exposed for public content
+      }));
+    } catch (error) {
+      console.error('Failed to fetch public content children:', error);
       throw error;
     }
   }
@@ -840,39 +994,122 @@ export class ContentRepository {
     }
   }
 
-  // URL Preview / Screenshot functionality
-  async generateUrlPreview(contentId: string, url: string): Promise<{ success: boolean; screenshot_url?: string; error?: string }> {
+  // URL Preview / Screenshot functionality using consolidated content function
+  async generateUrlPreview(contentId: string, url: string, useQueue: boolean = true): Promise<{ success: boolean; screenshot_url?: string; error?: string; queued?: boolean }> {
     try {
       console.log(`Generating URL preview for content ${contentId} with URL: ${url}`);
 
-      const response = await fetch('https://content-worker.chrislegolife.workers.dev', {
+      // Get the current user session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          url: url,
-          contentId: contentId
-        })
+          action: 'screenshot-queue',
+          payload: {
+            jobs: [{
+              contentId: contentId,
+              url: url
+            }]
+          }
+        }),
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
 
       const result = await response.json();
 
-      if (!response.ok || !result.success) {
-        console.error('Screenshot worker failed:', result.error);
+      if (!result.success) {
+        console.error('Screenshot generation failed:', result.error);
         return {
           success: false,
-          error: result.error || `HTTP ${response.status}`
+          error: result.error || 'Screenshot generation failed'
         };
       }
 
-      console.log(`Successfully generated screenshot: ${result.screenshot_url}`);
+      if (result.queued) {
+        console.log(`Screenshot job queued for content ${contentId}`);
+        return {
+          success: true,
+          queued: true
+        };
+      }
+
+      // For immediate processing (if useQueue was false), we'd get the result here
+      console.log(`Screenshot processing initiated for content ${contentId}`);
       return {
         success: true,
-        screenshot_url: result.screenshot_url
+        queued: result.queued || false
       };
     } catch (error) {
       console.error('Failed to generate URL preview:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Batch screenshot generation for multiple URLs
+  async generateBatchUrlPreviews(jobs: Array<{ contentId: string; url: string }>): Promise<{ success: boolean; error?: string; queued?: boolean; jobCount?: number }> {
+    try {
+      console.log(`Generating batch URL previews for ${jobs.length} jobs`);
+
+      // Get the current user session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          action: 'screenshot-queue',
+          payload: {
+            jobs: jobs
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        console.error('Batch screenshot generation failed:', result.error);
+        return {
+          success: false,
+          error: result.error || 'Batch screenshot generation failed'
+        };
+      }
+
+      console.log(`${jobs.length} screenshot jobs queued successfully`);
+      return {
+        success: true,
+        queued: true,
+        jobCount: jobs.length
+      };
+    } catch (error) {
+      console.error('Failed to generate batch URL previews:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -914,6 +1151,118 @@ export class ContentRepository {
       console.error('Failed to update content URL preview:', error);
       throw error;
     }
+  }
+
+  // Claude Code Session Management Methods
+
+  /**
+   * Store Claude Code session metadata in content
+   */
+  async storeClaudeCodeSession(
+    contentId: string,
+    sessionData: {
+      session_id: string;
+      r2_url: string;
+      initial_prompt: string;
+      last_updated_at?: string;
+    }
+  ): Promise<void> {
+    try {
+      // First get current metadata
+      const { data: content, error: fetchError } = await supabase
+        .from('content')
+        .select('metadata')
+        .eq('id', contentId)
+        .single();
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch content: ${fetchError.message}`);
+      }
+
+      // Update metadata with Claude Code session
+      const updatedMetadata = {
+        ...content.metadata,
+        claude_code_session: {
+          session_id: sessionData.session_id,
+          r2_url: sessionData.r2_url,
+          initial_prompt: sessionData.initial_prompt,
+          created_at: content.metadata?.claude_code_session?.created_at || new Date().toISOString(),
+          last_updated_at: sessionData.last_updated_at || new Date().toISOString()
+        }
+      };
+
+      const { error: updateError } = await supabase
+        .from('content')
+        .update({ metadata: updatedMetadata })
+        .eq('id', contentId);
+
+      if (updateError) {
+        throw new Error(`Failed to update metadata: ${updateError.message}`);
+      }
+
+      console.log(`Stored Claude Code session for content ${contentId}:`, sessionData.session_id);
+    } catch (error) {
+      console.error('Failed to store Claude Code session:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get Claude Code session from content or traverse up to parent
+   */
+  async getClaudeCodeSession(contentId: string): Promise<{
+    session_id: string;
+    r2_url: string;
+    initial_prompt: string;
+    created_at: string;
+    last_updated_at?: string;
+  } | null> {
+    try {
+      let currentContentId: string | null = contentId;
+      let depth = 0;
+      const maxDepth = 10; // Prevent infinite loops
+
+      while (currentContentId && depth < maxDepth) {
+        const content = await this.getContentById(currentContentId);
+
+        if (!content) {
+          return null;
+        }
+
+        // Check if this content has a Claude Code session
+        if (content.metadata?.claude_code_session) {
+          const session = content.metadata.claude_code_session;
+
+          // Validate session has required fields
+          if (session.session_id && session.r2_url) {
+            return {
+              session_id: session.session_id,
+              r2_url: session.r2_url,
+              initial_prompt: session.initial_prompt || '',
+              created_at: session.created_at || new Date().toISOString(),
+              last_updated_at: session.last_updated_at
+            };
+          }
+        }
+
+        // Move up to parent
+        currentContentId = content.parent_content_id || null;
+        depth++;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Failed to get Claude Code session:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if content or its ancestors have a Claude Code session
+   */
+  async hasClaudeCodeSession(contentId: string): Promise<boolean> {
+    const session = await this.getClaudeCodeSession(contentId);
+    return session !== null;
   }
 }
 

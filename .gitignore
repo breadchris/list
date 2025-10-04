@@ -2,3 +2,5 @@ node_modules/
 .DS_Store
 public/styles.css
 .mcp.json
+data/
+extension/background.js

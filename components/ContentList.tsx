@@ -23,6 +23,7 @@ interface ContentListProps {
   showInput?: boolean;
   onInputClose?: () => void;
   onContentAdded?: (content: Content) => void;
+  viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
 }
 
 interface TagDisplayProps {
@@ -60,7 +61,8 @@ export const ContentList: React.FC<ContentListProps> = ({
   selection,
   showInput = false,
   onInputClose,
-  onContentAdded
+  onContentAdded,
+  viewMode = 'chronological'
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -83,7 +85,7 @@ export const ContentList: React.FC<ContentListProps> = ({
     fetchNextPage: fetchMoreContent,
     error: contentError,
     status: contentStatus
-  } = useInfiniteContentByParent(groupId, parentContentId, { enabled: !isSearching });
+  } = useInfiniteContentByParent(groupId, parentContentId, { enabled: !isSearching, viewMode });
 
   // Search query for search mode
   const {
@@ -95,7 +97,7 @@ export const ContentList: React.FC<ContentListProps> = ({
     fetchNextPage: fetchMoreSearch,
     error: searchError,
     status: searchStatus
-  } = useInfiniteSearchContent(groupId, searchQuery, parentContentId, { enabled: isSearching });
+  } = useInfiniteSearchContent(groupId, searchQuery, parentContentId, { enabled: isSearching, viewMode });
 
   // Query for parent content when viewing children
   const {

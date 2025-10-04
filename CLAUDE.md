@@ -30,6 +30,85 @@
 - URL-based navigation for nested content
 - Real-time subscriptions for live updates
 
+## Security Guidelines
+
+**CRITICAL**: Never hardcode secrets or credentials in code
+
+### Secret Management Rules
+- **NEVER commit secrets to code** - API keys, tokens, passwords, credentials must NEVER be hardcoded
+- **Always use environment variables** - Access secrets via `process.env`, `Deno.env.get()`, etc.
+- **Document required environment variables** - List what env vars are needed and where they're used
+- **Use `.env` files for local development** - But never commit them to version control
+- **Remove existing hardcoded secrets immediately** - If found during code review, remove and rotate the secret
+
+### Available Environment Variables
+
+**Supabase Edge Functions:**
+- `SUPABASE_URL` - Supabase project URL (automatically provided)
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role key for admin operations (automatically provided)
+- `OPENAI_API_KEY` - OpenAI API key for LLM operations
+- `CLOUDFLARE_ACCOUNT_ID` - Cloudflare account ID for browser rendering
+- `CLOUDFLARE_API_KEY` - Cloudflare API token for browser rendering
+
+### Examples
+
+❌ **Bad: Hardcoded secrets**
+```typescript
+const CLOUDFLARE_API_KEY = 'jXm-z8tnzAE2szaxOiySohrJpwrMDrDRxZL1x5-X';
+const ACCOUNT_ID = 'b61180b9a24b012aa20ab5a105c606f5';
+```
+
+✅ **Good: Environment variables**
+```typescript
+const cloudflareApiKey = Deno.env.get('CLOUDFLARE_API_KEY');
+const accountId = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
+
+if (!cloudflareApiKey || !accountId) {
+  throw new Error('Missing required environment variables');
+}
+```
+
+## Test Authentication Guidelines
+
+**CRITICAL**: Always use form-based authentication in tests
+
+### Authentication Approach for Tests
+- **NEVER use localStorage mocking** - causes inconsistent state and test failures
+- **ALWAYS use real form-based authentication** - tests actual user flow
+- **Form interaction pattern**: Click "Continue with email" → Fill email/password → Submit form
+- **Wait for auth completion**: Wait for "Sign in to your account" text to disappear
+
+### Correct Test Authentication Pattern
+```typescript
+import { AuthHelper } from './helpers/auth';
+import { createTestUserWithInvites } from './helpers/invite-test-data';
+
+const authHelper = new AuthHelper();
+const user = createTestUserWithInvites('test-user');
+const userId = await databaseHelper.createTestUser(user);
+
+// Use form-based authentication
+await authHelper.loginProgrammatically(page, user.email, user.password);
+
+// Verify authentication worked
+const isAuthenticated = await authHelper.isLoggedIn(page);
+if (!isAuthenticated) {
+  throw new Error('Authentication failed - test cannot proceed');
+}
+```
+
+### Authentication Implementation Details
+- Tests use real Supabase authentication through the UI form
+- Test users created in database with known passwords
+- Authentication detection via auth form disappearance
+- Handles social login UI (clicks "Continue with email" to reveal form)
+- More reliable than programmatic authentication for UI testing
+
+### Test Result Configuration
+- Test results saved to `./data/test-results/`
+- HTML reports in `./data/playwright-report/`
+- Screenshots and videos captured on failure for debugging
+
 ## Testing Configuration
 
 **CRITICAL**: Playwright test results are saved to `./data/` directory
@@ -53,7 +132,12 @@ npm run test:e2e -- tests/specific-test.spec.ts  # Run specific test
 - Tests use DatabaseHelper for setup and cleanup
 - Test users created with unique identifiers to prevent conflicts
 - All test data automatically cleaned up after test completion
-- Mock authentication used via localStorage for faster test execution
+
+### Known Issues
+- **Authentication mocking broken**: localStorage approach no longer works with current Supabase version
+- Tests gracefully skip when authentication fails to prevent false failures
+- localStorage.setItem('supabase.auth.token', ...) doesn't authenticate users
+- Investigation needed for proper Supabase v2 session format or alternative mocking approach
 
 ## Go HTTP Server Guidelines
 

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Share Extension</title>
+    <style>
+        body {
+            width: 280px;
+            padding: 0;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8f9fa;
+        }
+        
+        .container {
+            background: white;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .logo {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .subtitle {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .current-page {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 16px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .page-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 4px;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        .page-url {
+            font-size: 11px;
+            color: #666;
+            word-break: break-all;
+            line-height: 1.2;
+        }
+        
+        .button {
+            width: 100%;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .button:last-child {
+            margin-bottom: 0;
+        }
+        
+        .button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        
+        .button.primary {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .button.primary:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        
+        .button.secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .button.secondary:hover:not(:disabled) {
+            background-color: #545b62;
+        }
+        
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+        
+        .button-icon {
+            font-size: 16px;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+            display: block;
+        }
+        
+        .stat-label {
+            margin-top: 2px;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 12px;
+            margin-bottom: 12px;
+            display: none;
+        }
+        
+        .success-message.show {
+            display: block;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 12px;
+            margin-bottom: 12px;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+
+        .keyboard-shortcut {
+            font-size: 10px;
+            color: #999;
+            font-weight: normal;
+            opacity: 0.8;
+        }
+        
+        .context-menu-info {
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+            margin-top: 12px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🔗 Share</div>
+            <div class="subtitle">Quick share & extension tools</div>
+        </div>
+        
+        <div id="success-message" class="success-message"></div>
+        <div id="error-message" class="error-message"></div>
+
+        <div id="auth-warning" class="error-message" style="display: none;">
+            ⚠️ Not logged in. Please log in to the web app first.
+        </div>
+
+        <div id="group-selector" class="current-page">
+            <div style="font-size: 11px; font-weight: 500; color: #666; margin-bottom: 6px;">Share to Group:</div>
+            <select id="group-select" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-size: 13px; margin-bottom: 8px;">
+                <option value="">Loading groups...</option>
+            </select>
+            <div id="group-status" style="font-size: 11px; color: #666;"></div>
+        </div>
+
+        <div id="current-page" class="current-page">
+            <div id="page-title" class="page-title">Loading...</div>
+            <div id="page-url" class="page-url">Loading...</div>
+        </div>
+        
+        <button id="share-btn" class="button primary">
+            <span class="button-icon">🔗</span>
+            <span>Share This Page</span>
+            <span class="keyboard-shortcut">Cmd+Shift+B</span>
+        </button>
+        
+        <button id="reload-btn" class="button secondary">
+            <span class="button-icon">🔄</span>
+            <span>Reload Extension</span>
+            <span class="keyboard-shortcut">Cmd+Shift+R</span>
+        </button>
+        
+        <div id="loading" class="loading">
+            Working...
+        </div>
+        
+        <div class="context-menu-info">
+            💡 Right-click on any page for quick access
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <span id="share-count" class="stat-value">-</span>
+                <div class="stat-label">Shared</div>
+            </div>
+            <div class="stat-item">
+                <span id="last-share" class="stat-value">-</span>
+                <div class="stat-label">Last Shared</div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

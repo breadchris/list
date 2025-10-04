@@ -4,6 +4,22 @@ import { QueryKeys, QueryInvalidation } from './queryKeys';
 import { getFirstUrl } from '../utils/urlDetection';
 
 /**
+ * Hook for fetching public content children (accessible to anonymous users)
+ */
+export const usePublicContentChildren = (parentId: string | null, options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: ['public-content-children', parentId],
+    queryFn: async () => {
+      if (!parentId) return [];
+      return await contentRepository.getPublicContentChildren(parentId);
+    },
+    enabled: !!parentId && options?.enabled !== false,
+    staleTime: 300000, // 5 minutes
+    gcTime: 600000, // 10 minutes
+  });
+};
+
+/**
  * Hook for fetching paginated content by parent
  */
 export const useContentByParent = (
@@ -37,20 +53,24 @@ export const useInfiniteContentByParent = (
   parentId: string | null,
   options?: {
     enabled?: boolean;
+    viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
   }
 ) => {
+  const viewMode = options?.viewMode || 'chronological';
+
   return useInfiniteQuery({
-    queryKey: QueryKeys.contentByParent(groupId, parentId),
+    queryKey: [...QueryKeys.contentByParent(groupId, parentId), viewMode],
     queryFn: async ({ pageParam = 0 }) => {
       if (!groupId) return { items: [], hasMore: false };
-      
+
       const items = await contentRepository.getContentByParent(
-        groupId, 
-        parentId, 
-        pageParam as number, 
-        20
+        groupId,
+        parentId,
+        pageParam as number,
+        20,
+        viewMode
       );
-      
+
       return {
         items,
         hasMore: items.length === 20,
@@ -127,21 +147,25 @@ export const useInfiniteSearchContent = (
   parentId: string | null = null,
   options?: {
     enabled?: boolean;
+    viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
   }
 ) => {
+  const viewMode = options?.viewMode || 'chronological';
+
   return useInfiniteQuery({
-    queryKey: QueryKeys.contentSearch(groupId, query, parentId),
+    queryKey: [...QueryKeys.contentSearch(groupId, query, parentId), viewMode],
     queryFn: async ({ pageParam = 0 }) => {
       if (!query.trim() || !groupId) return { items: [], hasMore: false };
-      
+
       const items = await contentRepository.searchContent(
         groupId,
         query,
         parentId,
         pageParam as number,
-        20
+        20,
+        viewMode
       );
-      
+
       return {
         items,
         hasMore: items.length === 20,

@@ -60,6 +60,18 @@ func main() {
 				Usage:  "Build and deploy the application to Cloudflare Pages",
 				Action: deployCommand,
 			},
+			{
+				Name:  "build-extension",
+				Usage: "Build browser extension background script",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "watch",
+						Value: false,
+						Usage: "Watch for changes and rebuild",
+					},
+				},
+				Action: buildExtensionCommand,
+			},
 		},
 	}
 
@@ -600,25 +612,57 @@ func generateComponentHTML(componentName, componentPath string) string {
     <div id="root"></div>
     <script type="module">
         try {
-            const componentModule = await import('/module/%s');
-            const React = await import('react');
-            const ReactDOM = await import('react-dom/client');
-            
-            let ComponentToRender;
-            if (componentModule.%s) {
-                ComponentToRender = componentModule.%s;
-            } else if (componentModule.default) {
-                ComponentToRender = componentModule.default;
+            // First, fetch the module to check for build errors
+            const moduleUrl = '/module/%s';
+            const response = await fetch(moduleUrl);
+            const contentType = response.headers.get('content-type');
+
+            // Check if the response is an error JSON
+            if (contentType && contentType.includes('application/json')) {
+                const errorData = await response.json();
+
+                // Display build error
+                let errorDetails = '';
+                if (errorData.details && Array.isArray(errorData.details)) {
+                    errorDetails = errorData.details.map(detail =>
+                        '<div style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px; font-size: 13px;">' + detail + '</div>'
+                    ).join('');
+                }
+
+                document.getElementById('root').innerHTML =
+                    '<div class="error">' +
+                    '<h3>🚨 Build Error</h3>' +
+                    '<p><strong>' + (errorData.error || 'Build failed') + '</strong></p>' +
+                    '<div style="margin-top: 15px;">' + errorDetails + '</div>' +
+                    '<h4 style="margin-top: 20px;">🔧 Troubleshooting:</h4>' +
+                    '<ul style="margin: 10px 0; padding-left: 20px;">' +
+                    '<li>Check for typos in import statements</li>' +
+                    '<li>Verify package names in node_modules</li>' +
+                    '<li>Ensure all dependencies are installed (npm install)</li>' +
+                    '<li>Check TypeScript syntax</li>' +
+                    '</ul>' +
+                    '</div>';
             } else {
-                throw new Error('No component found. Make sure to export a component named "%s" or a default export.');
-            }
-            
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(React.createElement(ComponentToRender));
-            
+		    // If not an error, proceed with normal module import
+		    const componentModule = await import(moduleUrl);
+		    const React = await import('react');
+		    const ReactDOM = await import('react-dom/client');
+
+		    let ComponentToRender;
+		    if (componentModule.%s) {
+			ComponentToRender = componentModule.%s;
+		    } else if (componentModule.default) {
+			ComponentToRender = componentModule.default;
+		    } else {
+			throw new Error('No component found. Make sure to export a component named "%s" or a default export.');
+		    }
+
+		    const root = ReactDOM.createRoot(document.getElementById('root'));
+		    root.render(React.createElement(ComponentToRender));
+	    }
         } catch (error) {
             console.error('Runtime Error:', error);
-            document.getElementById('root').innerHTML = 
+            document.getElementById('root').innerHTML =
                 '<div class="error">' +
                 '<h3>Runtime Error:</h3>' +
                 '<pre>' + error.message + '</pre>' +
@@ -772,4 +816,76 @@ func copyDirectory(src, dst string) error {
 	}
 
 	return nil
+}
+
+// buildExtensionCommand builds the browser extension background script
+func buildExtensionCommand(c *cli.Context) error {
+	watch := c.Bool("watch")
+
+	fmt.Println("🔨 Building browser extension background script...")
+
+	if watch {
+		fmt.Println("👀 Watch mode enabled - rebuilding on file changes...")
+	}
+
+	result := buildExtensionScript(watch)
+
+	if len(result.Errors) > 0 {
+		fmt.Println("❌ Extension build failed:")
+		for _, err := range result.Errors {
+			fmt.Printf("   • %s\n", err.Text)
+		}
+		return fmt.Errorf("build failed with %d errors", len(result.Errors))
+	}
+
+	fmt.Println("✅ Extension build completed successfully!")
+	fmt.Printf("📁 Output: extension/background.js\n")
+
+	if watch {
+		// Keep the process alive in watch mode
+		select {}
+	}
+
+	return nil
+}
+
+// buildExtensionScript builds the browser extension background script
+func buildExtensionScript(watch bool) api.BuildResult {
+	return api.Build(api.BuildOptions{
+		EntryPoints: []string{"extension/background.ts"},
+		Outfile:     "extension/background.js",
+		Loader: map[string]api.Loader{
+			".js":  api.LoaderJS,
+			".jsx": api.LoaderJSX,
+			".ts":  api.LoaderTS,
+			".tsx": api.LoaderTSX,
+		},
+		Format:           api.FormatIIFE,
+		Platform:         api.PlatformBrowser,
+		Bundle:           true,
+		Write:            true,
+		MinifyWhitespace: true,
+		TreeShaking:      api.TreeShakingTrue,
+		Target:           api.ES2020,
+		Sourcemap:        api.SourceMapInline,
+		LogLevel:         api.LogLevelInfo,
+		External:         []string{},
+		TsconfigRaw: `{
+			"compilerOptions": {
+				"allowSyntheticDefaultImports": true,
+				"esModuleInterop": true,
+				"moduleResolution": "node",
+				"target": "ES2020",
+				"lib": ["ES2020", "DOM", "DOM.Iterable"],
+				"allowJs": true,
+				"skipLibCheck": true,
+				"strict": false,
+				"sourcemap": "inline",
+				"forceConsistentCasingInFileNames": true,
+				"noEmit": false,
+				"resolveJsonModule": true,
+				"isolatedModules": true
+			}
+		}`,
+	})
 }

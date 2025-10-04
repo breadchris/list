@@ -32,6 +32,7 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
 
+
   /* Configure projects for major browsers */
   projects: [
     {
@@ -72,7 +73,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'go run . serve --port 3004',
+    command: 'go run . serve --port 3004 --supabase-url http://127.0.0.1:54321 --supabase-key eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
     port: 3004,
     reuseExistingServer: !process.env.CI,
   },

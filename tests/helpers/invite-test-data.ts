@@ -71,7 +71,7 @@ export function generateTestInviteCode(): string {
 export function createTestUserWithInvites(prefix: string = 'inviteuser'): TestUserWithInvites {
   return {
     email: generateInviteTestEmail(prefix),
-    password: 'InviteTest123!',
+    password: 'InviteTest123',
     username: `${prefix}_${Date.now()}`,
     inviteCodes: []
   };

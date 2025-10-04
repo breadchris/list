@@ -1,0 +1,5 @@
+config:
+  aws:region: us-east-1
+  claude-code-lambda:supabase_url: https://zazsrepfnamdmibcyenx.supabase.co
+  # Set secrets with: pulumi config set --secret anthropic_api_key YOUR_KEY
+  # Set secrets with: pulumi config set --secret supabase_service_role_key YOUR_KEY

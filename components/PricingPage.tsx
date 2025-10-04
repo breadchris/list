@@ -45,7 +45,7 @@ export const PricingPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+        <div className="w-full px-4 py-4">
           <div className="flex justify-between items-center">
             <Link to="/" className="text-xl font-semibold text-gray-900 hover:text-blue-600 transition-colors">
               List App

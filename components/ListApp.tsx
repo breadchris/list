@@ -12,21 +12,28 @@ import { FloatingActionButton } from './FloatingActionButton';
 import { WorkflowFAB } from './WorkflowFAB';
 import { MicroGameOverlay } from './MicroGameOverlay';
 import { SEOProgressOverlay, SEOProgressItem } from './SEOProgressOverlay';
+import { MarkdownProgressOverlay } from './MarkdownProgressOverlay';
 import { SharingSettingsModal } from './SharingSettingsModal';
 import { GroupDropdown } from './GroupDropdown';
 import { AppSkeleton, HeaderSkeleton, ContentListSkeleton } from './SkeletonComponents';
 import { Footer } from './Footer';
 import { LLMPromptModal } from './LLMPromptModal';
+import { ClaudeCodePromptModal } from './ClaudeCodePromptModal';
 import { Group, Content, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
 import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
+import { useMarkdownExtraction, MarkdownProgressItem } from '../hooks/useMarkdownExtraction';
 import { useToast } from './ToastProvider';
 import { extractUrls, getFirstUrl } from '../utils/urlDetection';
+import { Clock, SkipBack, ArrowDownAZ, Shuffle } from 'lucide-react';
 
 // Simplified app loading states to prevent rapid transitions
 type AppLoadingState = 'loading' | 'ready' | 'error';
+
+// View mode for content ordering
+export type ViewMode = 'chronological' | 'random' | 'alphabetical' | 'oldest';
 
 export const ListApp: React.FC = () => {
   // React Router hooks
@@ -67,11 +74,15 @@ export const ListApp: React.FC = () => {
     joinGroupMutationRef.current = joinGroupMutation;
   }, [joinGroupMutation]);
   const seoExtractionMutation = useSEOExtraction();
+  const markdownExtractionMutation = useMarkdownExtraction();
   
-  // Search state  
+  // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // View mode state
+  const [viewMode, setViewMode] = useState<ViewMode>('chronological');
   
   // Content selection state for workflow operations
   const contentSelection = useContentSelection();
@@ -87,7 +98,12 @@ export const ListApp: React.FC = () => {
   const [showSEOProgress, setShowSEOProgress] = useState(false);
   const [seoProgressItems, setSeoProgressItems] = useState<SEOProgressItem[]>([]);
   const [selectedContentForSEO, setSelectedContentForSEO] = useState<Content[]>([]);
-  
+
+  // Markdown Progress tracking
+  const [showMarkdownProgress, setShowMarkdownProgress] = useState(false);
+  const [markdownProgressItems, setMarkdownProgressItems] = useState<MarkdownProgressItem[]>([]);
+  const [selectedContentForMarkdown, setSelectedContentForMarkdown] = useState<Content[]>([]);
+
   // Sharing settings modal state
   const [showSharingModal, setShowSharingModal] = useState(false);
   const [currentContentForSharing, setCurrentContentForSharing] = useState<Content | null>(null);
@@ -95,7 +111,11 @@ export const ListApp: React.FC = () => {
   // LLM Prompt modal state
   const [showLLMPromptModal, setShowLLMPromptModal] = useState(false);
   const [selectedContentForLLM, setSelectedContentForLLM] = useState<Content[]>([]);
-  
+
+  // Claude Code Prompt modal state
+  const [showClaudeCodeModal, setShowClaudeCodeModal] = useState(false);
+  const [selectedContentForClaudeCode, setSelectedContentForClaudeCode] = useState<Content[]>([]);
+
   // Track signup completion to prevent false toast notifications
   const hasShownWelcomeRef = useRef(false);
   const isFirstAuthRef = useRef(true);
@@ -301,6 +321,127 @@ export const ListApp: React.FC = () => {
     setSelectedContentForSEO([]);
   };
 
+  const handleMarkdownExtraction = async () => {
+    console.log('📝 Markdown Extraction button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    try {
+      // Get the full content objects for the selected IDs
+      console.log('Fetching content objects for IDs:', selectedIds);
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          try {
+            const content = await contentRepository.getContentById(id);
+            if (!content) {
+              console.warn(`Content with ID ${id} not found`);
+              return null;
+            }
+            return content;
+          } catch (error) {
+            console.warn(`Could not load content ${id}:`, error);
+            return null;
+          }
+        })
+      );
+
+      // Filter out null results and continue with valid content
+      const validContent = selectedContent.filter((content): content is Content => content !== null);
+
+      if (validContent.length === 0) {
+        toast.error('No content found', 'Unable to find selected items in database.');
+        return;
+      }
+
+      if (validContent.length < selectedIds.length) {
+        toast.warning(
+          'Some items not found',
+          `Proceeding with ${validContent.length} of ${selectedIds.length} selected items.`
+        );
+      }
+
+      // Initialize progress tracking
+      const initialProgressItems: MarkdownProgressItem[] = validContent.map(content => ({
+        contentId: content.id,
+        content,
+        status: 'pending' as const,
+        urlsFound: 0,
+        urlsProcessed: 0,
+        markdownChildren: []
+      }));
+
+      setMarkdownProgressItems(initialProgressItems);
+      setSelectedContentForMarkdown(validContent);
+      setShowMarkdownProgress(true);
+
+      console.log('Starting markdown extraction for:', validContent.map(c => c.id));
+
+      // Create progress callback
+      const handleProgress = (updatedItem: MarkdownProgressItem) => {
+        console.log('Progress update:', updatedItem);
+        setMarkdownProgressItems(prev =>
+          prev.map(item =>
+            item.contentId === updatedItem.contentId ? updatedItem : item
+          )
+        );
+      };
+
+      // Trigger the markdown extraction with progress tracking
+      const results = await markdownExtractionMutation.mutateAsync({
+        selectedContent: validContent,
+        onProgress: handleProgress
+      });
+
+      // Show results summary
+      const totalUrls = results.reduce((sum, r) => sum + r.total_urls_found, 0);
+      const processedUrls = results.reduce((sum, r) => sum + r.urls_processed, 0);
+      const failedCount = results.filter(r => r.errors && r.errors.length > 0).length;
+
+      if (failedCount === 0) {
+        toast.success(
+          'Markdown extraction completed!',
+          `Converted ${processedUrls}/${totalUrls} URLs from ${validContent.length} items.`
+        );
+      } else {
+        toast.warning(
+          'Markdown extraction completed with errors',
+          `Converted ${processedUrls}/${totalUrls} URLs. ${failedCount} items failed.`
+        );
+      }
+
+      // Clear selection after successful operation
+      contentSelection.clearSelection();
+    } catch (error) {
+      console.error('Markdown extraction failed:', error);
+      toast.error('Markdown extraction failed', 'Please try again.');
+      // Update all items to failed status
+      setMarkdownProgressItems(prev =>
+        prev.map(item => ({
+          ...item,
+          status: 'failed' as const,
+          error: error instanceof Error ? error.message : String(error)
+        }))
+      );
+    }
+  };
+
+  const handleCloseMarkdownProgress = () => {
+    setShowMarkdownProgress(false);
+    setMarkdownProgressItems([]);
+    setSelectedContentForMarkdown([]);
+  };
+
   const handleOpenSharingModal = async () => {
     if (!currentParentId) return;
     
@@ -328,6 +469,58 @@ export const ListApp: React.FC = () => {
   };
 
   const handleLLMContentGenerated = () => {
+    // Exit selection mode and refresh content list
+    contentSelection.clearSelection();
+    setNewContent(undefined);
+  };
+
+  const handleClaudeCodeExecution = async () => {
+    console.log('💻 Claude Code button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    try {
+      // Get the full content objects for the selected IDs
+      console.log('Fetching content objects for IDs:', selectedIds);
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          const content = await contentRepository.getContentById(id);
+          if (!content) {
+            throw new Error(`Content with ID ${id} not found`);
+          }
+          return content;
+        })
+      );
+
+      console.log('Fetched content objects:', selectedContent);
+
+      // Set selected content and show modal
+      setSelectedContentForClaudeCode(selectedContent);
+      setShowClaudeCodeModal(true);
+
+    } catch (error) {
+      console.error('Error fetching selected content:', error);
+      toast.error('Error', 'Failed to load selected content');
+    }
+  };
+
+  const handleCloseClaudeCodeModal = () => {
+    setShowClaudeCodeModal(false);
+    setSelectedContentForClaudeCode([]);
+  };
+
+  const handleClaudeCodeContentGenerated = () => {
     // Exit selection mode and refresh content list
     contentSelection.clearSelection();
     setNewContent(undefined);
@@ -453,6 +646,16 @@ export const ListApp: React.FC = () => {
   // Define available workflow actions
   const workflowActions = [
     {
+      id: 'claude-code',
+      name: 'Claude Code',
+      description: 'Execute coding tasks with Claude Code SDK',
+      icon: '💻',
+      onClick: () => {
+        console.log('💻 WorkflowAction onClick triggered for Claude Code execution');
+        handleClaudeCodeExecution();
+      }
+    },
+    {
       id: 'llm-generate',
       name: 'Generate with AI',
       description: 'Use AI to generate content from selection',
@@ -470,6 +673,16 @@ export const ListApp: React.FC = () => {
       onClick: () => {
         console.log('🔍 WorkflowAction onClick triggered for SEO extraction');
         handleSEOExtraction();
+      }
+    },
+    {
+      id: 'markdown-extract',
+      name: 'Extract Markdown',
+      description: 'Convert URLs to markdown',
+      icon: '📝',
+      onClick: () => {
+        console.log('📝 WorkflowAction onClick triggered for markdown extraction');
+        handleMarkdownExtraction();
       }
     },
     {
@@ -670,6 +883,25 @@ export const ListApp: React.FC = () => {
       localStorage.setItem('lastViewedGroupId', currentGroup.id);
     }
   }, [currentGroup]);
+
+  // Load view mode from localStorage when group changes
+  useEffect(() => {
+    if (currentGroup?.id) {
+      const savedViewMode = localStorage.getItem(`viewMode_${currentGroup.id}`) as ViewMode;
+      if (savedViewMode && ['chronological', 'random', 'alphabetical', 'oldest'].includes(savedViewMode)) {
+        setViewMode(savedViewMode);
+      } else {
+        setViewMode('chronological'); // Default view mode
+      }
+    }
+  }, [currentGroup?.id]);
+
+  // Save view mode to localStorage when it changes
+  useEffect(() => {
+    if (currentGroup?.id && viewMode) {
+      localStorage.setItem(`viewMode_${currentGroup.id}`, viewMode);
+    }
+  }, [currentGroup?.id, viewMode]);
 
   const handleSignOut = async () => {
     try {
@@ -1035,8 +1267,8 @@ export const ListApp: React.FC = () => {
       {appState === 'ready' && user && (
         <>
           {/* Header */}
-          <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
-            <div className="max-w-4xl mx-auto px-4 py-3">
+          <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200 w-full">
+            <div className="w-full px-4 py-3">
               <div className="flex justify-between items-center">
                 <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
               {/* Hamburger Menu */}
@@ -1057,10 +1289,10 @@ export const ListApp: React.FC = () => {
               />
             </div>
             
-            {/* Search Bar */}
+            {/* Search Bar and View Mode Selector */}
             {currentGroup && (
-              <div className="flex-1 max-w-md mx-2 sm:mx-4">
-                <div className="relative">
+              <div className="flex-1 flex items-center space-x-2 max-w-md mx-2 sm:mx-4">
+                <div className="relative flex-1">
                   <input
                     type="text"
                     placeholder="Search..."
@@ -1085,6 +1317,19 @@ export const ListApp: React.FC = () => {
                     </button>
                   )}
                 </div>
+
+                {/* View Mode Selector */}
+                <select
+                  value={viewMode}
+                  onChange={(e) => setViewMode(e.target.value as ViewMode)}
+                  className="text-gray-600 text-sm bg-transparent border-none cursor-pointer appearance-none focus:outline-none"
+                  title="View mode"
+                >
+                  <option value="chronological">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="alphabetical">A-Z</option>
+                  <option value="random">Random</option>
+                </select>
               </div>
             )}
             
@@ -1161,7 +1406,7 @@ export const ListApp: React.FC = () => {
             </div>
           </header>
 
-          <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out overflow-y-auto pt-20">
+          <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out overflow-y-auto pt-20">
             {/* Back Button Navigation */}
             {currentGroup && navigationStack.length > 1 && (
               <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2">
@@ -1256,6 +1501,7 @@ export const ListApp: React.FC = () => {
             onContentAdded={handleContentAdded}
             showInput={showInput}
             onInputClose={handleInputClose}
+            viewMode={viewMode}
           />
         ) : (
           <ContentList
@@ -1269,6 +1515,7 @@ export const ListApp: React.FC = () => {
             showInput={showInput}
             onInputClose={handleInputClose}
             onContentAdded={handleContentAdded}
+            viewMode={viewMode}
           />
         )}
       </div>
@@ -1342,6 +1589,14 @@ export const ListApp: React.FC = () => {
         onClose={handleCloseSEOProgress}
       />
 
+      {/* Markdown Progress Overlay */}
+      <MarkdownProgressOverlay
+        isVisible={showMarkdownProgress}
+        selectedContent={selectedContentForMarkdown}
+        progressItems={markdownProgressItems}
+        onClose={handleCloseMarkdownProgress}
+      />
+
       {/* Sharing Settings Modal */}
       <SharingSettingsModal
         isVisible={showSharingModal}
@@ -1357,6 +1612,16 @@ export const ListApp: React.FC = () => {
         parentContentId={currentParentId}
         onClose={handleCloseLLMPromptModal}
         onContentGenerated={handleLLMContentGenerated}
+      />
+
+      {/* Claude Code Prompt Modal */}
+      <ClaudeCodePromptModal
+        isVisible={showClaudeCodeModal}
+        selectedContent={selectedContentForClaudeCode}
+        groupId={currentGroup?.id || ''}
+        parentContentId={currentParentId}
+        onClose={handleCloseClaudeCodeModal}
+        onContentGenerated={handleClaudeCodeContentGenerated}
       />
 
           {/* Footer */}

@@ -1,0 +1,6 @@
+name: claude-code-lambda
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+description: AWS Lambda infrastructure for Claude Code execution

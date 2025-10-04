@@ -4,21 +4,32 @@ import { TestUserWithInvites, TestGroupWithInvites, TestInviteCode, TestInvitati
 // Local Supabase configuration for tests
 const SUPABASE_URL = 'http://127.0.0.1:54321';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+// Service role key for admin operations (local development)
+const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
 
 /**
  * Database helper for invite graph system testing
  */
 export class DatabaseHelper {
   private supabase;
+  private adminClient;
 
   constructor() {
     this.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    this.adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
   }
 
   /**
    * Create test user in database
    */
   async createTestUser(user: TestUserWithInvites): Promise<string> {
+    console.log(`Creating test user: ${user.email}`);
+
     // Sign up the user
     const { data: authData, error: authError } = await this.supabase.auth.signUp({
       email: user.email,
@@ -34,6 +45,24 @@ export class DatabaseHelper {
       throw new Error('Failed to get user ID after signup');
     }
 
+    console.log(`User created with ID: ${userId}`);
+
+    // For local development, manually confirm the user's email
+    // This bypasses the email confirmation requirement
+    try {
+      const { error: confirmError } = await this.adminClient.auth.admin.updateUserById(userId, {
+        email_confirmed_at: new Date().toISOString()
+      });
+
+      if (confirmError) {
+        console.warn('Failed to confirm user email:', confirmError);
+      } else {
+        console.log(`User email confirmed for: ${user.email}`);
+      }
+    } catch (error) {
+      console.warn('Admin API not available, user may need manual confirmation:', error);
+    }
+
     // Update user record with username if provided
     if (user.username) {
       const { error: updateError } = await this.supabase
@@ -46,7 +75,38 @@ export class DatabaseHelper {
       }
     }
 
+    // Wait a moment for the user to be fully processed
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     return userId;
+  }
+
+  /**
+   * Verify user is ready for authentication
+   */
+  async verifyUserReadyForAuth(email: string): Promise<boolean> {
+    try {
+      const { data, error } = await this.adminClient.auth.admin.listUsers();
+
+      if (error) {
+        console.warn('Failed to list users for verification:', error);
+        return false;
+      }
+
+      const user = data.users.find(u => u.email === email);
+      if (!user) {
+        console.warn(`User not found: ${email}`);
+        return false;
+      }
+
+      const isEmailConfirmed = !!user.email_confirmed_at;
+      console.log(`User ${email} email confirmed: ${isEmailConfirmed}`);
+
+      return isEmailConfirmed;
+    } catch (error) {
+      console.warn('Error verifying user:', error);
+      return false;
+    }
   }
 
   /**

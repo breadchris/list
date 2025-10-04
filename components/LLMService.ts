@@ -22,7 +22,7 @@ export interface LLMResponse {
 
 export class LLMService {
 
-  static async generateContent(request: LLMRequest): Promise<LLMResponse> {
+  static async generateContent(request: LLMRequest, useQueue: boolean = false): Promise<LLMResponse & { queued?: boolean }> {
     try {
       // Validate input
       if (!request.system_prompt?.trim()) {
@@ -37,13 +37,17 @@ export class LLMService {
         throw new Error('Group ID is required');
       }
 
-      // Call the Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('llm-generate', {
+      // Call the consolidated content function
+      const { data, error } = await supabase.functions.invoke('content', {
         body: {
-          system_prompt: request.system_prompt,
-          selected_content: request.selected_content,
-          group_id: request.group_id,
-          parent_content_id: request.parent_content_id
+          action: 'llm-generate',
+          payload: {
+            system_prompt: request.system_prompt,
+            selected_content: request.selected_content,
+            group_id: request.group_id,
+            parent_content_id: request.parent_content_id
+          },
+          useQueue
         }
       });
 
@@ -56,13 +60,24 @@ export class LLMService {
         throw new Error('No response from LLM service');
       }
 
-      const response = data as LLMResponse;
-
-      if (!response.success) {
-        throw new Error(response.error || 'LLM generation failed');
+      if (!data.success) {
+        throw new Error(data.error || 'LLM generation failed');
       }
 
-      return response;
+      if (data.queued) {
+        return {
+          success: true,
+          queued: true
+        };
+      }
+
+      // For immediate processing, extract the actual response data
+      const responseData = data.data;
+      return {
+        success: true,
+        generated_content: responseData.generated_content,
+        prompt_content_id: responseData.prompt_content_id
+      };
 
     } catch (error) {
       console.error('LLM Service error:', error);
@@ -76,12 +91,15 @@ export class LLMService {
 
   static async testConnection(): Promise<boolean> {
     try {
-      // Simple test to verify the Edge Function is accessible
-      const { error } = await supabase.functions.invoke('llm-generate', {
+      // Simple test to verify the consolidated content function is accessible
+      const { error } = await supabase.functions.invoke('content', {
         body: {
-          system_prompt: 'test',
-          selected_content: [],
-          group_id: 'test'
+          action: 'llm-generate',
+          payload: {
+            system_prompt: 'test',
+            selected_content: [],
+            group_id: 'test'
+          }
         }
       });
 

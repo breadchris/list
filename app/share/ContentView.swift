@@ -29,6 +29,14 @@ struct ContentView: View {
                             webViewStore.webView.reload()
                         }
                     }
+                    
+                    #if DEBUG
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        NavigationLink("Debug") {
+                            DebugView()
+                        }
+                    }
+                    #endif
                 }
                 .onAppear {
                     loadListApp()
@@ -179,6 +187,20 @@ struct ContentView: View {
                 apiKeyMessage = message
                 showingAPIKeyAlert = true
             }
+        }
+
+        // Handle test shared URL notifications
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("TestSharedURL"),
+            object: nil,
+            queue: .main
+        ) { notification in
+            print("🧪 Test: Received test shared URL notification")
+            if let shareKey = notification.userInfo?["shareKey"] as? String {
+                print("🧪 Test: Processing test share key: \(shareKey)")
+            }
+            // Trigger the normal shared URL check
+            sharedURLManager.checkForSharedURLs()
         }
     }
 

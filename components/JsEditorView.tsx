@@ -19,6 +19,7 @@ interface JsEditorViewProps {
   onContentAdded: (content: Content) => void;
   showInput: boolean;
   onInputClose: () => void;
+  viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
 }
 
 export const JsEditorView: React.FC<JsEditorViewProps> = ({
@@ -32,7 +33,8 @@ export const JsEditorView: React.FC<JsEditorViewProps> = ({
   newContent,
   onContentAdded,
   showInput,
-  onInputClose
+  onInputClose,
+  viewMode = 'chronological'
 }) => {
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([]);
   const [executor] = useState(() => new JsExecutor(setConsoleEntries));
@@ -89,6 +91,7 @@ export const JsEditorView: React.FC<JsEditorViewProps> = ({
           isSearching={isSearching}
           selection={selection}
           newContent={newContent}
+          viewMode={viewMode}
         />
       </div>
     </div>

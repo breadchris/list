@@ -1,13 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Configuration - these values may be injected at build time by the Go server
-// For local development and testing, use local Supabase
-const SUPABASE_URL = process.env.NODE_ENV === 'test' ?
-  'http://127.0.0.1:54321' :
-  'https://zazsrepfnamdmibcyenx.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NODE_ENV === 'test' ?
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' :
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM';
+const SUPABASE_URL = 'https://zazsrepfnamdmibcyenx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM';
 
 // Runtime configuration cache
 let runtimeConfig: { supabase_url: string; supabase_key: string } | null = null;

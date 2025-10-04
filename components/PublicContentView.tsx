@@ -5,6 +5,7 @@ import { SEOCard } from './SEOCard';
 import { LinkifiedText } from './LinkifiedText';
 import { UserAuth } from './UserAuth';
 import { ContentListSkeleton } from './SkeletonComponents';
+import { usePublicContentChildren } from '../hooks/useContentQueries';
 
 export const PublicContentView: React.FC = () => {
   const { contentId } = useParams<{ contentId: string }>();
@@ -13,6 +14,12 @@ export const PublicContentView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
+
+  // Fetch children of current content
+  const {
+    data: children = [],
+    isLoading: childrenLoading
+  } = usePublicContentChildren(contentId || null, { enabled: !!contentId && !!content });
 
   useEffect(() => {
     if (contentId) {
@@ -69,7 +76,7 @@ export const PublicContentView: React.FC = () => {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         {/* Simple Header */}
         <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
-          <div className="max-w-4xl mx-auto px-4 py-3">
+          <div className="w-full px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <h1 className="text-lg font-semibold text-gray-900">Public Content</h1>
@@ -90,7 +97,7 @@ export const PublicContentView: React.FC = () => {
       <div className="min-h-screen bg-gray-50">
         {/* Simple Header */}
         <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
-          <div className="max-w-4xl mx-auto px-4 py-3">
+          <div className="w-full px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <h1 className="text-lg font-semibold text-gray-900">Public Content</h1>
@@ -148,8 +155,8 @@ export const PublicContentView: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Simple Header */}
-      <header className="sticky top-0 z-50 bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-3">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200">
+        <div className="w-full px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <h1 className="text-lg font-semibold text-gray-900">Public Content</h1>
@@ -206,6 +213,39 @@ export const PublicContentView: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Children Content List */}
+            {children.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-medium text-gray-900 mb-3">
+                  Items in this list ({children.length})
+                </h3>
+                <div className="space-y-2">
+                  {children.map((child) => (
+                    <div
+                      key={child.id}
+                      onClick={() => navigate(`/public/content/${child.id}`)}
+                      className="p-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors border border-gray-200"
+                    >
+                      {child.type === 'seo' && child.metadata ? (
+                        <SEOCard
+                          metadata={child.metadata}
+                          className="border-0 shadow-none p-0 bg-transparent"
+                        />
+                      ) : (
+                        <LinkifiedText
+                          text={child.data}
+                          className="text-gray-900 text-sm line-clamp-2"
+                        />
+                      )}
+                      <div className="mt-1 text-xs text-gray-500">
+                        {formatRelativeTime(child.created_at)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Call to Action */}
             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
