@@ -139,6 +139,136 @@ npm run test:e2e -- tests/specific-test.spec.ts  # Run specific test
 - localStorage.setItem('supabase.auth.token', ...) doesn't authenticate users
 - Investigation needed for proper Supabase v2 session format or alternative mocking approach
 
+## Test-as-Script Pattern (LISP-Style Development)
+
+**CRITICAL**: Go tests can serve dual purposes - validation and execution
+
+### Philosophy
+
+Code should evolve naturally from script to reusable function to validated test, similar to LISP REPL-driven development. Write code once, use it in multiple contexts with minimal duplication.
+
+### Pattern Structure
+
+1. **Shared Core Function** - Contains all business logic, accepts transaction parameter
+2. **Validation Test** - Uses `defer tx.Rollback()` to validate logic without side effects
+3. **Execution Test** - Commits transaction to actually execute and persist changes
+
+### Implementation Example
+
+**Step 1: Extract Shared Function**
+```go
+// imdbImport performs the IMDb data import within the provided transaction
+// Caller controls transaction lifecycle (commit or rollback)
+func imdbImport(tx *sql.Tx, titles []IMDbTitle, userEmail string) (*IMDbImportResult, error) {
+    result := &IMDbImportResult{
+        TotalTitles: len(titles),
+    }
+
+    // 1. Get or create user
+    var userID string
+    err := tx.QueryRow(`...`).Scan(&userID)
+    if err != nil {
+        return nil, err
+    }
+
+    // 2. Create group for import
+    // 3. Create tags
+    // 4. Insert content
+    // ... all business logic here
+
+    return result, nil
+}
+```
+
+**Step 2: Validation Test (Rollback Mode)**
+```go
+func TestIMDbIntegration(t *testing.T) {
+    t.Log("🎬 Starting IMDb Integration Test (VALIDATION MODE - ROLLBACK)...")
+
+    // Setup database connection
+    db, err := sql.Open("postgres", dbURL)
+    // ... connection setup
+
+    // Load test data
+    titles, err := loadAndProcessIMDbData(20)
+
+    // Start transaction
+    tx, err := db.Begin()
+    defer tx.Rollback() // ALWAYS ROLLBACK - validation only
+
+    // Execute shared function
+    result, err := imdbImport(tx, titles, "user@example.com")
+    if err != nil {
+        t.Fatalf("Failed to import: %v", err)
+    }
+
+    // Validate results
+    var groupCount int
+    err = tx.QueryRow("SELECT COUNT(*) FROM groups WHERE id = $1", result.GroupID).Scan(&groupCount)
+    if groupCount != 1 {
+        t.Fatalf("Expected 1 group, got %d", groupCount)
+    }
+
+    t.Log("✅ Database validation passed - all data will be rolled back")
+}
+```
+
+**Step 3: Execution Test (Commit Mode)**
+```go
+func TestIMDbImport_Commit(t *testing.T) {
+    t.Log("🎬 Starting IMDb Import (EXECUTION MODE - COMMIT)...")
+
+    // Setup database connection
+    db, err := sql.Open("postgres", dbURL)
+    // ... connection setup
+
+    // Load data
+    titles, err := loadAndProcessIMDbData(20)
+
+    // Start transaction
+    tx, err := db.Begin()
+    // NO defer rollback
+
+    // Execute shared function
+    result, err := imdbImport(tx, titles, "user@example.com")
+    if err != nil {
+        tx.Rollback()
+        t.Fatalf("Failed to import: %v", err)
+    }
+
+    // Commit transaction - KEY DIFFERENCE
+    if err := tx.Commit(); err != nil {
+        t.Fatalf("Failed to commit: %v", err)
+    }
+
+    t.Log("✅ Transaction committed - data persisted to database")
+}
+```
+
+### Benefits
+
+- **Zero code duplication** - Business logic written once
+- **Safe development** - Validate behavior before committing
+- **Script flexibility** - Run commit test to actually execute operations
+- **Continuous validation** - Rollback test ensures logic stays correct over time
+- **REPL-like workflow** - Iterate on logic, validate instantly, commit when ready
+
+### Code Evolution Path
+
+1. **Initial Script** - Write throwaway code to solve immediate problem
+2. **Extract Function** - Move logic to reusable function with transaction parameter
+3. **Add Validation Test** - Create rollback test to verify behavior
+4. **Add Execution Test** - Create commit test to run as script
+5. **Iterate** - Modify shared function, validation test ensures correctness
+
+### Key Principles
+
+- **Transaction as abstraction** - Caller controls commit/rollback, not the function
+- **Minimal duplication** - Test setup code is acceptable to duplicate, business logic is not
+- **Clear naming** - Use `_Commit` suffix to indicate execution tests
+- **Rollback by default** - Always use `defer tx.Rollback()` in validation tests
+- **Error handling** - Rollback on error in commit tests before returning
+
 ## Go HTTP Server Guidelines
 
 **CRITICAL**: The Go HTTP server is for serving the React app only
@@ -600,3 +730,151 @@ struct ShareItem: Codable {
 - [ ] Multiple shares → all processed in order
 - [ ] Auth expired → re-auth and retry
 - [ ] Extension completes < 1 second
+
+## AWS Lambda Development Guidelines
+
+**CRITICAL**: Always test locally with Docker before deploying to AWS
+
+### Local-First Development Workflow
+
+The Lambda function for Claude Code execution should always be tested locally before deployment. This provides immediate feedback and avoids slow CloudWatch log debugging.
+
+**Development Loop:**
+1. Make code changes in `lambda/function/src/`
+2. Test locally with Docker (see below)
+3. Iterate until working
+4. Deploy to AWS with Pulumi
+5. Verify with production curl test
+
+### Local Docker Testing
+
+**Prerequisites:**
+- Docker installed and running
+- `ANTHROPIC_API_KEY` environment variable set
+- AWS credentials configured (for S3 access)
+
+**Quick Test:**
+```bash
+cd lambda/function
+
+# Build and test in one command
+./test-local.sh
+```
+
+**Manual Testing:**
+```bash
+# 1. Build Docker image
+docker build -t claude-lambda-test .
+
+# 2. Run Lambda Runtime Interface Emulator
+docker run --rm -p 9000:8080 \
+  -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+  -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+  -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+  -e AWS_REGION="us-east-1" \
+  -e S3_BUCKET_NAME="claude-code-sessions" \
+  -e NODE_ENV="development" \
+  claude-lambda-test
+
+# 3. Test with curl (in another terminal)
+curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" \
+  -H "Content-Type: application/json" \
+  -d @test-payload.json | jq '.'
+```
+
+**Using test payload file:**
+```bash
+# lambda/function/test-payload.json
+{
+  "body": "{\"prompt\": \"What is 2 + 2?\"}",
+  "requestContext": {
+    "http": {
+      "method": "POST"
+    }
+  },
+  "rawPath": "/claude-code"
+}
+```
+
+### Debugging Output in Responses
+
+The Lambda function returns detailed debugging information in the HTTP response:
+
+```json
+{
+  "success": false,
+  "session_id": "session-xxx",
+  "error": "Claude Code process exited with code 1",
+  "stdout": "...captured process stdout...",
+  "stderr": "...captured process stderr...",
+  "exitCode": 1,
+  "messages": []
+}
+```
+
+**Key fields for debugging:**
+- `stdout` - All stdout from Claude Code CLI process
+- `stderr` - All stderr from Claude Code CLI process
+- `exitCode` - Process exit code (0 = success, 1 = error)
+- `error` - High-level error message
+- `messages` - SDK messages (empty if process failed early)
+
+### Common Issues and Solutions
+
+**Issue: Console.log not appearing in CloudWatch**
+- **Cause**: Node.js Lambda buffers stdout/stderr
+- **Solution**: Use `process.stderr.write()` for immediate output, or rely on response debugging fields
+
+**Issue: Docker build fails with missing files**
+- **Cause**: .dockerignore excluding necessary files
+- **Solution**: Check .dockerignore doesn't exclude tsconfig.json or source files
+
+**Issue: Lambda works locally but fails in AWS**
+- **Cause**: Environment variables not set in Pulumi config
+- **Solution**: Check `lambda/index.ts` environment variable configuration
+
+**Issue: "Claude Code process exited with code 1"**
+- **Debugging**: Check `stdout` and `stderr` fields in response
+- **Common causes**: Missing ANTHROPIC_API_KEY, CLI not found, invalid API key
+
+### Deployment After Local Testing
+
+Once local tests pass:
+
+```bash
+cd lambda
+
+# Deploy with Pulumi
+export PULUMI_CONFIG_PASSPHRASE=""
+npm run up -- --yes
+
+# Test production endpoint
+curl -X POST "https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com/claude-code" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is 2 + 2?"}' | jq '.'
+```
+
+### Lambda Function Architecture
+
+**Structure:**
+- `lambda/function/src/index.ts` - API Gateway handler with CORS
+- `lambda/function/src/claude-executor.ts` - Claude Code SDK execution with output capture
+- `lambda/function/src/session-manager.ts` - S3 session file management
+- `lambda/function/Dockerfile` - Container image with Claude CLI installed
+- `lambda/index.ts` - Pulumi infrastructure (ECR, Lambda, API Gateway, IAM)
+
+**Key Components:**
+- Docker-based Lambda (not ZIP deployment)
+- Claude Code CLI installed globally via npm
+- Process output captured via SDK hooks
+- All output returned in HTTP response for debugging
+- S3 for session file storage (optional)
+
+### Best Practices
+
+1. **Always test locally first** - Faster feedback loop than AWS deployment
+2. **Use Docker build cache** - Rebuilds are fast when only source changes
+3. **Check exit codes** - Process exit code 0 means success
+4. **Read stdout/stderr** - Contains actual error messages from CLI
+5. **Verify API key** - Most failures are due to missing/invalid ANTHROPIC_API_KEY
+6. **Test incrementally** - Start with simple prompts, add complexity gradually

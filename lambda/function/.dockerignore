@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+npm-debug.log
+package-lock.json
+
+# Build outputs
+dist/
+*.js.map
+*.bundled.js
+
+# Development files
+bundle.js
+
+# Test files
+*.spec.ts
+*.test.ts
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+*.md

@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import * as aws from '@pulumi/aws';
-import * as path from 'path';
+import * as docker from '@pulumi/docker';
 
 // Get configuration
 const config = new pulumi.Config();
@@ -57,30 +57,64 @@ const s3Policy = new aws.iam.RolePolicy('lambda-s3-policy', {
 	role: lambdaRole.id,
 	policy: sessionBucket.arn.apply(bucketArn => JSON.stringify({
 		Version: '2012-10-17',
-		Statement: [{
-			Effect: 'Allow',
-			Action: [
-				's3:GetObject',
-				's3:PutObject',
-				's3:HeadObject',
-				's3:DeleteObject'
-			],
-			Resource: `${bucketArn}/*`
-		}]
+		Statement: [
+			{
+				Effect: 'Allow',
+				Action: [
+					's3:ListBucket',
+					's3:GetBucketLocation'
+				],
+				Resource: bucketArn // Bucket-level permissions
+			},
+			{
+				Effect: 'Allow',
+				Action: [
+					's3:GetObject',
+					's3:PutObject',
+					's3:HeadObject',
+					's3:DeleteObject'
+				],
+				Resource: `${bucketArn}/*` // Object-level permissions
+			}
+		]
 	}))
 });
 
-// Build Lambda package - use bundled file (CommonJS format, no package.json type needed)
-const lambdaCode = new pulumi.asset.AssetArchive({
-	'index.js': new pulumi.asset.FileAsset('./function/dist/index.bundled.js')
+// Create ECR repository for Lambda Docker image
+const ecrRepo = new aws.ecr.Repository('claude-code-lambda-repo', {
+	name: 'claude-code-lambda',
+	forceDelete: true, // Allow deletion even with images
+	tags: {
+		Name: 'Claude Code Lambda Repository',
+		ManagedBy: 'Pulumi'
+	}
 });
 
-// Create Lambda function
+// Get ECR authorization token
+const authToken = aws.ecr.getAuthorizationTokenOutput({
+	registryId: ecrRepo.registryId
+});
+
+// Build and push Docker image to ECR
+const image = new docker.Image('claude-code-lambda-image', {
+	imageName: pulumi.interpolate`${ecrRepo.repositoryUrl}:latest`,
+	build: {
+		context: './function',
+		dockerfile: './function/Dockerfile',
+		platform: 'linux/amd64' // Lambda requires amd64
+	},
+	registry: {
+		server: ecrRepo.repositoryUrl,
+		username: authToken.userName,
+		password: authToken.password
+	}
+});
+
+// Create Lambda function with Docker image
 const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
-	runtime: aws.lambda.Runtime.NodeJS20dX,
+	packageType: 'Image',
 	role: lambdaRole.arn,
-	handler: 'index.handler',
-	code: lambdaCode,
+	imageUri: image.imageName,
 	timeout: 300, // 5 minutes
 	memorySize: 2048, // 2GB for Claude SDK
 	environment: {
@@ -89,7 +123,8 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			S3_BUCKET_NAME: sessionBucket.bucket,
 			ANTHROPIC_API_KEY: anthropicApiKey,
 			SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
-			SUPABASE_URL: supabaseUrl
+			SUPABASE_URL: supabaseUrl,
+			HOME: '/tmp' // Claude CLI needs a HOME directory for config
 		}
 	},
 	tags: {

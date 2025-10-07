@@ -57,6 +57,7 @@ func LoadDatabaseConfig(configPath string) (string, error) {
 	}
 
 	var config struct {
+		DatabaseURL string `json:"database_url"`
 		SupabaseURL string `json:"supabase_url"`
 	}
 
@@ -64,13 +65,18 @@ func LoadDatabaseConfig(configPath string) (string, error) {
 		return "", fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Convert Supabase URL to PostgreSQL database URL
+	// If database_url is provided, use it directly
+	if config.DatabaseURL != "" {
+		return config.DatabaseURL, nil
+	}
+
+	// Otherwise, convert Supabase URL to PostgreSQL database URL
 	// Extract the project ID from the Supabase URL
 	// Example: https://zazsrepfnamdmibcyenx.supabase.co -> zazsrepfnamdmibcyenx
 	url := strings.TrimPrefix(config.SupabaseURL, "https://")
 	url = strings.TrimPrefix(url, "http://")
 	projectID := strings.Split(url, ".")[0]
-	
+
 	// Construct the PostgreSQL connection string for Supabase
 	dbURL := fmt.Sprintf("postgresql://postgres:postgres@db.%s.supabase.co:5432/postgres?sslmode=require", projectID)
 	return dbURL, nil

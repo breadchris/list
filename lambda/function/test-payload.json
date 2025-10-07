@@ -1,0 +1,9 @@
+{
+  "body": "{\"prompt\": \"What is 2 + 2? Just give me the answer.\"}",
+  "requestContext": {
+    "http": {
+      "method": "POST"
+    }
+  },
+  "rawPath": "/claude-code"
+}

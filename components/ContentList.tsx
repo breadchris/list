@@ -477,7 +477,7 @@ export const ContentList: React.FC<ContentListProps> = ({
           />
         )}
 
-        {displayItems.length === 0 && !currentLoading && (!parentContent || isSearching) ? (
+        {displayItems.length === 0 && !currentLoading && currentStatus === 'success' && (!parentContent || isSearching) ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               {isSearching ? (

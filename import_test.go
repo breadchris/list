@@ -1,22 +1,17 @@
 package main
 
 import (
-	"compress/gzip"
 	"context"
 	"database/sql"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
-	
+
 	"github.com/alexferrari88/gohn/pkg/gohn"
 	_ "github.com/lib/pq"
 )
@@ -305,19 +300,7 @@ type HackerNewsArticle struct {
 	Author string `json:"author,omitempty"`
 }
 
-type IMDbTitle struct {
-	TitleID        string   `json:"title_id"`        // tconst
-	TitleType      string   `json:"title_type"`      // movie, tvseries, etc
-	PrimaryTitle   string   `json:"primary_title"`   // main title
-	OriginalTitle  string   `json:"original_title"`  // original language title
-	IsAdult        bool     `json:"is_adult"`        // adult content flag
-	StartYear      *int     `json:"start_year"`      // release year
-	EndYear        *int     `json:"end_year"`        // end year for TV series
-	RuntimeMinutes *int     `json:"runtime_minutes"` // duration in minutes
-	Genres         []string `json:"genres"`          // genre list
-	AverageRating  *float64 `json:"average_rating"`  // from ratings file
-	NumVotes       *int     `json:"num_votes"`       // vote count from ratings
-}
+// IMDbTitle is defined in imdb_integration_test.go
 
 func TestImportHackerNewsArticles(t *testing.T) {
 	// Load database configuration
@@ -638,103 +621,8 @@ func TestImportHackerNewsArticles(t *testing.T) {
 	t.Log("✅ HackerNews import completed successfully!")
 }
 
-// downloadIMDbFile downloads an IMDb dataset file if it doesn't exist
-func downloadIMDbFile(filePath, url string) error {
-	// Check if file already exists
-	if _, err := os.Stat(filePath); err == nil {
-		return nil // File already exists
-	}
-
-	// Create the directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %v", err)
-	}
-
-	// Download the file
-	resp, err := http.Get(url)
-	if err != nil {
-		return fmt.Errorf("failed to download file: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
-	}
-
-	// Create the file
-	out, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %v", err)
-	}
-	defer out.Close()
-
-	// Copy the data
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to write file: %v", err)
-	}
-
-	return nil
-}
-
-// parseIMDbTSV parses a gzipped TSV file and returns the records
-func parseIMDbTSV(filePath string) ([][]string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %v", err)
-	}
-	defer file.Close()
-
-	// Create gzip reader
-	gzReader, err := gzip.NewReader(file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gzip reader: %v", err)
-	}
-	defer gzReader.Close()
-
-	// Create CSV reader for TSV (Tab-Separated Values)
-	csvReader := csv.NewReader(gzReader)
-	csvReader.Comma = '\t' // Tab delimiter
-	csvReader.LazyQuotes = true
-
-	// Read all records
-	records, err := csvReader.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read CSV: %v", err)
-	}
-
-	return records, nil
-}
-
-// parseIntField converts string to *int, handling '\N' null values
-func parseIntField(s string) *int {
-	if s == "" || s == "\\N" {
-		return nil
-	}
-	if val, err := strconv.Atoi(s); err == nil {
-		return &val
-	}
-	return nil
-}
-
-// parseFloatField converts string to *float64, handling '\N' null values
-func parseFloatField(s string) *float64 {
-	if s == "" || s == "\\N" {
-		return nil
-	}
-	if val, err := strconv.ParseFloat(s, 64); err == nil {
-		return &val
-	}
-	return nil
-}
-
-// parseGenres splits genre string into slice, handling '\N' null values
-func parseGenres(s string) []string {
-	if s == "" || s == "\\N" {
-		return []string{}
-	}
-	return strings.Split(s, ",")
-}
+// Helper functions downloadIMDbFile, parseIMDbTSV, parseIntField, parseFloatField,
+// and parseGenres are defined in imdb_integration_test.go
 
 func TestImportIMDbData(t *testing.T) {
 	// Load database configuration
