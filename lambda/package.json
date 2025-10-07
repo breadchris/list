@@ -3,18 +3,18 @@
   "version": "1.0.0",
   "description": "Pulumi infrastructure for Claude Code Lambda",
   "main": "index.ts",
-  "type": "module",
   "scripts": {
     "up": "pulumi up",
     "preview": "pulumi preview",
     "destroy": "pulumi destroy"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.7.2"
+    "@types/node": "^20.19.19",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@pulumi/pulumi": "^3.0.0",
-    "@pulumi/aws": "^6.0.0"
+    "@pulumi/aws": "^6.0.0",
+    "@pulumi/pulumi": "^3.0.0"
   }
 }

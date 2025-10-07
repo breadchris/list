@@ -5,12 +5,13 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc && node bundle.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^20.0.0",
+    "esbuild": "^0.25.10",
     "typescript": "^5.7.2"
   },
   "dependencies": {

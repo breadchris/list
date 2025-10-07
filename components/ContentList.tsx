@@ -11,6 +11,7 @@ import { QueryKeys } from '../hooks/queryKeys';
 import { ContentSelectionState } from '../hooks/useContentSelection';
 import { ContentListSkeleton } from './SkeletonComponents';
 import { ContentInput } from './ContentInput';
+import { TagButton } from './TagButton';
 
 interface ContentListProps {
   groupId: string;
@@ -28,17 +29,18 @@ interface ContentListProps {
 
 interface TagDisplayProps {
   tags: Tag[];
+  isVisible: boolean;
 }
 
-const TagDisplay: React.FC<TagDisplayProps> = ({ tags }) => {
+const TagDisplay: React.FC<TagDisplayProps> = ({ tags, isVisible }) => {
   if (!tags || tags.length === 0) return null;
-  
+
   return (
-    <div className="flex flex-wrap gap-1 mt-2">
+    <div className={`flex flex-wrap gap-1 items-center transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       {tags.map(tag => (
         <span
           key={tag.id}
-          className="inline-block px-2 py-1 text-xs rounded-full text-gray-600 bg-gray-100 border"
+          className="inline-block px-2 py-0.5 text-xs rounded-full text-gray-600 bg-gray-100 border"
           style={{
             backgroundColor: tag.color ? `${tag.color}20` : undefined,
             borderColor: tag.color || undefined
@@ -74,6 +76,9 @@ export const ContentList: React.FC<ContentListProps> = ({
 
   // Content persistence state to prevent immediate clearing during navigation
   const [persistentItems, setPersistentItems] = useState<Content[]>([]);
+
+  // Hover state for tag button visibility
+  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
 
   // Regular content query for non-search mode
   const {
@@ -382,10 +387,12 @@ export const ContentList: React.FC<ContentListProps> = ({
                       metadata={parentContent.metadata as SEOMetadata}
                       onClick={() => {}}
                     />
-                    <TagDisplay tags={parentContent.tags || []} />
-                    <p className="text-xs text-gray-500 mt-2">
-                      {formatRelativeTime(parentContent.created_at)}
-                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-gray-500">
+                        {formatRelativeTime(parentContent.created_at)}
+                      </p>
+                      <TagDisplay tags={parentContent.tags || []} />
+                    </div>
                   </div>
                 ) : parentContent.type === 'js' ? (
                   <div>
@@ -398,10 +405,12 @@ export const ContentList: React.FC<ContentListProps> = ({
                       </div>
                       <JsContentDisplay code={parentContent.data} maxLines={8} />
                     </div>
-                    <TagDisplay tags={parentContent.tags || []} />
-                    <p className="text-xs text-gray-500 mt-2">
-                      {formatRelativeTime(parentContent.created_at)}
-                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-gray-500">
+                        {formatRelativeTime(parentContent.created_at)}
+                      </p>
+                      <TagDisplay tags={parentContent.tags || []} />
+                    </div>
                   </div>
                 ) : parentContent.type === 'prompt' ? (
                   <div>
@@ -423,10 +432,12 @@ export const ContentList: React.FC<ContentListProps> = ({
                         </p>
                       </div>
                     </div>
-                    <TagDisplay tags={parentContent.tags || []} />
-                    <p className="text-xs text-gray-500 mt-2">
-                      {formatRelativeTime(parentContent.created_at)}
-                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-gray-500">
+                        {formatRelativeTime(parentContent.created_at)}
+                      </p>
+                      <TagDisplay tags={parentContent.tags || []} />
+                    </div>
                   </div>
                 ) : (
                   <div>
@@ -434,10 +445,12 @@ export const ContentList: React.FC<ContentListProps> = ({
                       text={parentContent.data}
                       className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
                     />
-                    <TagDisplay tags={parentContent.tags || []} />
-                    <p className="text-xs text-gray-500 mt-2">
-                      {formatRelativeTime(parentContent.created_at)}
-                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-gray-500">
+                        {formatRelativeTime(parentContent.created_at)}
+                      </p>
+                      <TagDisplay tags={parentContent.tags || []} />
+                    </div>
                   </div>
                 )}
                 {isContentPublic(parentContent) && (
@@ -496,7 +509,7 @@ export const ContentList: React.FC<ContentListProps> = ({
             )}
 
             {/* Child Content Items */}
-            <div className={`${parentContent ? 'p-3 sm:p-4' : ''} space-y-3`}>
+            <div className={`space-y-3`}>
               {currentLoading && persistentItems.length > 0 && (
                 <div className="flex justify-center py-2">
                   <div className="flex items-center text-xs text-gray-600">
@@ -508,21 +521,23 @@ export const ContentList: React.FC<ContentListProps> = ({
               {displayItems.map((item) => {
               const isSelected = selection.selectedItems.has(item.id);
               return (
-                <div 
-                  key={item.id} 
+                <div
+                  key={item.id}
                   className={`bg-white rounded-lg shadow-sm border p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer relative ${
-                    isSelected 
-                      ? 'border-blue-500 border-2 bg-blue-50' 
+                    isSelected
+                      ? 'border-blue-500 border-2 bg-blue-50'
                       : 'border-gray-200'
                   }`}
                   onClick={() => handleContentClick(item)}
+                  onMouseEnter={() => setHoveredItemId(item.id)}
+                  onMouseLeave={() => setHoveredItemId(null)}
                 >
                   {/* Selection indicator - better mobile positioning */}
                   {selection.isSelectionMode && (
                     <div className="absolute top-3 right-3 z-10">
                       <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 flex items-center justify-center touch-manipulation ${
-                        isSelected 
-                          ? 'bg-blue-500 border-blue-500' 
+                        isSelected
+                          ? 'bg-blue-500 border-blue-500'
                           : 'border-gray-300 bg-white'
                       }`}>
                         {isSelected && (
@@ -533,121 +548,132 @@ export const ContentList: React.FC<ContentListProps> = ({
                       </div>
                     </div>
                   )}
-                <div className="flex justify-between items-start">
+                <div className="flex items-start gap-2">
+                  {/* Main content area */}
                   <div className={`flex-1 min-w-0 ${selection.isSelectionMode ? 'pr-8 sm:pr-10' : ''}`}>
                     {item.type === 'seo' ? (
                       <div>
-                        <div className="flex items-start space-x-2">
-                          <div className="flex-1 min-w-0">
-                            <SEOCard 
-                              metadata={item.metadata as SEOMetadata} 
-                              onClick={() => handleContentClick(item)}
-                            />
-                          </div>
-                          {isContentPublic(item) && (
-                            <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">
-                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <SEOCard
+                          metadata={item.metadata as SEOMetadata}
+                          onClick={() => handleContentClick(item)}
+                        />
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                               </svg>
                             </div>
                           )}
                         </div>
-                        <TagDisplay tags={item.tags || []} />
-                        <p className="text-xs text-gray-500 mt-2">
-                          {formatRelativeTime(item.created_at)}
-                        </p>
                       </div>
                     ) : item.type === 'js' ? (
                       <div>
-                        <div className="flex items-start space-x-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="mb-2">
-                              <div className="flex items-center space-x-2 mb-2">
-                                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                                </svg>
-                                <span className="text-xs font-medium text-green-600 uppercase tracking-wide">JavaScript</span>
-                              </div>
-                              <JsContentDisplay code={item.data} maxLines={8} />
-                            </div>
-                          </div>
-                          {isContentPublic(item) && (
-                            <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">
-                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                          </svg>
+                          <span className="text-xs font-medium text-green-600 uppercase tracking-wide">JavaScript</span>
+                        </div>
+                        <JsContentDisplay code={item.data} maxLines={8} />
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                               </svg>
                             </div>
                           )}
                         </div>
-                        <TagDisplay tags={item.tags || []} />
-                        <p className="text-xs text-gray-500 mt-2">
-                          {formatRelativeTime(item.created_at)}
-                        </p>
                       </div>
                     ) : item.type === 'prompt' ? (
                       <div>
-                        <div className="flex items-start space-x-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="mb-2">
-                              <div className="flex items-center space-x-2 mb-2">
-                                <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                                </svg>
-                                <span className="text-xs font-medium text-purple-600 uppercase tracking-wide">AI Prompt</span>
-                                {item.metadata?.generated_count && (
-                                  <span className="text-xs text-gray-500">
-                                    ({item.metadata.generated_count} items generated)
-                                  </span>
-                                )}
-                              </div>
-                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                                <p className="text-sm text-purple-800 whitespace-pre-wrap break-words">
-                                  {item.data}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                          {isContentPublic(item) && (
-                            <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">
-                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                          </svg>
+                          <span className="text-xs font-medium text-purple-600 uppercase tracking-wide">AI Prompt</span>
+                          {item.metadata?.generated_count && (
+                            <span className="text-xs text-gray-500">
+                              ({item.metadata.generated_count} items generated)
+                            </span>
+                          )}
+                        </div>
+                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                          <p className="text-sm text-purple-800 whitespace-pre-wrap break-words">
+                            {item.data}
+                          </p>
+                        </div>
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                               </svg>
                             </div>
                           )}
                         </div>
-                        <TagDisplay tags={item.tags || []} />
-                        <p className="text-xs text-gray-500 mt-2">
-                          {formatRelativeTime(item.created_at)}
-                        </p>
                       </div>
                     ) : (
                       <div>
-                        <div className="flex items-start space-x-2">
-                          <div className="flex-1 min-w-0">
-                            <LinkifiedText
-                              text={item.data}
-                              className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
-                            />
-                            {/* URL Preview Image */}
-                            {item.metadata?.url_preview && (
-                              <UrlPreviewCard previewUrl={item.metadata.url_preview} />
-                            )}
-                          </div>
-                          {isContentPublic(item) && (
-                            <div className="flex-shrink-0 mt-0.5 sm:mt-1" title="This content is public">
-                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <LinkifiedText
+                          text={item.data}
+                          className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
+                        />
+                        {/* URL Preview Image */}
+                        {item.metadata?.url_preview && (
+                          <UrlPreviewCard previewUrl={item.metadata.url_preview} />
+                        )}
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 ? (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                               </svg>
+                              <span>{item.child_count}</span>
                             </div>
-                          )}
+                          ) : null}
+                          <TagDisplay tags={item.tags || []} isVisible={true} />
                         </div>
-                        <TagDisplay tags={item.tags || []} />
-                        <p className="text-xs text-gray-500 mt-2">
-                          {formatRelativeTime(item.created_at)}
-                        </p>
                       </div>
                     )}
                   </div>
+
+                  {/* Right gutter for icons and actions */}
+                  {!selection.isSelectionMode && (
+                    <div className="flex flex-col items-center gap-1 w-8">
+                      {/* Public globe icon */}
+                      {isContentPublic(item) && (
+                        <div className="flex-shrink-0" title="This content is public">
+                          <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                      )}
+
+                      {/* Tag button */}
+                      <TagButton
+                        contentId={item.id}
+                        existingTags={item.tags || []}
+                        isVisible={hoveredItemId === item.id}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
               );

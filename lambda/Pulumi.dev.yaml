@@ -3,3 +3,9 @@ config:
   claude-code-lambda:supabase_url: https://zazsrepfnamdmibcyenx.supabase.co
   # Set secrets with: pulumi config set --secret anthropic_api_key YOUR_KEY
   # Set secrets with: pulumi config set --secret supabase_service_role_key YOUR_KEY
+
+  claude-code-lambda:anthropic_api_key:
+    secure: v1:4IrM9ZsJp1KTO7gg:H3PMPxIU+5FviGxtatG+o/S2pGWQEX6k9iuhBfZkoQI9AeQ6bWhY/Da6Eyt6T3B0AhYtb6Tli33gJwtSob2lT/tDF02geUQf97BeDEgkfzFye3qqCKzIil/xpKIxNRCaayOWtxAcgCwVOWwQpt6rJntb3GrxHfH67WtXkQ==
+  claude-code-lambda:supabase_service_role_key:
+    secure: v1:de+cDu6pHX1gV5bP:z+gHKRUdzGSf3YtnUQFcZ1EGGwTk8h/26604GH5VsSTdfydHxbvL2H9EkmF239fg+/uboyu5ce1PbXRWLwnlbnNw8Qprq+v2/np/+lg3s/L3umbFMsLgA5+CpIn5n63F78kBwk26UPQmYCV3JLBuu3LBwX1E4Bkts9pxW3SXKalb/zilATVgLoYvXteJNQUKKHFQPpI2O1V+jZIuwdmOCKG1JsALwyTwataPNXk5F2GGjH7VXjzHnGBTaNNhlZ5XzoQZe5WmMmpw92AmnTGwghrQvSmo64jri7255NnW45i0anQk0k9lYNJKlw==
+encryptionsalt: v1:BDBeDquw+SU=:v1:E2836vpdsU9kkoVj:5SyzAHanv5FShfO8Jjyrcvm7Byd63g==

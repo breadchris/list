@@ -437,6 +437,7 @@ class WebViewStore: ObservableObject {
         contentController.add(messageHandler, name: "apiKeyHandler")
         contentController.add(messageHandler, name: "authHandler")
         contentController.add(messageHandler, name: "consoleHandler")
+        contentController.add(messageHandler, name: "sessionHandler")
         configuration.userContentController = contentController
 
         // Inject JavaScript to detect API key creation, Google auth attempts, and console messages
@@ -550,6 +551,35 @@ class WebViewStore: ObservableObject {
                     interceptGoogleAuth();
                 });
                 observer.observe(document.body, { childList: true, subtree: true });
+
+                // Monitor Supabase auth state changes and capture session tokens
+                function captureSession() {
+                    if (typeof window.supabase !== 'undefined' && window.supabase && window.supabase.auth) {
+                        window.supabase.auth.onAuthStateChange((event, session) => {
+                            console.log('🔐 Auth state changed:', event, session);
+                            if (session && session.access_token && session.user) {
+                                window.webkit.messageHandlers.sessionHandler.postMessage({
+                                    type: 'session',
+                                    access_token: session.access_token,
+                                    user_id: session.user.id
+                                });
+                            }
+                        });
+                    }
+                }
+
+                // Try to capture session when Supabase loads
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', captureSession);
+                } else {
+                    captureSession();
+                }
+
+                // Also try when content changes
+                const sessionObserver = new MutationObserver(function() {
+                    captureSession();
+                });
+                sessionObserver.observe(document.body, { childList: true, subtree: true });
             """,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
@@ -579,6 +609,8 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
             handleGoogleAuth(body: body)
         case "log":
             handleConsoleMessage(body: body)
+        case "session":
+            handleSession(body: body)
         default:
             print("Unknown message type: \(type)")
         }
@@ -638,6 +670,35 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
 
         let emoji = level == "error" ? "❌" : level == "warn" ? "⚠️" : "📝"
         print("\(emoji) WebView Console [\(level.uppercased())]: \(message)")
+    }
+
+    private func handleSession(body: [String: Any]) {
+        guard let accessToken = body["access_token"] as? String,
+              let userId = body["user_id"] as? String else {
+            print("❌ Session: Invalid session data")
+            return
+        }
+
+        print("🔑 Session: Received session token for user \(userId)")
+
+        let tokenStore = KeychainTokenStore(
+            service: "com.breadchris.list",
+            account: "supabase_access_token",
+            accessGroup: "group.com.breadchris.share"
+        )
+
+        do {
+            try tokenStore.write(accessToken)
+            print("✅ Session: Access token saved to shared Keychain")
+
+            if let sharedContainer = UserDefaults(suiteName: "group.com.breadchris.share") {
+                sharedContainer.set(userId, forKey: "user_id")
+                sharedContainer.synchronize()
+                print("✅ Session: User ID saved to shared container")
+            }
+        } catch {
+            print("❌ Session: Failed to save token: \(error)")
+        }
     }
 
     private func storeAPIKeyInKeychain(token: String, name: String) -> Bool {

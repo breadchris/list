@@ -471,3 +471,132 @@ All JSON-related keys must use snake_case convention:
 
 ### Exception
 The only exception is when interfacing with external APIs that require camelCase - in these cases, transform at the boundary using proper serialization tags or mapping functions.
+
+## iOS Share Extension Architecture
+
+**CRITICAL**: All content saves to the single `content` table, no separate tables for different content types
+
+### Architecture Overview
+
+The iOS Share Extension uses an offline-first inbox pattern:
+
+```
+Share Extension → App Group Inbox → Main App → Supabase
+```
+
+**Key Principles:**
+- **Share Extension is dumb and fast** - Only writes to local inbox, no network/auth
+- **Main App owns auth and network** - Drains inbox to Supabase in background
+- **Offline-safe** - Shares succeed without network, sync when available
+- **No OAuth in extension** - Session tokens shared via Keychain Access Group
+
+### Content Table Structure
+
+All shared URLs save to the `content` table:
+
+```typescript
+{
+  type: 'text',                    // Always 'text' for shared URLs
+  data: 'https://example.com',     // The shared URL
+  metadata: {                      // SEOMetadata stored as JSON
+    url: 'https://example.com',
+    title: 'Page Title',
+    domain: 'example.com',
+    // ... other SEO fields
+  },
+  group_id: '<user_default_group>',
+  user_id: '<from_session>',
+  parent_content_id: null          // Top-level content
+}
+```
+
+**Important:** Never create separate tables for URLs, bookmarks, or shares. All content types use the same `content` table with different `type` and `metadata` values.
+
+### Implementation Flow
+
+1. **User shares URL from Safari/app**
+   - Share sheet appears with extension
+   - Extension extracts URL and optional note
+   - Creates `ShareItem` with URL, timestamp, note
+   - Writes JSON file to App Group inbox (`group.com.breadchris.share`)
+   - Posts Darwin notification to wake main app
+   - Extension exits immediately (< 1 second)
+
+2. **Main app receives notification**
+   - Background task or foreground observer triggers
+   - Reads all JSON files from inbox
+   - Gets session token from shared Keychain
+   - For each item:
+     - POST to Supabase `content` table
+     - Include `type: 'text'`, URL in `data`, metadata
+     - Use user's default `group_id` from session
+     - Delete inbox file on success, keep on failure
+
+3. **Content appears in app**
+   - Real-time subscription updates UI
+   - SEOCard component displays URL preview
+   - User sees shared content immediately
+
+### Shared Infrastructure
+
+**App Group Container:**
+- Container ID: `group.com.breadchris.share`
+- Inbox location: `<container>/inbox/*.json`
+- Each file is a `ShareItem` JSON object
+
+**Keychain Access Group:**
+- Group ID: `<TEAM_ID>.com.breadchris.shared`
+- Stores: Supabase session `access_token`
+- Shared between main app and extension
+
+**ShareItem Structure:**
+```swift
+struct ShareItem: Codable {
+  let id: UUID
+  let url: String
+  let note: String?
+  let createdAt: Date
+  let userId: UUID?
+}
+```
+
+### Background Processing
+
+**Main App Background Tasks:**
+- Registered task ID: `com.breadchris.list.drain`
+- Triggers: Darwin notification, app foreground, scheduled refresh
+- Drains inbox to Supabase, deletes successful items
+- Retries failed items on next run
+
+**Session Token Management:**
+- Main app saves `session.access_token` to shared Keychain on auth
+- Parses `user_id` from JWT payload
+- Extension never touches tokens, main app reads for API calls
+
+### Error Handling
+
+**Extension Errors:**
+- No session token → Item saved to inbox, will sync when authenticated
+- No network → Offline-safe, item queued in inbox
+
+**Main App Errors:**
+- Network failure → Keep inbox file, retry later
+- Auth expired → Trigger re-authentication, keep inbox
+- Missing group_id → Use first group or create default group
+
+### Security Considerations
+
+- Never use service_role key in app or extension
+- Always use anon key + user access token
+- RLS policies enforce user ownership
+- Keychain access group prevents token theft
+- App Group only shared between main app and extension
+
+### Testing Checklist
+
+- [ ] Share URL from Safari → appears in inbox
+- [ ] Main app drains inbox → content in Supabase
+- [ ] Offline share → syncs when online
+- [ ] Multiple shares → all processed in order
+- [ ] Auth expired → re-auth and retry
+- [ ] Extension completes < 1 second

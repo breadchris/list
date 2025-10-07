@@ -70,9 +70,9 @@ const s3Policy = new aws.iam.RolePolicy('lambda-s3-policy', {
 	}))
 });
 
-// Build Lambda package
+// Build Lambda package - use bundled file (CommonJS format, no package.json type needed)
 const lambdaCode = new pulumi.asset.AssetArchive({
-	'.': new pulumi.asset.FileArchive('./function/dist')
+	'index.js': new pulumi.asset.FileAsset('./function/dist/index.bundled.js')
 });
 
 // Create Lambda function

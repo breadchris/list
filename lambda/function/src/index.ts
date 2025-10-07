@@ -1,4 +1,4 @@
-import type { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import type { APIGatewayProxyHandlerV2, APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { SessionManager } from './session-manager.js';
 import { executeClaudeCode } from './claude-executor.js';
 
@@ -23,21 +23,23 @@ const corsHeaders = {
 	'Access-Control-Max-Age': '86400',
 };
 
-export const handler: APIGatewayProxyHandler = async (
-	event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler: APIGatewayProxyHandlerV2 = async (
+	event: APIGatewayProxyEventV2
+): Promise<APIGatewayProxyResultV2> => {
+	const method = event.requestContext.http.method;
+	const path = event.rawPath;
+
 	// Handle preflight OPTIONS request
-	if (event.httpMethod === 'OPTIONS') {
+	if (method === 'OPTIONS') {
 		return {
 			statusCode: 204,
-			headers: corsHeaders,
-			body: ''
+			headers: corsHeaders
 		};
 	}
 
 	try {
 		// Only handle POST requests
-		if (event.httpMethod !== 'POST') {
+		if (method !== 'POST') {
 			return {
 				statusCode: 405,
 				headers: {
@@ -52,7 +54,7 @@ export const handler: APIGatewayProxyHandler = async (
 		const body: ClaudeCodeRequest = JSON.parse(event.body || '{}');
 
 		// Route based on path
-		if (event.path === '/claude-code' || event.path === '/claude-code/') {
+		if (path === '/claude-code' || path === '/claude-code/') {
 			return await handleClaudeCodeRequest(body);
 		}
 
@@ -81,7 +83,7 @@ export const handler: APIGatewayProxyHandler = async (
 	}
 };
 
-async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGatewayProxyResult> {
+async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGatewayProxyResultV2> {
 	const { prompt, session_id } = body;
 
 	if (!prompt) {
@@ -174,7 +176,9 @@ async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGate
 		}
 
 		// Upload session to S3
+		console.log('Uploading session:', result.session_id, 'Files:', result.outputFiles);
 		const s3Key = await sessionManager.uploadSession(result.session_id, result.outputFiles);
+		console.log('Session uploaded to:', s3Key);
 
 		const response: ClaudeCodeResponse = {
 			success: true,

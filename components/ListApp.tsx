@@ -1230,7 +1230,7 @@ export const ListApp: React.FC = () => {
 
   // Stable container pattern - always return same structure, conditionally show content
   return (
-    <div data-testid="main-app" className="h-screen bg-gray-50 flex flex-col transition-all duration-200 ease-in-out overflow-hidden">
+    <div data-testid="main-app" className="bg-gray-50 flex flex-col transition-all duration-200 ease-in-out overflow-hidden">
       
       {/* Error State */}
       {appState === 'error' && (
@@ -1406,7 +1406,7 @@ export const ListApp: React.FC = () => {
             </div>
           </header>
 
-          <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out overflow-y-auto pt-20">
+          <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out">
             {/* Back Button Navigation */}
             {currentGroup && navigationStack.length > 1 && (
               <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2">

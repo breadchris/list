@@ -67,6 +67,7 @@ export interface Content {
   parent_content_id?: string;
   metadata?: any; // JSONB field for SEO and other metadata
   tags?: Tag[];
+  child_count?: number; // Number of direct children
 }
 
 export interface SEOMetadata {
@@ -138,6 +139,7 @@ export class ContentRepository {
     limit = 20,
     viewMode: 'chronological' | 'random' | 'alphabetical' | 'oldest' = 'chronological'
   ): Promise<Content[]> {
+    // First, get the content items with tags
     let query = supabase
       .from('content')
       .select(`
@@ -194,6 +196,32 @@ export class ContentRepository {
       ...item,
       tags: (item as any).content_tags?.map((ct: any) => ct.tags).filter(Boolean) || []
     })) || [];
+
+    // Fetch child counts for all content items in a single query
+    if (contentWithTags.length > 0) {
+      const contentIds = contentWithTags.map(item => item.id);
+      const { data: childCounts, error: countError } = await supabase
+        .from('content')
+        .select('parent_content_id')
+        .in('parent_content_id', contentIds);
+
+      if (!countError && childCounts) {
+        // Create a map of parent_id -> child_count
+        const countMap = new Map<string, number>();
+        childCounts.forEach(child => {
+          const parentId = child.parent_content_id;
+          if (parentId) {
+            countMap.set(parentId, (countMap.get(parentId) || 0) + 1);
+          }
+        });
+
+        // Add child_count to each content item
+        contentWithTags = contentWithTags.map(item => ({
+          ...item,
+          child_count: countMap.get(item.id) || 0
+        }));
+      }
+    }
 
     // Apply random shuffle if in random mode
     if (viewMode === 'random' && contentWithTags.length > 0) {
@@ -528,9 +556,15 @@ export class ContentRepository {
 
   // Tag methods
   async createTag(name: string, color?: string): Promise<Tag> {
+    // Get current user ID for RLS policy
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User must be authenticated to create tags');
+    }
+
     const { data, error } = await supabase
       .from('tags')
-      .insert([{ name: name.toLowerCase(), color }])
+      .insert([{ name: name.toLowerCase(), color, user_id: user.id }])
       .select()
       .single();
 
@@ -566,6 +600,19 @@ export class ContentRepository {
 
     if (error) {
       console.error('Error adding tag to content:', error);
+      throw new Error(error.message);
+    }
+  }
+
+  async removeTagFromContent(contentId: string, tagId: string): Promise<void> {
+    const { error } = await supabase
+      .from('content_tags')
+      .delete()
+      .eq('content_id', contentId)
+      .eq('tag_id', tagId);
+
+    if (error) {
+      console.error('Error removing tag from content:', error);
       throw new Error(error.message);
     }
   }

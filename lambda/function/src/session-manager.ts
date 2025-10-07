@@ -65,14 +65,22 @@ export class SessionManager {
 	 * Compress and upload a session to S3 storage
 	 */
 	async uploadSession(session_id: string, files: SessionFile[]): Promise<string> {
-		const zip = new JSZip();
+		try {
+			const zip = new JSZip();
 
-		// Add all files to zip
-		for (const file of files) {
-			zip.file(file.path, file.content);
-		}
+			// Add all files to zip
+			for (const file of files) {
+				if (file && file.path && file.content) {
+					zip.file(file.path, file.content);
+				}
+			}
 
-		// Generate zip blob
+			// Add a placeholder if no files (to ensure valid zip)
+			if (files.length === 0) {
+				zip.file('session.json', JSON.stringify({ session_id, created_at: new Date().toISOString() }));
+			}
+
+			// Generate zip blob
 		const zipBlob = await zip.generateAsync({
 			type: 'uint8array',
 			compression: 'DEFLATE',
@@ -94,9 +102,13 @@ export class SessionManager {
 			}
 		});
 
-		await this.s3Client.send(command);
+			await this.s3Client.send(command);
 
-		return zipKey;
+			return zipKey;
+		} catch (error) {
+			console.error('Error uploading session:', error);
+			throw error;
+		}
 	}
 
 	/**
