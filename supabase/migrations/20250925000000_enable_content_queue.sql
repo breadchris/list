@@ -11,20 +11,29 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgmq TO service_rol
 
 -- Create a cron job to process the content queue every minute
 -- This will invoke the content function with queue-process action
-SELECT
-  cron.schedule(
-    'process-content-queue',
-    '* * * * *', -- Every minute
-    $$
-    select
-      net.http_post(
-          url:='https://zazsrepfnamdmibcyenx.supabase.co/functions/v1/content',
-          headers:=jsonb_build_object(),
-          body:='{"action": "queue-process"}',
-          timeout_milliseconds:=1000
-      ) as response;
-    $$
-  );
+-- Note: cron extension may not be available in local Supabase, so we make this conditional
+DO $$
+BEGIN
+  -- Check if cron schema exists (only available in production)
+  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'cron') THEN
+    PERFORM cron.schedule(
+      'process-content-queue',
+      '* * * * *', -- Every minute
+      $CRON$
+      select
+        net.http_post(
+            url:='https://zazsrepfnamdmibcyenx.supabase.co/functions/v1/content',
+            headers:=jsonb_build_object(),
+            body:='{"action": "queue-process"}',
+            timeout_milliseconds:=1000
+        ) as response;
+      $CRON$
+    );
+    RAISE NOTICE 'Cron job scheduled successfully';
+  ELSE
+    RAISE NOTICE 'Cron extension not available - skipping job scheduling (local development)';
+  END IF;
+END $$;
 
 -- Ensure the service role key setting exists (this should be set in your environment)
 -- You may need to set this manually in your Supabase project settings:

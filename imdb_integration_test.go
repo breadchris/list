@@ -15,7 +15,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // IMDbTitle represents a title from the IMDb dataset with snake_case JSON tags
@@ -332,25 +333,37 @@ func imdbImport(tx *sql.Tx, titles []IMDbTitle, userEmail string) (*IMDbImportRe
 	}
 	result.UserID = userID
 
-	// Create group for import
-	currentDate := time.Now().Format("2006-01-02")
-	groupName := fmt.Sprintf("imdb-import-%s", currentDate)
+	// Get or create "upload" group (reused across all uploads)
+	groupName := "upload"
 	var groupID string
+
+	// Try to get existing "upload" group
 	err = tx.QueryRow(`
-		INSERT INTO groups (id, name, created_by, created_at, join_code)
-		VALUES (gen_random_uuid(), $1, $2, NOW(), substr(md5(random()::text), 1, 8))
-		RETURNING id
+		SELECT id FROM groups WHERE name = $1 AND created_by = $2
 	`, groupName, userID).Scan(&groupID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create group: %w", err)
+
+	if err == sql.ErrNoRows {
+		// Create "upload" group if it doesn't exist
+		err = tx.QueryRow(`
+			INSERT INTO groups (id, name, created_by, created_at, join_code)
+			VALUES (gen_random_uuid(), $1, $2, NOW(), substr(md5(random()::text), 1, 8))
+			RETURNING id
+		`, groupName, userID).Scan(&groupID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create group: %w", err)
+		}
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to query group: %w", err)
 	}
+
 	result.GroupID = groupID
 	result.GroupName = groupName
 
-	// Add user to group as owner
+	// Add user to group as owner (if not already a member)
 	_, err = tx.Exec(`
 		INSERT INTO group_memberships (id, user_id, group_id, role, created_at)
 		VALUES (gen_random_uuid(), $1, $2, 'owner', NOW())
+		ON CONFLICT (user_id, group_id) DO NOTHING
 	`, userID, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add user to group: %w", err)
@@ -413,16 +426,15 @@ func imdbImport(tx *sql.Tx, titles []IMDbTitle, userEmail string) (*IMDbImportRe
 		return nil, fmt.Errorf("failed to add tags to parent content: %w", err)
 	}
 
-	// Insert all titles as child content items
+	// Insert all titles as child content items using PostgreSQL COPY protocol
 	insertedCount := 0
+	now := time.Now()
 
-	// Prepare statement for bulk insert with metadata column
-	stmt, err := tx.Prepare(`
-		INSERT INTO content (id, type, data, metadata, group_id, user_id, parent_content_id, created_at, updated_at)
-		VALUES (gen_random_uuid(), 'movie', $1, $2, $3, $4, $5, NOW(), NOW())
-	`)
+	// Use COPY protocol for bulk insert (10-20x faster than individual INSERTs)
+	stmt, err := tx.Prepare(pq.CopyIn("content",
+		"id", "type", "data", "metadata", "group_id", "user_id", "parent_content_id", "created_at", "updated_at"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+		return nil, fmt.Errorf("failed to prepare COPY statement: %w", err)
 	}
 	defer stmt.Close()
 
@@ -437,12 +449,30 @@ func imdbImport(tx *sql.Tx, titles []IMDbTitle, userEmail string) (*IMDbImportRe
 			continue
 		}
 
-		_, err = stmt.Exec(titleData, metadataJSON, groupID, userID, parentContentID)
+		// Queue row for COPY (doesn't execute yet)
+		// Note: COPY protocol requires JSON as string, not bytes
+		_, err = stmt.Exec(
+			uuid.New().String(),
+			"movie",
+			titleData,
+			string(metadataJSON),
+			groupID,
+			userID,
+			parentContentID,
+			now,
+			now,
+		)
 		if err != nil {
 			// Continue on error, track failed inserts
 			continue
 		}
 		insertedCount++
+	}
+
+	// Execute the bulk COPY
+	_, err = stmt.Exec()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute COPY: %w", err)
 	}
 
 	result.InsertedCount = insertedCount
@@ -512,7 +542,8 @@ func loadAndProcessIMDbData(maxTitles int) ([]IMDbTitle, error) {
 
 	// Skip header (first row) and process titles
 	for _, record := range titleRecords[1:] {
-		if len(titles) >= maxTitles {
+		// Stop if we've reached the limit (0 = no limit)
+		if maxTitles > 0 && len(titles) >= maxTitles {
 			break
 		}
 
@@ -720,4 +751,271 @@ func TestIMDbImport_Commit(t *testing.T) {
 	t.Logf("   - Tags Created: %d", result.TagsCreated)
 
 	t.Log("🎉 IMDb import completed and committed to database!")
+}
+
+// TestIMDbCleanup removes all IMDb test import groups
+// Run this to clean up test groups before doing a full import
+func TestIMDbCleanup(t *testing.T) {
+	t.Log("🧹 Starting IMDb Test Group Cleanup...")
+
+	// Load database configuration
+	dbURL, err := LoadDatabaseConfig("data/config.json")
+	if err != nil {
+		t.Fatalf("Failed to load database config: %v", err)
+	}
+
+	// Connect to database
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		t.Fatalf("Failed to ping database: %v", err)
+	}
+
+	t.Log("✅ Connected to database successfully")
+
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Failed to start transaction: %v", err)
+	}
+
+	// Query groups to be deleted
+	rows, err := tx.Query(`
+		SELECT id, name, created_at,
+		       (SELECT COUNT(*) FROM content WHERE group_id = groups.id) as content_count
+		FROM groups
+		WHERE name LIKE 'imdb-import%'
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		tx.Rollback()
+		t.Fatalf("Failed to query groups: %v", err)
+	}
+
+	type groupInfo struct {
+		ID           string
+		Name         string
+		CreatedAt    string
+		ContentCount int
+	}
+
+	var groupsToDelete []groupInfo
+	for rows.Next() {
+		var g groupInfo
+		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.ContentCount); err != nil {
+			continue
+		}
+		groupsToDelete = append(groupsToDelete, g)
+	}
+	rows.Close()
+
+	if len(groupsToDelete) == 0 {
+		tx.Rollback()
+		t.Log("✅ No IMDb test groups found to clean up")
+		return
+	}
+
+	t.Logf("📋 Found %d IMDb test groups to delete:", len(groupsToDelete))
+	for _, g := range groupsToDelete {
+		t.Logf("   - %s (ID: %s, Content: %d items, Created: %s)",
+			g.Name, g.ID, g.ContentCount, g.CreatedAt)
+	}
+
+	// Delete groups (CASCADE will handle related content, tags, memberships)
+	result, err := tx.Exec(`
+		DELETE FROM groups
+		WHERE name LIKE 'imdb-import%'
+	`)
+	if err != nil {
+		tx.Rollback()
+		t.Fatalf("Failed to delete groups: %v", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	t.Logf("🗑️  Deleted %d groups", rowsAffected)
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Failed to commit transaction: %v", err)
+	}
+
+	t.Log("✅ Cleanup completed successfully!")
+}
+
+// TestIMDbImport_Full imports ALL IMDb movies in batches to avoid timeout
+// WARNING: This will take 15-30 minutes and import ~800k movies
+func TestIMDbImport_Full(t *testing.T) {
+	t.Log("🎬 Starting FULL IMDb Import (ALL MOVIES - BATCHED)...")
+	t.Log("⚠️  This will take 15-30 minutes to complete")
+
+	// Load database configuration
+	dbURL, err := LoadDatabaseConfig("data/config.json")
+	if err != nil {
+		t.Fatalf("Failed to load database config: %v", err)
+	}
+
+	// Connect to database
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		t.Fatalf("Failed to ping database: %v", err)
+	}
+
+	t.Log("✅ Connected to database successfully")
+
+	// Load and process ALL IMDb data (0 = no limit)
+	t.Log("📥 Loading IMDb datasets (this will take several minutes)...")
+	titles, err := loadAndProcessIMDbData(0)
+	if err != nil {
+		t.Fatalf("Failed to load IMDb data: %v", err)
+	}
+
+	t.Logf("✅ Loaded %d IMDb titles for import", len(titles))
+
+	userEmail := "chris@breadchris.com"
+	batchSize := 1000 // Import in batches of 1k
+	totalBatches := (len(titles) + batchSize - 1) / batchSize
+
+	t.Logf("📦 Will import in %d batches of up to %d movies each", totalBatches, batchSize)
+	t.Log("📁 Using shared \"upload\" group for all batches")
+
+	var finalResult *IMDbImportResult
+
+	// Process in batches
+	for batchNum := 0; batchNum < totalBatches; batchNum++ {
+		start := batchNum * batchSize
+		end := start + batchSize
+		if end > len(titles) {
+			end = len(titles)
+		}
+
+		batchTitles := titles[start:end]
+		t.Logf("📦 Batch %d/%d: Importing %d movies (titles %d-%d)...",
+			batchNum+1, totalBatches, len(batchTitles), start+1, end)
+
+		// Start new transaction for this batch
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("Failed to start transaction for batch %d: %v", batchNum+1, err)
+		}
+
+		// For first batch, create group and tags
+		// For subsequent batches, reuse existing group
+		var result *IMDbImportResult
+		if batchNum == 0 {
+			// First batch - create everything
+			result, err = imdbImport(tx, batchTitles, userEmail)
+		} else {
+			// Subsequent batches - insert into existing group
+			result, err = imdbImportBatch(tx, batchTitles, finalResult.UserID,
+				finalResult.GroupID, finalResult.ParentContentID)
+		}
+
+		if err != nil {
+			tx.Rollback()
+			t.Fatalf("Failed to import batch %d: %v", batchNum+1, err)
+		}
+
+		// Commit this batch
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Failed to commit batch %d: %v", batchNum+1, err)
+		}
+
+		if batchNum == 0 {
+			finalResult = result
+		} else {
+			// Accumulate totals
+			finalResult.TotalTitles += result.TotalTitles
+			finalResult.ContentCreated += result.ContentCreated
+			finalResult.InsertedCount += result.InsertedCount
+		}
+
+		t.Logf("✅ Batch %d/%d completed (%d movies imported)",
+			batchNum+1, totalBatches, result.InsertedCount)
+	}
+
+	t.Log("✅ All batches committed successfully - all data persisted to database")
+	t.Logf("📊 Full Import Summary:")
+	t.Logf("   - User ID: %s", finalResult.UserID)
+	t.Logf("   - Group ID: %s", finalResult.GroupID)
+	t.Logf("   - Group Name: %s", finalResult.GroupName)
+	t.Logf("   - Total Titles Processed: %d", finalResult.TotalTitles)
+	t.Logf("   - Content Created: %d", finalResult.ContentCreated)
+	t.Logf("   - Tags Created: %d", finalResult.TagsCreated)
+
+	t.Log("🎉 Full IMDb import completed and committed to database!")
+}
+
+// imdbImportBatch imports a batch of titles into an existing group
+// Used for batched imports to avoid transaction timeouts
+func imdbImportBatch(tx *sql.Tx, titles []IMDbTitle, userID, groupID, parentContentID string) (*IMDbImportResult, error) {
+	result := &IMDbImportResult{
+		UserID:          userID,
+		GroupID:         groupID,
+		ParentContentID: parentContentID,
+		TotalTitles:     len(titles),
+	}
+
+	// Insert all titles as child content items using PostgreSQL COPY protocol
+	insertedCount := 0
+	now := time.Now()
+
+	// Use COPY protocol for bulk insert (10-20x faster than individual INSERTs)
+	stmt, err := tx.Prepare(pq.CopyIn("content",
+		"id", "type", "data", "metadata", "group_id", "user_id", "parent_content_id", "created_at", "updated_at"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare COPY statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, title := range titles {
+		// Use primary title as the main data field
+		titleData := title.PrimaryTitle
+
+		// Marshal IMDb metadata to JSON for the metadata column
+		metadataJSON, err := json.Marshal(title)
+		if err != nil {
+			// Skip if we can't marshal metadata
+			continue
+		}
+
+		// Queue row for COPY (doesn't execute yet)
+		// Note: COPY protocol requires JSON as string, not bytes
+		_, err = stmt.Exec(
+			uuid.New().String(),
+			"movie",
+			titleData,
+			string(metadataJSON),
+			groupID,
+			userID,
+			parentContentID,
+			now,
+			now,
+		)
+		if err != nil {
+			// Continue on error, track failed inserts
+			continue
+		}
+		insertedCount++
+	}
+
+	// Execute the bulk COPY
+	_, err = stmt.Exec()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute COPY: %w", err)
+	}
+
+	result.InsertedCount = insertedCount
+	result.ContentCreated = insertedCount
+	return result, nil
 }

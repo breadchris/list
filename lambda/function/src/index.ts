@@ -1,6 +1,7 @@
 import type { APIGatewayProxyHandlerV2, APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { SessionManager } from './session-manager.js';
 import { executeClaudeCode } from './claude-executor.js';
+import { getPlaylistVideos } from './youtube-client.js';
 import { writeFileSync } from 'fs';
 
 // Helper to flush stdout/stderr before Lambda freezes
@@ -28,6 +29,7 @@ interface ClaudeCodeResponse {
 	stdout?: string;
 	stderr?: string;
 	exitCode?: number;
+	file_count?: number;
 }
 
 // CORS headers for all responses
@@ -90,11 +92,17 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 		}
 
 		// Parse request body
-		const body: ClaudeCodeRequest = JSON.parse(event.body || '{}');
+		const body = JSON.parse(event.body || '{}');
 
 		// Route based on path
 		if (path === '/claude-code' || path === '/claude-code/') {
-			result = await handleClaudeCodeRequest(body);
+			result = await handleClaudeCodeRequest(body as ClaudeCodeRequest);
+			await flushLogs();
+			return result;
+		}
+
+		if (path === '/youtube/playlist' || path === '/youtube/playlist/') {
+			result = await handleYouTubePlaylistRequest(body);
 			await flushLogs();
 			return result;
 		}
@@ -126,7 +134,55 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 		await flushLogs();
 		return result;
 	}
-};
+}
+
+async function handleYouTubePlaylistRequest(body: { url?: string }): Promise<APIGatewayProxyResultV2> {
+	const { url } = body;
+
+	if (!url) {
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'Missing required parameter: url'
+			})
+		};
+	}
+
+	try {
+		const videos = await getPlaylistVideos(url);
+
+		return {
+			statusCode: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: true,
+				videos
+			})
+		};
+	} catch (error) {
+		console.error('YouTube playlist error:', error);
+
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: error instanceof Error ? error.message : 'Failed to fetch playlist'
+			})
+		};
+	}
+}
 
 async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGatewayProxyResultV2> {
 	console.log('handleClaudeCodeRequest called with:', JSON.stringify(body, null, 2));
@@ -205,7 +261,8 @@ async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGate
 		console.log('About to execute Claude Code with prompt:', prompt.substring(0, 100));
 		const result = await executeClaudeCode({
 			prompt,
-			sessionFiles
+			sessionFiles,
+			resumeSessionId: session_id // Pass session ID for resumption
 		});
 		console.log('Claude Code execution result:', JSON.stringify(result, null, 2));
 
@@ -227,16 +284,25 @@ async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGate
 			};
 		}
 
-		// Upload session to S3 (skip for now - files managed separately)
-		// TODO: Implement proper session file storage when needed
+		// Upload output files to S3 if any were generated
+		let s3_url = '';
+		if (result.outputFiles && result.outputFiles.length > 0) {
+			process.stderr.write(`Uploading ${result.outputFiles.length} files to S3...\n`);
+			s3_url = await sessionManager.uploadSession(result.session_id, result.outputFiles);
+			process.stderr.write(`Files uploaded to: ${s3_url}\n`);
+		} else {
+			process.stderr.write('No output files to upload\n');
+		}
+
 		const response: ClaudeCodeResponse = {
 			success: true,
 			session_id: result.session_id,
 			messages: result.messages,
-			s3_url: '', // Session files not currently stored
+			s3_url,
 			stdout: result.stdout,
 			stderr: result.stderr,
-			exitCode: result.exitCode
+			exitCode: result.exitCode,
+			file_count: result.outputFiles?.length || 0
 		};
 
 		return {

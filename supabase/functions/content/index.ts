@@ -16,7 +16,7 @@ interface ContentQueueJob {
 }
 
 interface ContentRequest {
-  action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract';
+  action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'youtube-playlist-extract' | 'tmdb-search';
   payload: any;
   useQueue?: boolean;
 }
@@ -94,6 +94,93 @@ interface MarkdownMetadata {
   cloudflare_markdown: boolean;
 }
 
+// Chat Types
+interface ChatMessagePayload {
+  chat_content_id: string;
+  message: string;
+  group_id: string;
+}
+
+// Claude Code Types
+interface ClaudeCodeExecutePayload {
+  selected_content: ContentItem[];
+  group_id: string;
+  parent_content_id?: string | null;
+}
+
+// YouTube Playlist Types
+interface YouTubePlaylistPayload {
+  selectedContent: ContentItem[];
+}
+
+interface YouTubeThumbnail {
+  url: string;
+  width: number;
+  height: number;
+}
+
+interface YouTubeVideo {
+  id: string;
+  title: string;
+  url: string;
+  duration: number;
+  author: string;
+  channel_id: string;
+  channel_handle: string;
+  description: string;
+  views: number;
+  publish_date: string;
+  thumbnails: YouTubeThumbnail[];
+}
+
+// TMDb Types
+interface TMDbSearchPayload {
+  selectedContent: ContentItem[];
+  searchType?: 'movie' | 'tv' | 'multi';  // defaults to 'multi'
+  mode: 'search-only' | 'add-selected';  // search-only: return results, add-selected: create content
+  selectedResults?: number[];  // TMDb IDs to add (for add-selected mode)
+}
+
+interface TMDbMovie {
+  id: number;
+  title: string;
+  original_title: string;
+  overview: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  release_date: string;
+  vote_average: number;
+  vote_count: number;
+  popularity: number;
+  genre_ids: number[];
+  original_language: string;
+  adult: boolean;
+  media_type?: string;
+}
+
+interface TMDbTVShow {
+  id: number;
+  name: string;
+  original_name: string;
+  overview: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  first_air_date: string;
+  vote_average: number;
+  vote_count: number;
+  popularity: number;
+  genre_ids: number[];
+  original_language: string;
+  media_type?: string;
+}
+
+interface TMDbSearchResponse {
+  page: number;
+  results: (TMDbMovie | TMDbTVShow)[];
+  total_pages: number;
+  total_results: number;
+}
+
 // =============================================================================
 // CONSTANTS
 // =============================================================================
@@ -158,6 +245,18 @@ serve(async (req) => {
       case 'markdown-extract':
         response = await handleMarkdownExtract(supabase, payload as MarkdownExtractPayload)
         break
+      case 'chat-message':
+        response = await handleChatMessage(supabase, payload as ChatMessagePayload)
+        break
+      case 'claude-code-execute':
+        response = await handleClaudeCodeExecute(supabase, payload as ClaudeCodeExecutePayload)
+        break
+      case 'youtube-playlist-extract':
+        response = await handleYouTubePlaylistExtract(supabase, payload as YouTubePlaylistPayload)
+        break
+      case 'tmdb-search':
+        response = await handleTMDbSearch(supabase, payload as TMDbSearchPayload)
+        break
       default:
         throw new Error(`Unknown action: ${action}`)
     }
@@ -188,6 +287,13 @@ serve(async (req) => {
 function extractUrls(text: string): string[] {
   const urls = text.match(URL_REGEX) || [];
   return [...new Set(urls)]; // Remove duplicates
+}
+
+// Extract YouTube playlist URLs from text
+function extractYouTubePlaylistUrls(text: string): string[] {
+  const playlistRegex = /https?:\/\/(?:www\.)?youtube\.com\/(?:watch\?.*list=|playlist\?list=)([\w-]+)/gi;
+  const matches = text.matchAll(playlistRegex);
+  return Array.from(matches, m => m[0]);
 }
 
 // Fetch SEO metadata from a URL
@@ -691,6 +797,343 @@ async function handleLLMGenerate(supabase: any, payload: LLMGeneratePayload, use
   }
 }
 
+async function handleChatMessage(supabase: any, payload: ChatMessagePayload): Promise<ContentResponse> {
+  const { chat_content_id, message, group_id } = payload;
+
+  // Validate payload
+  if (!chat_content_id || !message || !group_id) {
+    return {
+      success: false,
+      error: 'Missing required fields: chat_content_id, message, group_id'
+    }
+  }
+
+  // 1. Get the chat content to verify it exists and get user_id
+  const { data: chatContent, error: chatError } = await supabase
+    .from('content')
+    .select('*')
+    .eq('id', chat_content_id)
+    .eq('type', 'chat')
+    .single();
+
+  if (chatError || !chatContent) {
+    return {
+      success: false,
+      error: 'Chat not found or invalid chat_content_id'
+    }
+  }
+
+  const user_id = chatContent.user_id;
+
+  // 2. Get conversation history (all children of chat, ordered by creation)
+  const { data: conversationHistory, error: historyError } = await supabase
+    .from('content')
+    .select('*')
+    .eq('parent_content_id', chat_content_id)
+    .order('created_at', { ascending: true });
+
+  if (historyError) {
+    return {
+      success: false,
+      error: `Failed to load conversation history: ${historyError.message}`
+    }
+  }
+
+  // 3. Build OpenAI messages array from conversation history
+  const openAIMessages: OpenAIMessage[] = (conversationHistory || []).map(msg => ({
+    role: msg.metadata?.role === 'assistant' ? 'assistant' : 'user',
+    content: msg.data
+  }));
+
+  // 4. Call OpenAI chat completion
+  const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!openaiApiKey) {
+    return {
+      success: false,
+      error: 'OpenAI API key not configured'
+    }
+  }
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-4',
+      messages: openAIMessages,
+      temperature: 0.7,
+      max_tokens: 1000
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.text();
+    return {
+      success: false,
+      error: `OpenAI API error: ${response.status} - ${errorData}`
+    }
+  }
+
+  const result = await response.json();
+  const assistantMessage = result.choices[0]?.message?.content;
+
+  if (!assistantMessage) {
+    return {
+      success: false,
+      error: 'No response from OpenAI'
+    }
+  }
+
+  // 5. Create assistant response as child of chat
+  const { data: assistantContent, error: assistantError } = await supabase
+    .from('content')
+    .insert({
+      type: 'text',
+      data: assistantMessage,
+      group_id: group_id,
+      user_id: user_id,
+      parent_content_id: chat_content_id,
+      metadata: {
+        role: 'assistant',
+        model: 'gpt-4',
+        created_by_chat: true
+      }
+    })
+    .select()
+    .single();
+
+  if (assistantError) {
+    return {
+      success: false,
+      error: `Failed to create assistant message: ${assistantError.message}`
+    }
+  }
+
+  return {
+    success: true,
+    data: {
+      assistant_message: assistantMessage,
+      assistant_content_id: assistantContent.id
+    }
+  }
+}
+
+// Helper function to detect content type from filename
+function detectContentType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+
+  const typeMap: Record<string, string> = {
+    'js': 'js',
+    'jsx': 'js',
+    'ts': 'js',
+    'tsx': 'js',
+    'py': 'code',
+    'go': 'code',
+    'rs': 'code',
+    'java': 'code',
+    'md': 'text',
+    'txt': 'text',
+    'json': 'code',
+    'html': 'code',
+    'css': 'code',
+    'sql': 'code'
+  };
+
+  return typeMap[ext] || 'text';
+}
+
+// Helper function to download session files from S3
+async function downloadSessionFromS3(sessionId: string): Promise<Array<{path: string, content: Uint8Array}>> {
+  const AWS_ACCESS_KEY_ID = Deno.env.get('AWS_ACCESS_KEY_ID');
+  const AWS_SECRET_ACCESS_KEY = Deno.env.get('AWS_SECRET_ACCESS_KEY');
+  const AWS_REGION = Deno.env.get('AWS_REGION') || 'us-east-1';
+  const S3_BUCKET_NAME = Deno.env.get('S3_BUCKET_NAME') || 'claude-code-sessions';
+
+  if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
+    throw new Error('AWS credentials not configured');
+  }
+
+  // Import AWS SDK and JSZip dynamically
+  const { S3Client, GetObjectCommand } = await import('https://esm.sh/@aws-sdk/client-s3@3');
+  const JSZip = (await import('https://esm.sh/jszip@3')).default;
+
+  const s3 = new S3Client({
+    region: AWS_REGION,
+    credentials: {
+      accessKeyId: AWS_ACCESS_KEY_ID,
+      secretAccessKey: AWS_SECRET_ACCESS_KEY
+    }
+  });
+
+  const command = new GetObjectCommand({
+    Bucket: S3_BUCKET_NAME,
+    Key: `${sessionId}.zip`
+  });
+
+  const response = await s3.send(command);
+
+  if (!response.Body) {
+    throw new Error(`Session ${sessionId} not found in S3`);
+  }
+
+  // Convert stream to array buffer
+  const zipData = await response.Body.transformToByteArray();
+
+  // Load and extract ZIP
+  const zip = await JSZip.loadAsync(zipData);
+  const files: Array<{path: string, content: Uint8Array}> = [];
+
+  for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+    if (!zipEntry.dir) {
+      const content = await zipEntry.async('uint8array');
+      files.push({
+        path: relativePath,
+        content: content
+      });
+    }
+  }
+
+  return files;
+}
+
+async function handleClaudeCodeExecute(supabase: any, payload: ClaudeCodeExecutePayload): Promise<ContentResponse> {
+  const { selected_content, group_id, parent_content_id } = payload;
+
+  // Validate payload
+  if (!selected_content || !Array.isArray(selected_content) || selected_content.length === 0) {
+    return {
+      success: false,
+      error: 'Missing or invalid selected_content'
+    }
+  }
+
+  if (!group_id) {
+    return {
+      success: false,
+      error: 'Missing group_id'
+    }
+  }
+
+  const user_id = selected_content[0]?.user_id;
+  if (!user_id) {
+    return {
+      success: false,
+      error: 'Unable to determine user_id from selected content'
+    }
+  }
+
+  // Format content as prompt for Claude Code
+  const promptParts = selected_content.map((item, index) => {
+    return `Content ${index + 1}:\n${item.data}`;
+  });
+  const prompt = promptParts.join('\n\n---\n\n');
+
+  // Call Lambda endpoint
+  const lambdaEndpoint = Deno.env.get('LAMBDA_ENDPOINT') || 'https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com/claude-code';
+
+  const lambdaResponse = await fetch(lambdaEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      prompt: prompt
+    })
+  });
+
+  if (!lambdaResponse.ok) {
+    const errorText = await lambdaResponse.text();
+    return {
+      success: false,
+      error: `Lambda error: ${lambdaResponse.status} - ${errorText}`
+    }
+  }
+
+  const lambdaResult = await lambdaResponse.json();
+
+  if (!lambdaResult.success) {
+    return {
+      success: false,
+      error: lambdaResult.error || 'Claude Code execution failed'
+    }
+  }
+
+  const sessionId = lambdaResult.session_id;
+  const fileCount = lambdaResult.file_count || 0;
+
+  // If no files were generated, just return success
+  if (fileCount === 0) {
+    return {
+      success: true,
+      data: {
+        session_id: sessionId,
+        file_count: 0,
+        message: 'Claude Code executed successfully but generated no files'
+      }
+    }
+  }
+
+  // Download session files from S3
+  let sessionFiles;
+  try {
+    sessionFiles = await downloadSessionFromS3(sessionId);
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to download session files: ${error.message}`
+    }
+  }
+
+  // Create content items for each file
+  const createdContent = [];
+
+  for (const file of sessionFiles) {
+    // Skip session metadata files
+    if (file.path.startsWith('.session/')) {
+      continue;
+    }
+
+    const contentType = detectContentType(file.path);
+    const fileContent = new TextDecoder().decode(file.content);
+
+    const { data: newContent, error: createError } = await supabase
+      .from('content')
+      .insert({
+        type: contentType,
+        data: fileContent,
+        group_id: group_id,
+        user_id: user_id,
+        parent_content_id: parent_content_id,
+        metadata: {
+          filename: file.path,
+          claude_session_id: sessionId,
+          generated_by_claude_code: true
+        }
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.error(`Failed to create content for file ${file.path}:`, createError);
+      continue;
+    }
+
+    createdContent.push(newContent);
+  }
+
+  return {
+    success: true,
+    data: {
+      session_id: sessionId,
+      file_count: createdContent.length,
+      files: createdContent.map(c => c.metadata?.filename),
+      created_content: createdContent
+    }
+  }
+}
+
 async function handleScreenshotQueue(supabase: any, payload: ScreenshotQueuePayload, authHeader: string): Promise<ContentResponse> {
   const jobs = payload.jobs || []
 
@@ -1120,4 +1563,395 @@ async function processLLMGenerateJob(supabase: any, payload: LLMGeneratePayload)
     console.error('LLM generation job failed:', error);
     return { success: false, error: error.message };
   }
+}
+
+// =============================================================================
+// YOUTUBE PLAYLIST HANDLERS
+// =============================================================================
+
+async function handleYouTubePlaylistExtract(supabase: any, payload: YouTubePlaylistPayload): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processYouTubePlaylistForContent(supabase, contentItem);
+      results.push(result);
+    } catch (error) {
+      console.error(`Error processing YouTube playlist for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+        playlists_found: 0,
+        videos_created: 0
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+async function processYouTubePlaylistForContent(supabase: any, contentItem: ContentItem) {
+  // Extract YouTube playlist URLs from content
+  const playlistUrls = extractYouTubePlaylistUrls(contentItem.data);
+
+  if (playlistUrls.length === 0) {
+    return {
+      content_id: contentItem.id,
+      success: true,
+      playlists_found: 0,
+      videos_created: 0,
+      playlist_children: []
+    };
+  }
+
+  const playlistChildren: ContentItem[] = [];
+  let totalVideosCreated = 0;
+  const errors: string[] = [];
+
+  for (const playlistUrl of playlistUrls) {
+    try {
+      // Call Lambda YouTube endpoint
+      const lambdaResponse = await fetch('https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com/youtube/playlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: playlistUrl })
+      });
+
+      if (!lambdaResponse.ok) {
+        throw new Error(`Lambda error: ${lambdaResponse.status}`);
+      }
+
+      const lambdaResult = await lambdaResponse.json();
+
+      if (!lambdaResult.success || !lambdaResult.videos) {
+        throw new Error('Failed to fetch playlist videos');
+      }
+
+      // Create child content items for each video
+      // Format: "Video Title\nhttps://youtube.com/watch?v=..."
+      const videoContents = lambdaResult.videos.map((video: YouTubeVideo) => ({
+        type: 'text',
+        data: `${video.title}\n${video.url}`,  // Title + URL formatted together
+        group_id: contentItem.group_id,
+        user_id: contentItem.user_id,
+        parent_content_id: contentItem.id,
+        metadata: {
+          youtube_video_id: video.id,
+          youtube_title: video.title,
+          youtube_url: video.url,
+          youtube_author: video.author,
+          youtube_channel_id: video.channel_id,
+          youtube_channel_handle: video.channel_handle,
+          youtube_description: video.description,
+          youtube_duration: video.duration,
+          youtube_views: video.views,
+          youtube_publish_date: video.publish_date,
+          youtube_thumbnails: video.thumbnails,
+          source_playlist_url: playlistUrl,
+          extracted_from_playlist: true
+        }
+      }));
+
+      const { data: createdVideos, error: createError } = await supabase
+        .from('content')
+        .insert(videoContents)
+        .select();
+
+      if (createError) {
+        errors.push(`Error creating video content: ${createError.message}`);
+        continue;
+      }
+
+      playlistChildren.push(...(createdVideos || []));
+      totalVideosCreated += createdVideos?.length || 0;
+
+    } catch (error) {
+      console.error(`Error processing playlist ${playlistUrl}:`, error);
+      errors.push(`Error processing ${playlistUrl}: ${error.message}`);
+    }
+  }
+
+  return {
+    content_id: contentItem.id,
+    success: errors.length === 0,
+    playlists_found: playlistUrls.length,
+    videos_created: totalVideosCreated,
+    playlist_children: playlistChildren,
+    errors: errors.length > 0 ? errors : undefined
+  };
+}
+
+// =============================================================================
+// TMDB SEARCH HANDLERS
+// =============================================================================
+
+async function handleTMDbSearch(supabase: any, payload: TMDbSearchPayload): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processTMDbSearchForContent(
+        supabase,
+        contentItem,
+        payload.searchType || 'multi',
+        payload.mode,
+        payload.selectedResults
+      );
+      results.push(result);
+    } catch (error) {
+      console.error(`Error processing TMDb search for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+        queries_found: 0,
+        results_created: 0
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+async function processTMDbSearchForContent(
+  supabase: any,
+  contentItem: ContentItem,
+  searchType: 'movie' | 'tv' | 'multi',
+  mode: 'search-only' | 'add-selected',
+  selectedResults?: number[]
+) {
+  // Extract search query from content data (use the full text as query)
+  const query = contentItem.data.trim();
+
+  if (!query || query.length === 0) {
+    return {
+      content_id: contentItem.id,
+      success: true,
+      queries_found: 0,
+      results_created: 0,
+      tmdb_children: [],
+      tmdb_results: []
+    };
+  }
+
+  const tmdbChildren: ContentItem[] = [];
+  const errors: string[] = [];
+
+  try {
+    // Get TMDb API key from environment
+    const tmdbApiKey = Deno.env.get('TMDB_API_KEY');
+    if (!tmdbApiKey) {
+      throw new Error('TMDB_API_KEY environment variable not configured');
+    }
+
+    // Call TMDb search API
+    const endpoint = searchType === 'multi'
+      ? `https://api.themoviedb.org/3/search/multi`
+      : `https://api.themoviedb.org/3/search/${searchType}`;
+
+    const searchUrl = `${endpoint}?query=${encodeURIComponent(query)}&page=1`;
+
+    const tmdbResponse = await fetch(searchUrl, {
+      headers: {
+        'Authorization': `Bearer ${tmdbApiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!tmdbResponse.ok) {
+      throw new Error(`TMDb API error: ${tmdbResponse.status}`);
+    }
+
+    const searchResults: TMDbSearchResponse = await tmdbResponse.json();
+
+    if (!searchResults.results || searchResults.results.length === 0) {
+      return {
+        content_id: contentItem.id,
+        success: true,
+        queries_found: 1,
+        results_created: 0,
+        tmdb_children: [],
+        tmdb_results: [],
+        total_results: 0
+      };
+    }
+
+    // For search-only mode, return results without creating content
+    if (mode === 'search-only') {
+      const formattedResults = searchResults.results.slice(0, 20).map(result => {
+        const isMovie = 'title' in result || result.media_type === 'movie';
+        const isTVShow = 'name' in result || result.media_type === 'tv';
+
+        // Skip person results from multi search
+        if (!isMovie && !isTVShow) {
+          return null;
+        }
+
+        let title: string;
+        let year: string;
+        let overview: string;
+        let mediaType: string;
+
+        if (isMovie) {
+          const movie = result as TMDbMovie;
+          title = movie.title || movie.original_title;
+          year = movie.release_date ? new Date(movie.release_date).getFullYear().toString() : '';
+          overview = movie.overview || '';
+          mediaType = 'movie';
+        } else {
+          const show = result as TMDbTVShow;
+          title = show.name || show.original_name;
+          year = show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : '';
+          overview = show.overview || '';
+          mediaType = 'tv';
+        }
+
+        const posterUrl = result.poster_path
+          ? `https://image.tmdb.org/t/p/w500${result.poster_path}`
+          : null;
+
+        const backdropUrl = result.backdrop_path
+          ? `https://image.tmdb.org/t/p/w1280${result.backdrop_path}`
+          : null;
+
+        return {
+          tmdb_id: result.id,
+          media_type: mediaType,
+          title,
+          year,
+          overview,
+          poster_url: posterUrl,
+          backdrop_url: backdropUrl,
+          vote_average: result.vote_average,
+          vote_count: result.vote_count,
+          popularity: result.popularity
+        };
+      }).filter(Boolean);
+
+      return {
+        content_id: contentItem.id,
+        success: true,
+        queries_found: 1,
+        results_created: 0,
+        tmdb_children: [],
+        tmdb_results: formattedResults,
+        total_results: searchResults.total_results
+      };
+    }
+
+    // For add-selected mode, filter results by selectedResults IDs
+    const resultsToCreate = searchResults.results.filter(result =>
+      selectedResults && selectedResults.includes(result.id)
+    );
+
+    for (const result of resultsToCreate) {
+      try {
+        const isMovie = 'title' in result || result.media_type === 'movie';
+        const isTVShow = 'name' in result || result.media_type === 'tv';
+
+        // Skip person results from multi search
+        if (!isMovie && !isTVShow) {
+          continue;
+        }
+
+        let title: string;
+        let year: string;
+        let overview: string;
+        let mediaType: string;
+
+        if (isMovie) {
+          const movie = result as TMDbMovie;
+          title = movie.title || movie.original_title;
+          year = movie.release_date ? new Date(movie.release_date).getFullYear().toString() : '';
+          overview = movie.overview || '';
+          mediaType = 'movie';
+        } else {
+          const show = result as TMDbTVShow;
+          title = show.name || show.original_name;
+          year = show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : '';
+          overview = show.overview || '';
+          mediaType = 'tv';
+        }
+
+        // Format data: "Title (Year)\nOverview"
+        const displayText = year
+          ? `${title} (${year})\n${overview}`
+          : `${title}\n${overview}`;
+
+        // Construct poster URL if available
+        const posterUrl = result.poster_path
+          ? `https://image.tmdb.org/t/p/w500${result.poster_path}`
+          : null;
+
+        const backdropUrl = result.backdrop_path
+          ? `https://image.tmdb.org/t/p/w1280${result.backdrop_path}`
+          : null;
+
+        // Create content item
+        const { data: newContent, error: createError } = await supabase
+          .from('content')
+          .insert({
+            type: 'text',
+            data: displayText,
+            group_id: contentItem.group_id,
+            user_id: contentItem.user_id,
+            parent_content_id: contentItem.id,
+            metadata: {
+              tmdb_id: result.id,
+              tmdb_media_type: mediaType,
+              tmdb_title: title,
+              tmdb_overview: overview,
+              tmdb_poster_path: result.poster_path,
+              tmdb_poster_url: posterUrl,
+              tmdb_backdrop_path: result.backdrop_path,
+              tmdb_backdrop_url: backdropUrl,
+              tmdb_vote_average: result.vote_average,
+              tmdb_vote_count: result.vote_count,
+              tmdb_popularity: result.popularity,
+              tmdb_genre_ids: result.genre_ids,
+              tmdb_original_language: result.original_language,
+              tmdb_release_date: isMovie ? (result as TMDbMovie).release_date : (result as TMDbTVShow).first_air_date,
+              source_query: query,
+              extracted_from_tmdb_search: true
+            }
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error(`Error creating TMDb content for ${title}:`, createError);
+          errors.push(`Error creating content for ${title}: ${createError.message}`);
+          continue;
+        }
+
+        if (newContent) {
+          tmdbChildren.push(newContent as ContentItem);
+        }
+
+      } catch (error) {
+        console.error(`Error processing TMDb result:`, error);
+        errors.push(`Error processing result: ${error.message}`);
+      }
+    }
+
+  } catch (error) {
+    console.error(`Error searching TMDb for query "${query}":`, error);
+    errors.push(`Error searching TMDb: ${error.message}`);
+  }
+
+  return {
+    content_id: contentItem.id,
+    success: errors.length === 0,
+    queries_found: 1,
+    results_created: tmdbChildren.length,
+    tmdb_children: tmdbChildren,
+    errors: errors.length > 0 ? errors : undefined
+  };
 }

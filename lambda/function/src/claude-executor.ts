@@ -2,11 +2,13 @@ import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { SessionFile } from './session-manager.js';
 import { spawn } from 'child_process';
 import { promisify } from 'util';
-import { writeFile } from 'fs/promises';
+import { writeFile, readdir, readFile, stat } from 'fs/promises';
+import { join } from 'path';
 
 export interface ClaudeExecutionOptions {
 	prompt: string;
 	sessionFiles?: SessionFile[];
+	resumeSessionId?: string; // Session ID to resume
 }
 
 export interface ClaudeExecutionResult {
@@ -23,36 +25,108 @@ export interface ClaudeExecutionResult {
 /**
  * Execute Claude Code SDK with the given prompt and optional session files
  */
+/**
+ * Get list of files in a directory recursively
+ */
+async function getFilesRecursive(dir: string, baseDir: string = dir): Promise<SessionFile[]> {
+	const files: SessionFile[] = [];
+	const entries = await readdir(dir, { withFileTypes: true });
+
+	for (const entry of entries) {
+		const fullPath = join(dir, entry.name);
+
+		// Skip hidden files, node_modules, and system directories
+		if (entry.name.startsWith('.') || entry.name === 'node_modules') {
+			continue;
+		}
+
+		if (entry.isDirectory()) {
+			const subFiles = await getFilesRecursive(fullPath, baseDir);
+			files.push(...subFiles);
+		} else {
+			const content = await readFile(fullPath);
+			const relativePath = fullPath.substring(baseDir.length + 1);
+			files.push({
+				path: relativePath,
+				content: new Uint8Array(content)
+			});
+		}
+	}
+
+	return files;
+}
+
 export async function executeClaudeCode(
 	options: ClaudeExecutionOptions
 ): Promise<ClaudeExecutionResult> {
-	const { prompt } = options;
+	const { prompt, sessionFiles, resumeSessionId } = options;
 
 	let capturedSessionId: string | null = null;
 	const messages: SDKMessage[] = [];
 	let stdoutBuffer = '';
 	let stderrBuffer = '';
 	let exitCode: number | null = null;
+	const workDir = '/tmp/claude-workspace';
 
 	try {
 		process.stderr.write('=== executeClaudeCode called ===\n');
 		process.stderr.write(`Prompt: ${prompt.substring(0, 100)}\n`);
 		process.stderr.write(`CLI path: /var/lang/bin/claude\n`);
-		process.stderr.write(`CWD: /tmp\n`);
+		process.stderr.write(`Work Dir: ${workDir}\n`);
 		process.stderr.write(`ANTHROPIC_API_KEY set: ${!!process.env.ANTHROPIC_API_KEY}\n`);
 		process.stderr.write(`Running as root: ${process.getuid?.() === 0}\n`);
 		process.stderr.write(`HOME: ${process.env.HOME}\n`);
 
-		// Execute Claude Code SDK with default permission mode (acceptEdits)
-		// Note: Using 'accept Edits' instead of 'bypassPermissions' to avoid root user restrictions
+		// Create work directory (clear if exists from previous invocations)
+		try {
+			await readdir(workDir);
+			process.stderr.write('Work directory exists, using it\n');
+		} catch {
+			const { mkdir } = await import('fs/promises');
+			await mkdir(workDir, { recursive: true });
+			process.stderr.write('Created work directory\n');
+		}
+
+		// Restore session files if provided
+		if (sessionFiles && sessionFiles.length > 0) {
+			process.stderr.write(`Restoring ${sessionFiles.length} session files\n`);
+			for (const file of sessionFiles) {
+				const { mkdir } = await import('fs/promises');
+
+				// Session data files (prefixed with .session/) go to Claude CLI session directory
+				if (file.path.startsWith('.session/')) {
+					if (!resumeSessionId) {
+						process.stderr.write('Warning: Session files found but no resumeSessionId provided, skipping\n');
+						continue;
+					}
+
+					// Restore to Claude CLI session directory
+					const sessionPath = file.path.substring('.session/'.length);
+					const sessionFilePath = `/tmp/.config/claude-code/sessions/${resumeSessionId}/${sessionPath}`;
+					const sessionDirPath = join(sessionFilePath, '..');
+					await mkdir(sessionDirPath, { recursive: true });
+					await writeFile(sessionFilePath, file.content);
+					process.stderr.write(`Restored session file: ${sessionPath}\n`);
+				} else {
+					// Regular workspace files go to workDir
+					const filePath = join(workDir, file.path);
+					const dirPath = join(filePath, '..');
+					await mkdir(dirPath, { recursive: true });
+					await writeFile(filePath, file.content);
+				}
+			}
+		}
+
+		// Execute Claude Code SDK with bypass permissions for automated execution
 		const resultStream = query({
 			prompt,
 			options: {
 				model: 'claude-sonnet-4-5-20250929',
-				permissionMode: 'acceptEdits', // Works with root user
+				permissionMode: 'bypassPermissions', // Allow automated file operations
 				includePartialMessages: false,
 				pathToClaudeCodeExecutable: '/var/lang/bin/claude',
-				cwd: '/tmp', // Lambda provides /tmp for temporary storage
+				cwd: workDir, // Use dedicated workspace directory
+				resume: resumeSessionId, // Resume previous session if provided
 				hooks: {
 					SessionStart: [
 						{
@@ -84,10 +158,34 @@ export async function executeClaudeCode(
 			capturedSessionId = generateSessionId();
 		}
 
+		// Capture all files written to workspace
+		process.stderr.write('Capturing output files from workspace...\n');
+		const workspaceFiles = await getFilesRecursive(workDir);
+		process.stderr.write(`Captured ${workspaceFiles.length} workspace files\n`);
+
+		// Capture Claude CLI session data (conversation history and context)
+		const sessionDir = `/tmp/.config/claude-code/sessions/${capturedSessionId}`;
+		let capturedSessionFiles: SessionFile[] = [];
+		try {
+			await readdir(sessionDir);
+			process.stderr.write(`Capturing session data from ${sessionDir}...\n`);
+			capturedSessionFiles = await getFilesRecursive(sessionDir);
+			// Prefix session files with .session/ to differentiate from workspace files
+			capturedSessionFiles = capturedSessionFiles.map(file => ({
+				...file,
+				path: `.session/${file.path}`
+			}));
+			process.stderr.write(`Captured ${capturedSessionFiles.length} session files\n`);
+		} catch {
+			process.stderr.write('No session directory found (session data not persisted)\n');
+		}
+
+		const outputFiles = [...workspaceFiles, ...capturedSessionFiles];
+
 		return {
 			session_id: capturedSessionId,
 			messages,
-			outputFiles: [], // Files will be managed separately via S3
+			outputFiles,
 			status: 'completed',
 			stdout: stdoutBuffer,
 			stderr: stderrBuffer,

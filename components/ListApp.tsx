@@ -13,6 +13,8 @@ import { WorkflowFAB } from './WorkflowFAB';
 import { MicroGameOverlay } from './MicroGameOverlay';
 import { SEOProgressOverlay, SEOProgressItem } from './SEOProgressOverlay';
 import { MarkdownProgressOverlay } from './MarkdownProgressOverlay';
+import { YouTubeProgressOverlay } from './YouTubeProgressOverlay';
+import { TMDbSearchModal } from './TMDbSearchModal';
 import { SharingSettingsModal } from './SharingSettingsModal';
 import { GroupDropdown } from './GroupDropdown';
 import { AppSkeleton, HeaderSkeleton, ContentListSkeleton } from './SkeletonComponents';
@@ -25,6 +27,7 @@ import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
 import { useMarkdownExtraction, MarkdownProgressItem } from '../hooks/useMarkdownExtraction';
+import { useYouTubePlaylistExtraction, YouTubeProgressItem } from '../hooks/useYouTubePlaylistExtraction';
 import { useToast } from './ToastProvider';
 import { extractUrls, getFirstUrl } from '../utils/urlDetection';
 import { Clock, SkipBack, ArrowDownAZ, Shuffle } from 'lucide-react';
@@ -75,7 +78,8 @@ export const ListApp: React.FC = () => {
   }, [joinGroupMutation]);
   const seoExtractionMutation = useSEOExtraction();
   const markdownExtractionMutation = useMarkdownExtraction();
-  
+  const youTubeExtractionMutation = useYouTubePlaylistExtraction();
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -103,6 +107,15 @@ export const ListApp: React.FC = () => {
   const [showMarkdownProgress, setShowMarkdownProgress] = useState(false);
   const [markdownProgressItems, setMarkdownProgressItems] = useState<MarkdownProgressItem[]>([]);
   const [selectedContentForMarkdown, setSelectedContentForMarkdown] = useState<Content[]>([]);
+
+  // YouTube Playlist Progress tracking
+  const [showYouTubeProgress, setShowYouTubeProgress] = useState(false);
+  const [youTubeProgressItems, setYouTubeProgressItems] = useState<YouTubeProgressItem[]>([]);
+  const [selectedContentForYouTube, setSelectedContentForYouTube] = useState<Content[]>([]);
+
+  // TMDb Search modal state
+  const [showTMDbModal, setShowTMDbModal] = useState(false);
+  const [selectedContentForTMDb, setSelectedContentForTMDb] = useState<Content | null>(null);
 
   // Sharing settings modal state
   const [showSharingModal, setShowSharingModal] = useState(false);
@@ -442,6 +455,186 @@ export const ListApp: React.FC = () => {
     setSelectedContentForMarkdown([]);
   };
 
+  const handleYouTubePlaylistExtraction = async () => {
+    console.log('🎬 YouTube Playlist Extraction button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    try {
+      // Get the full content objects for the selected IDs
+      console.log('Fetching content objects for IDs:', selectedIds);
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          try {
+            const content = await contentRepository.getContentById(id);
+            if (!content) {
+              console.warn(`Content with ID ${id} not found`);
+              return null;
+            }
+            return content;
+          } catch (error) {
+            console.warn(`Could not load content ${id}:`, error);
+            return null;
+          }
+        })
+      );
+
+      // Filter out null results and continue with valid content
+      const validContent = selectedContent.filter((content): content is Content => content !== null);
+
+      if (validContent.length === 0) {
+        toast.error('No content found', 'Unable to find selected items in database.');
+        return;
+      }
+
+      if (validContent.length < selectedIds.length) {
+        toast.warning(
+          'Some items not found',
+          `Proceeding with ${validContent.length} of ${selectedIds.length} selected items.`
+        );
+      }
+
+      // Initialize progress tracking
+      const initialProgressItems: YouTubeProgressItem[] = validContent.map(content => ({
+        contentId: content.id,
+        content,
+        status: 'processing' as const,
+        playlistsFound: 0,
+        videosCreated: 0
+      }));
+
+      setYouTubeProgressItems(initialProgressItems);
+      setSelectedContentForYouTube(validContent);
+      setShowYouTubeProgress(true);
+
+      console.log('Starting YouTube playlist extraction for:', validContent.map(c => c.id));
+
+      // Create progress callback
+      const handleProgress = (updatedItem: YouTubeProgressItem) => {
+        console.log('Progress update:', updatedItem);
+        setYouTubeProgressItems(prev =>
+          prev.map(item =>
+            item.contentId === updatedItem.contentId ? updatedItem : item
+          )
+        );
+      };
+
+      // Trigger the YouTube playlist extraction with progress tracking
+      const results = await youTubeExtractionMutation.mutateAsync({
+        selectedContent: validContent,
+        onProgress: handleProgress
+      });
+
+      // Show results summary
+      const totalPlaylists = results.reduce((sum, r) => sum + r.playlists_found, 0);
+      const totalVideos = results.reduce((sum, r) => sum + r.videos_created, 0);
+      const failedCount = results.filter(r => !r.success).length;
+
+      if (failedCount === 0) {
+        toast.success(
+          'Playlist extraction completed!',
+          `Extracted ${totalVideos} videos from ${totalPlaylists} playlist${totalPlaylists !== 1 ? 's' : ''}.`
+        );
+      } else {
+        toast.warning(
+          'Playlist extraction completed with errors',
+          `Extracted ${totalVideos} videos. ${failedCount} items failed.`
+        );
+      }
+
+      // Clear selection after successful operation
+      contentSelection.clearSelection();
+    } catch (error) {
+      console.error('YouTube playlist extraction failed:', error);
+      toast.error('Playlist extraction failed', 'Please try again.');
+      // Update all items to failed status
+      setYouTubeProgressItems(prev =>
+        prev.map(item => ({
+          ...item,
+          status: 'failed' as const,
+          error: error instanceof Error ? error.message : String(error)
+        }))
+      );
+    }
+  };
+
+  const handleCloseYouTubeProgress = () => {
+    setShowYouTubeProgress(false);
+    setYouTubeProgressItems([]);
+    setSelectedContentForYouTube([]);
+  };
+
+  const handleTMDbSearch = async () => {
+    console.log('🎬 TMDb Search button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    if (selectedIds.length > 1) {
+      toast.warning('Multiple items selected', 'Please select only one content item to search TMDb');
+      return;
+    }
+
+    try {
+      // Get the content object for the selected ID
+      const contentId = selectedIds[0];
+      const content = await contentRepository.getContentById(contentId);
+
+      if (!content) {
+        toast.error('Content not found', 'Unable to find selected item in database');
+        return;
+      }
+
+      // Open TMDb search modal
+      setSelectedContentForTMDb(content);
+      setShowTMDbModal(true);
+
+      console.log('Opening TMDb search modal for content:', content.id);
+
+    } catch (error) {
+      console.error('Error during TMDb search:', error);
+      toast.error(
+        'TMDb search failed',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+    } finally {
+      // Clear selection after processing
+      contentSelection.clearSelection();
+    }
+  };
+
+  const handleCloseTMDbModal = () => {
+    setShowTMDbModal(false);
+    setSelectedContentForTMDb(null);
+  };
+
+  const handleTMDbResultsAdded = () => {
+    // Refresh content list after adding TMDb results
+    contentSelection.clearSelection();
+    setNewContent(undefined);
+  };
+
   const handleOpenSharingModal = async () => {
     if (!currentParentId) return;
     
@@ -683,6 +876,26 @@ export const ListApp: React.FC = () => {
       onClick: () => {
         console.log('📝 WorkflowAction onClick triggered for markdown extraction');
         handleMarkdownExtraction();
+      }
+    },
+    {
+      id: 'youtube-playlist',
+      name: 'Extract Playlist',
+      description: 'Extract videos from YouTube playlists',
+      icon: '🎬',
+      onClick: () => {
+        console.log('🎬 WorkflowAction onClick triggered for YouTube playlist extraction');
+        handleYouTubePlaylistExtraction();
+      }
+    },
+    {
+      id: 'tmdb-search',
+      name: 'Search TMDb',
+      description: 'Search The Movie Database and add results',
+      icon: '🎞️',
+      onClick: () => {
+        console.log('🎞️ WorkflowAction onClick triggered for TMDb search');
+        handleTMDbSearch();
       }
     },
     {
@@ -1596,6 +1809,24 @@ export const ListApp: React.FC = () => {
         progressItems={markdownProgressItems}
         onClose={handleCloseMarkdownProgress}
       />
+
+      {/* YouTube Progress Overlay */}
+      <YouTubeProgressOverlay
+        isVisible={showYouTubeProgress}
+        selectedContent={selectedContentForYouTube}
+        progressItems={youTubeProgressItems}
+        onClose={handleCloseYouTubeProgress}
+      />
+
+      {/* TMDb Search Modal */}
+      {selectedContentForTMDb && (
+        <TMDbSearchModal
+          isVisible={showTMDbModal}
+          selectedContent={selectedContentForTMDb}
+          onClose={handleCloseTMDbModal}
+          onResultsAdded={handleTMDbResultsAdded}
+        />
+      )}
 
       {/* Sharing Settings Modal */}
       <SharingSettingsModal

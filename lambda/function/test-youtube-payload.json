@@ -1,0 +1,9 @@
+{
+  "body": "{\"url\": \"https://www.youtube.com/watch?v=KDfWgcJRzMM&list=PLAWoAwc-OTEXpBhr_e3ip49KdyZBw5a16\"}",
+  "requestContext": {
+    "http": {
+      "method": "POST"
+    }
+  },
+  "rawPath": "/youtube/playlist"
+}

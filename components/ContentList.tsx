@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Content, contentRepository, Tag, SEOMetadata, SharingMetadata } from './ContentRepository';
+import { Content, contentRepository, Tag, SEOMetadata, SharingMetadata, YouTubeVideoMetadata } from './ContentRepository';
 import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
 import { JsContentDisplay } from './JsContentDisplay';
 import { UrlPreviewCard } from './UrlPreviewCard';
+import { YouTubeVideoCard } from './YouTubeVideoCard';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -612,6 +613,28 @@ export const ContentList: React.FC<ContentListProps> = ({
                             {item.data}
                           </p>
                         </div>
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : item.metadata?.youtube_video_id || item.metadata?.extracted_from_playlist ? (
+                      <div>
+                        {/* YouTube Video Card */}
+                        <YouTubeVideoCard
+                          metadata={item.metadata as YouTubeVideoMetadata}
+                          videoUrl={(item.metadata as YouTubeVideoMetadata).youtube_url || `https://youtube.com/watch?v=${item.metadata.youtube_video_id}`}
+                          onClick={() => handleContentClick(item)}
+                        />
                         <TagDisplay tags={item.tags || []} isVisible={true} />
                         <div className="flex items-center gap-2 mt-2">
                           <p className="text-xs text-gray-500">

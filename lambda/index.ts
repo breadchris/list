@@ -124,7 +124,8 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			ANTHROPIC_API_KEY: anthropicApiKey,
 			SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
 			SUPABASE_URL: supabaseUrl,
-			HOME: '/tmp' // Claude CLI needs a HOME directory for config
+			HOME: '/tmp', // Claude CLI needs a HOME directory for config
+			IS_SANDBOX: '1' // Enable bypassPermissions mode for Claude CLI
 		}
 	},
 	tags: {
@@ -163,6 +164,13 @@ const route = new aws.apigatewayv2.Route('claude-code-route', {
 	target: pulumi.interpolate`integrations/${integration.id}`
 });
 
+// Create route for /youtube/playlist
+const youtubeRoute = new aws.apigatewayv2.Route('youtube-playlist-route', {
+	apiId: api.id,
+	routeKey: 'POST /youtube/playlist',
+	target: pulumi.interpolate`integrations/${integration.id}`
+});
+
 // Create default stage
 const stage = new aws.apigatewayv2.Stage('default-stage', {
 	apiId: api.id,
@@ -182,7 +190,49 @@ const lambdaPermission = new aws.lambda.Permission('api-gateway-invoke', {
 	sourceArn: pulumi.interpolate`${api.executionArn}/*/*`
 });
 
+// Create IAM user for Supabase Edge Function (read-only S3 access)
+const supabaseUser = new aws.iam.User('supabase-edge-function-user', {
+	name: 'supabase-edge-function-s3-read',
+	tags: {
+		Name: 'Supabase Edge Function User',
+		ManagedBy: 'Pulumi'
+	}
+});
+
+// Create read-only S3 policy for Supabase Edge Function
+const supabaseS3ReadPolicy = new aws.iam.UserPolicy('supabase-s3-read-policy', {
+	user: supabaseUser.name,
+	policy: sessionBucket.arn.apply(bucketArn => JSON.stringify({
+		Version: '2012-10-17',
+		Statement: [
+			{
+				Effect: 'Allow',
+				Action: [
+					's3:GetObject',
+					's3:ListBucket'
+				],
+				Resource: [
+					bucketArn,        // Bucket-level permissions for ListBucket
+					`${bucketArn}/*`  // Object-level permissions for GetObject
+				]
+			}
+		]
+	}))
+});
+
+// Create access key for Supabase Edge Function
+const supabaseAccessKey = new aws.iam.AccessKey('supabase-access-key', {
+	user: supabaseUser.name
+});
+
 // Export outputs
 export const apiUrl = pulumi.interpolate`${api.apiEndpoint}/claude-code`;
 export const bucketName = sessionBucket.bucket;
 export const lambdaArn = lambdaFunction.arn;
+
+// Export Supabase Edge Function credentials (for setting as Supabase secrets)
+export const supabaseAwsAccessKeyId = supabaseAccessKey.id;
+export const supabaseAwsSecretAccessKey = pulumi.secret(supabaseAccessKey.secret);
+export const supabaseAwsRegion = pulumi.output('us-east-1');
+export const supabaseS3BucketName = sessionBucket.bucket;
+export const supabaseLambdaEndpoint = pulumi.interpolate`${api.apiEndpoint}/claude-code`;

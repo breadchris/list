@@ -81,6 +81,28 @@ export interface SEOMetadata {
   url?: string;
 }
 
+export interface YouTubeThumbnail {
+  url: string;
+  width: number;
+  height: number;
+}
+
+export interface YouTubeVideoMetadata {
+  youtube_video_id?: string;
+  youtube_title?: string;
+  youtube_url?: string;
+  youtube_author?: string;
+  youtube_channel_id?: string;
+  youtube_channel_handle?: string;
+  youtube_description?: string;
+  youtube_duration?: number;
+  youtube_views?: number;
+  youtube_publish_date?: string;
+  youtube_thumbnails?: YouTubeThumbnail[];
+  source_playlist_url?: string;
+  extracted_from_playlist?: boolean;
+}
+
 export interface SharingMetadata {
   isPublic: boolean;
   enabledAt?: string;
@@ -871,6 +893,235 @@ export class ContentRepository {
       return data || [];
     } catch (error) {
       console.error('Failed to fetch SEO children:', error);
+      throw error;
+    }
+  }
+
+  // YouTube playlist extraction functionality using consolidated content function
+  async extractYouTubePlaylist(contentId: string): Promise<{
+    content_id: string,
+    success: boolean,
+    playlists_found: number,
+    videos_created: number,
+    playlist_children?: Content[],
+    errors?: string[]
+  }> {
+    try {
+      // Get the content item to extract playlists from
+      const contentItem = await this.getContentById(contentId);
+      if (!contentItem) {
+        throw new Error('Content not found');
+      }
+
+      // Get the current user session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          action: 'youtube-playlist-extract',
+          payload: {
+            selectedContent: [contentItem]
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'YouTube playlist extraction failed');
+      }
+
+      // Process the response data
+      const data = result.data?.[0];
+      if (data) {
+        return {
+          content_id: data.content_id || contentId,
+          success: data.success || false,
+          playlists_found: data.playlists_found || 0,
+          videos_created: data.videos_created || 0,
+          playlist_children: data.playlist_children || [],
+          errors: data.errors || []
+        };
+      }
+
+      return {
+        content_id: contentId,
+        success: true,
+        playlists_found: 0,
+        videos_created: 0,
+        playlist_children: [],
+        errors: []
+      };
+    } catch (error) {
+      console.error('Failed to extract YouTube playlist:', error);
+      throw error;
+    }
+  }
+
+  // TMDb search functionality (search-only mode)
+  async searchTMDb(contentId: string, searchType: 'movie' | 'tv' | 'multi' = 'multi'): Promise<{
+    content_id: string,
+    success: boolean,
+    results: Array<{
+      tmdb_id: number,
+      media_type: string,
+      title: string,
+      year: string,
+      overview: string,
+      poster_url: string | null,
+      backdrop_url: string | null,
+      vote_average: number,
+      vote_count: number,
+      popularity: number
+    }>,
+    total_results: number,
+    errors?: string[]
+  }> {
+    try {
+      const contentItem = await this.getContentById(contentId);
+      if (!contentItem) {
+        throw new Error('Content not found');
+      }
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          action: 'tmdb-search',
+          payload: {
+            selectedContent: [contentItem],
+            searchType,
+            mode: 'search-only'
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'TMDb search failed');
+      }
+
+      const data = result.data?.[0];
+      if (data) {
+        return {
+          content_id: data.content_id || contentId,
+          success: data.success || false,
+          results: data.tmdb_results || [],
+          total_results: data.total_results || 0,
+          errors: data.errors || []
+        };
+      }
+
+      return {
+        content_id: contentId,
+        success: true,
+        results: [],
+        total_results: 0,
+        errors: []
+      };
+    } catch (error) {
+      console.error('Failed to search TMDb:', error);
+      throw error;
+    }
+  }
+
+  // TMDb add selected results functionality (add-selected mode)
+  async addTMDbResults(contentId: string, tmdbIds: number[], searchType: 'movie' | 'tv' | 'multi' = 'multi'): Promise<{
+    content_id: string,
+    success: boolean,
+    results_created: number,
+    tmdb_children?: Content[],
+    errors?: string[]
+  }> {
+    try {
+      const contentItem = await this.getContentById(contentId);
+      if (!contentItem) {
+        throw new Error('Content not found');
+      }
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          action: 'tmdb-search',
+          payload: {
+            selectedContent: [contentItem],
+            searchType,
+            mode: 'add-selected',
+            selectedResults: tmdbIds
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'TMDb add results failed');
+      }
+
+      const data = result.data?.[0];
+      if (data) {
+        return {
+          content_id: data.content_id || contentId,
+          success: data.success || false,
+          results_created: data.results_created || 0,
+          tmdb_children: data.tmdb_children || [],
+          errors: data.errors || []
+        };
+      }
+
+      return {
+        content_id: contentId,
+        success: true,
+        results_created: 0,
+        tmdb_children: [],
+        errors: []
+      };
+    } catch (error) {
+      console.error('Failed to add TMDb results:', error);
       throw error;
     }
   }

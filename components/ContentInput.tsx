@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { Content } from './ContentRepository';
+import { Content, contentRepository } from './ContentRepository';
 import { useCreateContentMutation } from '../hooks/useContentQueries';
 import { LexicalContentInput, LexicalContentInputRef } from './LexicalContentInput';
-import { LLMService } from './LLMService';
+import { ChatService } from './ChatService';
 import { useToast } from './ToastProvider';
 
 interface ContentInputProps {
@@ -37,6 +37,16 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     }
 
     try {
+      // Check if parent is a chat - if so, route to chat handler
+      if (parentContentId) {
+        const parentContent = await contentRepository.getContentById(parentContentId);
+        if (parentContent && parentContent.type === 'chat') {
+          handleChatSubmit(text, parentContentId);
+          return;
+        }
+      }
+
+      // Normal content creation
       const newContent = await createContentMutation.mutateAsync({
         type: 'text',
         data: text,
@@ -52,52 +62,92 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     }
   };
 
+  const handleChatSubmit = async (text: string, chatContentId: string) => {
+    if (!text || createContentMutation.isPending || isGeneratingAI) return;
+
+    setIsGeneratingAI(true);
+
+    try {
+      // Create user message as child of chat
+      const userMessage = await createContentMutation.mutateAsync({
+        type: 'text',
+        data: text,
+        group_id: groupId,
+        parent_content_id: chatContentId,
+        metadata: { role: 'user' }
+      });
+
+      // Call chat service to get AI response
+      const chatResponse = await ChatService.sendMessage({
+        chat_content_id: chatContentId,
+        message: text,
+        group_id: groupId
+      });
+
+      if (!chatResponse.success) {
+        throw new Error(chatResponse.error || 'Chat failed');
+      }
+
+      toast.success('AI Responded', 'Message sent and AI has responded');
+
+      onContentAdded(userMessage);
+      onClose();
+
+    } catch (error) {
+      console.error('Error in chat:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Chat Failed', errorMessage);
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
+
   const handleAISubmit = async (text: string) => {
     if (!text || createContentMutation.isPending || isGeneratingAI) return;
 
     setIsGeneratingAI(true);
 
     try {
-      // Step 1: Create the prompt content item
-      const promptContent = await createContentMutation.mutateAsync({
-        type: 'text',
-        data: text,
+      // Step 1: Create the chat container
+      const chatContent = await createContentMutation.mutateAsync({
+        type: 'chat',
+        data: `Chat: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`,
         group_id: groupId,
         parent_content_id: parentContentId,
       });
 
-      // Step 2: Call LLM service to generate children
-      const llmResponse = await LLMService.generateContent({
-        system_prompt: `You are a helpful assistant that generates relevant child items based on a user's prompt.
-The user has entered: "${text}"
-
-Generate a list of relevant items that would be useful as sub-items. For example:
-- If the prompt is "Methods of preparing carrots", generate items like "steaming", "boiling", "blanching", "roasting", etc.
-- If the prompt is "Things to do in Paris", generate items like "Visit Eiffel Tower", "Explore Louvre Museum", etc.
-- Keep each item concise and actionable
-- Generate between 3-8 items depending on the topic`,
-        selected_content: [promptContent],
+      // Step 2: Create first user message as child of chat
+      const userMessage = await createContentMutation.mutateAsync({
+        type: 'text',
+        data: text,
         group_id: groupId,
-        parent_content_id: promptContent.id // Children should be under the prompt
+        parent_content_id: chatContent.id,
+        metadata: { role: 'user' }
       });
 
-      if (!llmResponse.success) {
-        throw new Error(llmResponse.error || 'AI generation failed');
+      // Step 3: Call chat service to get AI response
+      const chatResponse = await ChatService.sendMessage({
+        chat_content_id: chatContent.id,
+        message: text,
+        group_id: groupId
+      });
+
+      if (!chatResponse.success) {
+        throw new Error(chatResponse.error || 'Chat failed');
       }
 
-      const generatedCount = llmResponse.generated_content?.length || 0;
       toast.success(
-        'AI Content Generated!',
-        `Created prompt and ${generatedCount} AI-generated item${generatedCount !== 1 ? 's' : ''}`
+        'Chat Started!',
+        'AI has responded to your message'
       );
 
-      onContentAdded(promptContent);
+      onContentAdded(chatContent);
       onClose();
 
     } catch (error) {
-      console.error('Error with AI generation:', error);
+      console.error('Error starting chat:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error('AI Generation Failed', errorMessage);
+      toast.error('Chat Failed', errorMessage);
     } finally {
       setIsGeneratingAI(false);
     }
