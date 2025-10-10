@@ -7,6 +7,10 @@ const config = new pulumi.Config();
 const anthropicApiKey = config.requireSecret('anthropic_api_key');
 const supabaseServiceRoleKey = config.requireSecret('supabase_service_role_key');
 const supabaseUrl = config.require('supabase_url');
+const openaiApiKey = config.requireSecret('openai_api_key');
+const cloudflareApiKey = config.requireSecret('cloudflare_api_key');
+const cloudflareAccountId = config.require('cloudflare_account_id');
+const tmdbApiKey = config.requireSecret('tmdb_api_key');
 
 // Create S3 bucket for Claude Code sessions
 const sessionBucket = new aws.s3.Bucket('claude-code-sessions', {
@@ -124,6 +128,10 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			ANTHROPIC_API_KEY: anthropicApiKey,
 			SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
 			SUPABASE_URL: supabaseUrl,
+			OPENAI_API_KEY: openaiApiKey,
+			CLOUDFLARE_API_KEY: cloudflareApiKey,
+			CLOUDFLARE_ACCOUNT_ID: cloudflareAccountId,
+			TMDB_API_KEY: tmdbApiKey,
 			HOME: '/tmp', // Claude CLI needs a HOME directory for config
 			IS_SANDBOX: '1' // Enable bypassPermissions mode for Claude CLI
 		}
@@ -168,6 +176,13 @@ const route = new aws.apigatewayv2.Route('claude-code-route', {
 const youtubeRoute = new aws.apigatewayv2.Route('youtube-playlist-route', {
 	apiId: api.id,
 	routeKey: 'POST /youtube/playlist',
+	target: pulumi.interpolate`integrations/${integration.id}`
+});
+
+// Create route for /content (content handlers)
+const contentRoute = new aws.apigatewayv2.Route('content-route', {
+	apiId: api.id,
+	routeKey: 'POST /content',
 	target: pulumi.interpolate`integrations/${integration.id}`
 });
 

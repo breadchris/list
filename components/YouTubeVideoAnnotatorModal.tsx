@@ -135,7 +135,7 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg max-w-[1600px] w-full max-h-[95vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-8 py-5 border-b border-gray-200 bg-gradient-to-r from-red-50 to-orange-50">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-red-50 to-orange-50">
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
@@ -159,8 +159,8 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="flex-1 p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
             {/* Video Player - Takes 2 columns on large screens */}
             <div className="lg:col-span-2">
               <VideoPlayer
@@ -174,7 +174,7 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
             </div>
 
             {/* Annotation Manager - Takes 1 column on large screens */}
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 h-full">
               <AnnotationManager
                 annotations={annotations}
                 currentTime={currentTime}
@@ -189,7 +189,7 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
         </div>
 
         {/* Footer Actions */}
-        <div className="px-8 py-5 border-t border-gray-200 bg-gray-50">
+        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
               {annotations.length} timestamp{annotations.length !== 1 ? 's' : ''} created
@@ -197,14 +197,14 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
             <div className="flex gap-3">
               <button
                 onClick={handleClose}
-                className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 disabled={isSaving}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
-                className={`px-6 py-2.5 rounded-lg transition-colors font-medium ${
+                className={`px-4 py-2 rounded-lg transition-colors ${
                   isSaving || annotations.length === 0
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : 'bg-blue-600 text-white hover:bg-blue-700'

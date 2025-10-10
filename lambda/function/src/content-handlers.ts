@@ -15,33 +15,18 @@ import { fetchMarkdownFromCloudflare } from './cloudflare-client.js';
 import { processTMDbSearchForContent } from './tmdb-client.js';
 
 // =============================================================================
+// SEO EXTRACTION
+// =============================================================================
 
-async function handleSEOExtract(supabase: any, payload: SEOExtractPayload, useQueue: boolean): Promise<ContentResponse> {
-  if (useQueue) {
-    // Queue the job for async processing
-    await enqueueJob(supabase, {
-      action: 'seo-extract',
-      payload,
-      userId: 'system', // Will be replaced with actual user ID from auth
-      createdAt: new Date().toISOString()
-    })
-
-    return {
-      success: true,
-      queued: true,
-      data: { message: 'SEO extraction queued for processing' }
-    }
-  }
-
-  // Process immediately
-  const results = []
+export async function handleSEOExtract(supabase: any, payload: SEOExtractPayload): Promise<ContentResponse> {
+  const results = [];
 
   for (const contentItem of payload.selectedContent) {
     try {
-      const result = await processSEOForContent(supabase, contentItem)
-      results.push(result)
-    } catch (error) {
-      console.error(`Error processing SEO for content ${contentItem.id}:`, error)
+      const result = await processSEOForContent(supabase, contentItem);
+      results.push(result);
+    } catch (error: any) {
+      console.error(`Error processing SEO for content ${contentItem.id}:`, error);
       results.push({
         content_id: contentItem.id,
         success: false,
@@ -49,17 +34,17 @@ async function handleSEOExtract(supabase: any, payload: SEOExtractPayload, useQu
         total_urls_found: 0,
         urls_processed: 0,
         seo_children: []
-      })
+      });
     }
   }
 
   return {
     success: true,
     data: results
-  }
+  };
 }
 
-async function processSEOForContent(supabase: any, contentItem: ContentItem) {
+export async function processSEOForContent(supabase: any, contentItem: ContentItem) {
   // Extract URLs from content data
   const urls = extractUrls(contentItem.data);
 
@@ -70,7 +55,7 @@ async function processSEOForContent(supabase: any, contentItem: ContentItem) {
       total_urls_found: 0,
       urls_processed: 0,
       seo_children: []
-    }
+    };
   }
 
   const seoChildren: ContentItem[] = [];
@@ -89,7 +74,7 @@ async function processSEOForContent(supabase: any, contentItem: ContentItem) {
 
       if (seoError) {
         console.error('Error checking existing SEO:', seoError);
-        errors.push(`Error checking existing SEO for ${url}: ${seoError.message}`)
+        errors.push(`Error checking existing SEO for ${url}: ${seoError.message}`);
         continue;
       }
 
@@ -123,7 +108,7 @@ async function processSEOForContent(supabase: any, contentItem: ContentItem) {
 
       if (upsertError) {
         console.error('Error creating SEO content:', upsertError);
-        errors.push(`Error creating SEO content for ${url}: ${upsertError.message}`)
+        errors.push(`Error creating SEO content for ${url}: ${upsertError.message}`);
         continue;
       }
 
@@ -140,9 +125,9 @@ async function processSEOForContent(supabase: any, contentItem: ContentItem) {
 
       urlsProcessed++;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error processing URL ${url}:`, error);
-      errors.push(`Error processing ${url}: ${error.message}`)
+      errors.push(`Error processing ${url}: ${error.message}`);
     }
   }
 
@@ -153,42 +138,29 @@ async function processSEOForContent(supabase: any, contentItem: ContentItem) {
     urls_processed: urlsProcessed,
     seo_children: seoChildren,
     errors: errors.length > 0 ? errors : undefined
+  };
 }
 
-async function handleLLMGenerate(supabase: any, payload: LLMGeneratePayload, useQueue: boolean): Promise<ContentResponse> {
-  if (useQueue) {
-    // Queue the job for async processing
-    await enqueueJob(supabase, {
-      action: 'llm-generate',
-      payload,
-      userId: 'system', // Will be replaced with actual user ID from auth
-      createdAt: new Date().toISOString()
-    })
+// =============================================================================
+// LLM GENERATION
+// =============================================================================
 
-    return {
-      success: true,
-      queued: true,
-      data: { message: 'LLM generation queued for processing' }
-    }
-  }
-
-  // Process immediately
+export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePayload): Promise<ContentResponse> {
   const { system_prompt, selected_content, group_id, parent_content_id } = payload;
 
   if (!system_prompt || !selected_content || !Array.isArray(selected_content) || selected_content.length === 0) {
     return {
       success: false,
       error: 'Missing or invalid required fields: system_prompt, selected_content'
-    }
+    };
   }
 
-  // For immediate processing, we need a user_id - get it from the first content item
   const user_id = selected_content[0]?.user_id;
   if (!user_id) {
     return {
       success: false,
       error: 'Unable to determine user_id from selected content'
-    }
+    };
   }
 
   // Format content for LLM context
@@ -201,7 +173,7 @@ async function handleLLMGenerate(supabase: any, payload: LLMGeneratePayload, use
     return {
       success: false,
       error: 'No content was generated by the LLM'
-    }
+    };
   }
 
   // Create the prompt content item first
@@ -214,7 +186,7 @@ async function handleLLMGenerate(supabase: any, payload: LLMGeneratePayload, use
       user_id: user_id,
       parent_content_id: parent_content_id,
       metadata: {
-        selected_content_ids: selected_content.map(c => c.id),
+        selected_content_ids: selected_content.map((c: ContentItem) => c.id),
         generated_count: generatedContent.length,
         created_by_llm: true
       }
@@ -236,7 +208,7 @@ async function handleLLMGenerate(supabase: any, payload: LLMGeneratePayload, use
     metadata: {
       generated_by_llm: true,
       prompt_content_id: promptContent.id,
-      source_content_ids: selected_content.map(c => c.id)
+      source_content_ids: selected_content.map((c: ContentItem) => c.id)
     }
   }));
 
@@ -258,3 +230,350 @@ async function handleLLMGenerate(supabase: any, payload: LLMGeneratePayload, use
       prompt_content_id: promptContent.id,
       created_content: createdContent
     }
+  };
+}
+
+// =============================================================================
+// CHAT
+// =============================================================================
+
+export async function handleChatMessage(supabase: any, payload: ChatMessagePayload): Promise<ContentResponse> {
+  const { chat_content_id, message, group_id } = payload;
+
+  // Validate payload
+  if (!chat_content_id || !message || !group_id) {
+    return {
+      success: false,
+      error: 'Missing required fields: chat_content_id, message, group_id'
+    };
+  }
+
+  // 1. Get the chat content to verify it exists and get user_id
+  const { data: chatContent, error: chatError } = await supabase
+    .from('content')
+    .select('*')
+    .eq('id', chat_content_id)
+    .eq('type', 'chat')
+    .single();
+
+  if (chatError || !chatContent) {
+    return {
+      success: false,
+      error: 'Chat not found or invalid chat_content_id'
+    };
+  }
+
+  const user_id = chatContent.user_id;
+
+  // 2. Get conversation history (all children of chat, ordered by creation)
+  const { data: conversationHistory, error: historyError } = await supabase
+    .from('content')
+    .select('*')
+    .eq('parent_content_id', chat_content_id)
+    .order('created_at', { ascending: true });
+
+  if (historyError) {
+    return {
+      success: false,
+      error: `Failed to load conversation history: ${historyError.message}`
+    };
+  }
+
+  // 3. Build OpenAI messages array from conversation history
+  const openAIMessages: OpenAIMessage[] = (conversationHistory || []).map((msg: any) => ({
+    role: msg.metadata?.role === 'assistant' ? 'assistant' : 'user',
+    content: msg.data
+  }));
+
+  // Add current message
+  openAIMessages.push({
+    role: 'user',
+    content: message
+  });
+
+  // 4. Call OpenAI chat completion
+  const assistantMessage = await callOpenAIChat(openAIMessages);
+
+  // 5. Create assistant response as child of chat
+  const { data: assistantContent, error: assistantError } = await supabase
+    .from('content')
+    .insert({
+      type: 'text',
+      data: assistantMessage,
+      group_id: group_id,
+      user_id: user_id,
+      parent_content_id: chat_content_id,
+      metadata: {
+        role: 'assistant',
+        model: 'gpt-4',
+        created_by_chat: true
+      }
+    })
+    .select()
+    .single();
+
+  if (assistantError) {
+    return {
+      success: false,
+      error: `Failed to create assistant message: ${assistantError.message}`
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      assistant_message: assistantMessage,
+      assistant_content_id: assistantContent.id
+    }
+  };
+}
+
+// =============================================================================
+// MARKDOWN EXTRACTION
+// =============================================================================
+
+export async function handleMarkdownExtract(supabase: any, payload: MarkdownExtractPayload): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processMarkdownForContent(supabase, contentItem);
+      results.push(result);
+    } catch (error: any) {
+      console.error(`Error processing markdown for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+        total_urls_found: 0,
+        urls_processed: 0,
+        markdown_children: []
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+export async function processMarkdownForContent(supabase: any, contentItem: ContentItem) {
+  // Extract URLs from content data
+  const urls = extractUrls(contentItem.data);
+
+  if (urls.length === 0) {
+    return {
+      content_id: contentItem.id,
+      success: true,
+      total_urls_found: 0,
+      urls_processed: 0,
+      markdown_children: []
+    };
+  }
+
+  const markdownChildren: ContentItem[] = [];
+  let urlsProcessed = 0;
+  const errors: string[] = [];
+
+  // Process each URL
+  for (const url of urls) {
+    try {
+      // Fetch markdown from Cloudflare
+      const markdown = await fetchMarkdownFromCloudflare(url);
+
+      // Create markdown content as sibling (same parent as original content)
+      const { data: markdownContent, error: createError } = await supabase
+        .from('content')
+        .insert({
+          type: 'markdown',
+          data: markdown,
+          group_id: contentItem.group_id,
+          user_id: contentItem.user_id,
+          parent_content_id: contentItem.parent_content_id, // Same parent = sibling
+          metadata: {
+            source_url: url,
+            extracted_at: new Date().toISOString(),
+            cloudflare_markdown: true,
+            source_content_id: contentItem.id
+          }
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('Error creating markdown content:', createError);
+        errors.push(`Error creating markdown content for ${url}: ${createError.message}`);
+        continue;
+      }
+
+      if (markdownContent) {
+        markdownChildren.push(markdownContent as ContentItem);
+      }
+
+      urlsProcessed++;
+
+    } catch (error: any) {
+      console.error(`Error processing URL ${url}:`, error);
+      errors.push(`Error processing ${url}: ${error.message}`);
+    }
+  }
+
+  return {
+    content_id: contentItem.id,
+    success: errors.length === 0,
+    total_urls_found: urls.length,
+    urls_processed: urlsProcessed,
+    markdown_children: markdownChildren,
+    errors: errors.length > 0 ? errors : undefined
+  };
+}
+
+// =============================================================================
+// YOUTUBE PLAYLIST
+// =============================================================================
+
+export async function handleYouTubePlaylistExtract(supabase: any, payload: YouTubePlaylistPayload): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processYouTubePlaylistForContent(supabase, contentItem);
+      results.push(result);
+    } catch (error: any) {
+      console.error(`Error processing YouTube playlist for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+        playlist_urls_found: 0,
+        videos_created: 0
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+export async function processYouTubePlaylistForContent(supabase: any, contentItem: ContentItem) {
+  // Extract YouTube playlist URLs from content data
+  const playlistUrls = extractYouTubePlaylistUrls(contentItem.data);
+
+  if (playlistUrls.length === 0) {
+    return {
+      content_id: contentItem.id,
+      success: true,
+      playlist_urls_found: 0,
+      videos_created: 0,
+      playlist_children: []
+    };
+  }
+
+  const playlistChildren: ContentItem[] = [];
+  const errors: string[] = [];
+
+  // Process each playlist URL
+  for (const playlistUrl of playlistUrls) {
+    try {
+      // Call Lambda to fetch playlist videos
+      const lambdaEndpoint = process.env.LAMBDA_ENDPOINT || 'https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com';
+      const response = await fetch(`${lambdaEndpoint}/youtube/playlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: playlistUrl })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Lambda API error: ${response.status}`);
+      }
+
+      const data = await response.json() as { videos: any[] };
+      const { videos } = data;
+
+      // Create content items for each video
+      for (const video of videos) {
+        const videoData = `${video.title}\n${video.url}`;
+        const { data: videoContent, error: createError } = await supabase
+          .from('content')
+          .insert({
+            type: 'text',
+            data: videoData,
+            group_id: contentItem.group_id,
+            user_id: contentItem.user_id,
+            parent_content_id: contentItem.id,
+            metadata: {
+              youtube_video_id: video.id,
+              youtube_title: video.title,
+              youtube_url: video.url,
+              youtube_thumbnail: video.thumbnail,
+              playlist_url: playlistUrl,
+              extracted_from_playlist: true
+            }
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('Error creating video content:', createError);
+          errors.push(`Error creating video content: ${createError.message}`);
+          continue;
+        }
+
+        if (videoContent) {
+          playlistChildren.push(videoContent as ContentItem);
+        }
+      }
+
+    } catch (error: any) {
+      console.error(`Error processing playlist ${playlistUrl}:`, error);
+      errors.push(`Error processing playlist: ${error.message}`);
+    }
+  }
+
+  return {
+    content_id: contentItem.id,
+    success: errors.length === 0,
+    playlist_urls_found: playlistUrls.length,
+    videos_created: playlistChildren.length,
+    playlist_children: playlistChildren,
+    errors: errors.length > 0 ? errors : undefined
+  };
+}
+
+// =============================================================================
+// TMDB SEARCH
+// =============================================================================
+
+export async function handleTMDbSearch(supabase: any, payload: TMDbSearchPayload): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processTMDbSearchForContent(
+        supabase,
+        contentItem,
+        payload.searchType || 'multi',
+        payload.mode,
+        payload.selectedResults
+      );
+      results.push(result);
+    } catch (error: any) {
+      console.error(`Error processing TMDb search for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+        queries_found: 0,
+        results_created: 0
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}

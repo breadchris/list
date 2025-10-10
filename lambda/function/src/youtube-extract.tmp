@@ -1,0 +1,114 @@
+          youtube_channel_id: video.channel_id,
+          youtube_channel_handle: video.channel_handle,
+          youtube_description: video.description,
+          youtube_duration: video.duration,
+          youtube_views: video.views,
+          youtube_publish_date: video.publish_date,
+          youtube_thumbnails: video.thumbnails,
+          source_playlist_url: playlistUrl,
+          extracted_from_playlist: true
+        }
+      }));
+
+      const { data: createdVideos, error: createError } = await supabase
+        .from('content')
+        .insert(videoContents)
+        .select();
+
+      if (createError) {
+        errors.push(`Error creating video content: ${createError.message}`);
+        continue;
+      }
+
+      playlistChildren.push(...(createdVideos || []));
+      totalVideosCreated += createdVideos?.length || 0;
+
+    } catch (error) {
+      console.error(`Error processing playlist ${playlistUrl}:`, error);
+      errors.push(`Error processing ${playlistUrl}: ${error.message}`);
+    }
+  }
+
+  return {
+    content_id: contentItem.id,
+    success: errors.length === 0,
+    playlists_found: playlistUrls.length,
+    videos_created: totalVideosCreated,
+    playlist_children: playlistChildren,
+    errors: errors.length > 0 ? errors : undefined
+  };
+}
+
+// =============================================================================
+// TMDB SEARCH HANDLERS
+// =============================================================================
+
+async function handleTMDbSearch(supabase: any, payload: TMDbSearchPayload): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processTMDbSearchForContent(
+        supabase,
+        contentItem,
+        payload.searchType || 'multi',
+        payload.mode,
+        payload.selectedResults
+      );
+      results.push(result);
+    } catch (error) {
+      console.error(`Error processing TMDb search for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+        queries_found: 0,
+        results_created: 0
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+async function processTMDbSearchForContent(
+  supabase: any,
+  contentItem: ContentItem,
+  searchType: 'movie' | 'tv' | 'multi',
+  mode: 'search-only' | 'add-selected',
+  selectedResults?: number[]
+) {
+  // Extract search query from content data (use the full text as query)
+  const query = contentItem.data.trim();
+
+  if (!query || query.length === 0) {
+    return {
+      content_id: contentItem.id,
+      success: true,
+      queries_found: 0,
+      results_created: 0,
+      tmdb_children: [],
+      tmdb_results: []
+    };
+  }
+
+  const tmdbChildren: ContentItem[] = [];
+  const errors: string[] = [];
+
+  try {
+    // Get TMDb API key from environment
+    const tmdbApiKey = Deno.env.get('TMDB_API_KEY');
+    if (!tmdbApiKey) {
+      throw new Error('TMDB_API_KEY environment variable not configured');
+    }
+
+    // Call TMDb search API
+    const endpoint = searchType === 'multi'
+      ? `https://api.themoviedb.org/3/search/multi`
+      : `https://api.themoviedb.org/3/search/${searchType}`;
+
+    const searchUrl = `${endpoint}?query=${encodeURIComponent(query)}&page=1`;
+

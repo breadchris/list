@@ -5,6 +5,7 @@ import { User as SupabaseUser } from '@supabase/supabase-js';
 import { UserAuth } from './UserAuth';
 import { GroupSelector } from './GroupSelector';
 import { ContentList } from './ContentList';
+import { ContentStack } from './ContentStack';
 import { ContentInput } from './ContentInput';
 import { JsEditorView } from './JsEditorView';
 import { AppSidebar } from './AppSidebar';
@@ -32,6 +33,7 @@ import { useYouTubePlaylistExtraction, YouTubeProgressItem } from '../hooks/useY
 import { useToast } from './ToastProvider';
 import { extractUrls, getFirstUrl } from '../utils/urlDetection';
 import { Clock, SkipBack, ArrowDownAZ, Shuffle } from 'lucide-react';
+import { ViewDisplayToggle, DisplayMode } from './ViewDisplayToggle';
 
 // Simplified app loading states to prevent rapid transitions
 type AppLoadingState = 'loading' | 'ready' | 'error';
@@ -88,7 +90,10 @@ export const ListApp: React.FC = () => {
 
   // View mode state
   const [viewMode, setViewMode] = useState<ViewMode>('chronological');
-  
+
+  // Display mode state (list vs stack)
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('list');
+
   // Content selection state for workflow operations
   const contentSelection = useContentSelection();
   
@@ -1197,6 +1202,25 @@ export const ListApp: React.FC = () => {
     }
   }, [currentGroup?.id, viewMode]);
 
+  // Load display mode from localStorage when group changes
+  useEffect(() => {
+    if (currentGroup?.id) {
+      const savedDisplayMode = localStorage.getItem(`displayMode_${currentGroup.id}`) as DisplayMode;
+      if (savedDisplayMode && ['list', 'stack'].includes(savedDisplayMode)) {
+        setDisplayMode(savedDisplayMode);
+      } else {
+        setDisplayMode('list'); // Default display mode
+      }
+    }
+  }, [currentGroup?.id]);
+
+  // Save display mode to localStorage when it changes
+  useEffect(() => {
+    if (currentGroup?.id && displayMode) {
+      localStorage.setItem(`displayMode_${currentGroup.id}`, displayMode);
+    }
+  }, [currentGroup?.id, displayMode]);
+
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -1652,6 +1676,13 @@ export const ListApp: React.FC = () => {
                   )}
                 </button>
               )}
+              {/* Display Mode Toggle */}
+              {currentGroup && !isSearching && (
+                <ViewDisplayToggle
+                  currentMode={displayMode}
+                  onToggle={setDisplayMode}
+                />
+              )}
               {/* Sharing Button - only show when viewing specific content */}
               {currentGroup && currentParentId && (
                 <button
@@ -1795,6 +1826,20 @@ export const ListApp: React.FC = () => {
             onContentAdded={handleContentAdded}
             showInput={showInput}
             onInputClose={handleInputClose}
+            viewMode={viewMode}
+          />
+        ) : displayMode === 'stack' ? (
+          <ContentStack
+            groupId={currentGroup?.id || ''}
+            newContent={newContent}
+            parentContentId={currentParentId}
+            onNavigate={handleNavigate}
+            searchQuery={searchQuery}
+            isSearching={isSearching}
+            selection={contentSelection}
+            showInput={showInput}
+            onInputClose={handleInputClose}
+            onContentAdded={handleContentAdded}
             viewMode={viewMode}
           />
         ) : (

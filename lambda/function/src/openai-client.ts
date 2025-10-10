@@ -87,7 +87,7 @@ export async function callOpenAI(systemPrompt: string, userContent: string): Pro
     throw new Error(`OpenAI API error: ${response.status} - ${errorData}`);
   }
 
-  let result = await response.json();
+  let result: any = await response.json();
 
   // Handle tool calls
   while (result.choices?.[0]?.message?.tool_calls) {
@@ -184,7 +184,7 @@ export async function callOpenAIChat(messages: OpenAIMessage[]): Promise<string>
     throw new Error(`OpenAI API error: ${response.status} - ${errorData}`);
   }
 
-  const result = await response.json();
+  const result: any = await response.json();
   const assistantMessage = result.choices[0]?.message?.content;
 
   if (!assistantMessage) {

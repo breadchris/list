@@ -2,6 +2,16 @@ import type { APIGatewayProxyHandlerV2, APIGatewayProxyEventV2, APIGatewayProxyR
 import { SessionManager } from './session-manager.js';
 import { executeClaudeCode } from './claude-executor.js';
 import { getPlaylistVideos } from './youtube-client.js';
+import { getSupabaseClient } from './supabase-client.js';
+import {
+	handleSEOExtract,
+	handleLLMGenerate,
+	handleChatMessage,
+	handleMarkdownExtract,
+	handleYouTubePlaylistExtract,
+	handleTMDbSearch
+} from './content-handlers.js';
+import type { ContentRequest } from './types.js';
 import { writeFileSync } from 'fs';
 
 // Helper to flush stdout/stderr before Lambda freezes
@@ -103,6 +113,12 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 
 		if (path === '/youtube/playlist' || path === '/youtube/playlist/') {
 			result = await handleYouTubePlaylistRequest(body);
+			await flushLogs();
+			return result;
+		}
+
+		if (path === '/content' || path === '/content/') {
+			result = await handleContentRequest(body as ContentRequest);
 			await flushLogs();
 			return result;
 		}
@@ -325,6 +341,91 @@ async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGate
 			body: JSON.stringify({
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error occurred'
+			})
+		};
+	}
+}
+
+async function handleContentRequest(request: ContentRequest): Promise<APIGatewayProxyResultV2> {
+	const { action, payload } = request;
+
+	if (!action || !payload) {
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'Missing required parameters: action, payload'
+			})
+		};
+	}
+
+	try {
+		const supabase = getSupabaseClient();
+		let result;
+
+		switch (action) {
+			case 'seo-extract':
+				result = await handleSEOExtract(supabase, payload);
+				break;
+
+			case 'llm-generate':
+				result = await handleLLMGenerate(supabase, payload);
+				break;
+
+			case 'chat-message':
+				result = await handleChatMessage(supabase, payload);
+				break;
+
+			case 'markdown-extract':
+				result = await handleMarkdownExtract(supabase, payload);
+				break;
+
+			case 'youtube-playlist-extract':
+				result = await handleYouTubePlaylistExtract(supabase, payload);
+				break;
+
+			case 'tmdb-search':
+				result = await handleTMDbSearch(supabase, payload);
+				break;
+
+			default:
+				return {
+					statusCode: 400,
+					headers: {
+						'Content-Type': 'application/json',
+						...corsHeaders
+					},
+					body: JSON.stringify({
+						success: false,
+						error: `Unknown action: ${action}`
+					})
+				};
+		}
+
+		return {
+			statusCode: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify(result)
+		};
+	} catch (error) {
+		console.error('Content request error:', error);
+
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: error instanceof Error ? error.message : 'Internal server error'
 			})
 		};
 	}

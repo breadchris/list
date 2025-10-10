@@ -37,6 +37,7 @@ export async function generateScreenshot(url: string): Promise<ArrayBuffer> {
     apiToken: cloudflareApiKey,
   });
 
+  // @ts-ignore - Cloudflare SDK type definitions may not be complete
   const screenshot = await client.browserRendering.screenshot.create({
     account_id: accountId,
     url: url,
@@ -45,5 +46,5 @@ export async function generateScreenshot(url: string): Promise<ArrayBuffer> {
     }
   });
 
-  return screenshot as ArrayBuffer;
+  return screenshot as unknown as ArrayBuffer;
 }

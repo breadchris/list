@@ -243,11 +243,10 @@ export function VideoPlayer({
               backgroundColor: '#000000'
             }}
           />
-        </div>
 
-        {/* Custom Controls Overlay */}
-        {!isLoading && !error && isReady && (
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+          {/* Custom Controls Overlay */}
+          {!isLoading && !error && isReady && (
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 z-10">
             <div className="flex items-center gap-4">
               <button
                 onClick={handlePlayPause}
@@ -346,6 +345,7 @@ export function VideoPlayer({
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

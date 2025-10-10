@@ -49,7 +49,7 @@ export async function processTMDbSearchForContent(
       throw new Error(`TMDb API error: ${tmdbResponse.status}`);
     }
 
-    const searchResults: TMDbSearchResponse = await tmdbResponse.json();
+    const searchResults = await tmdbResponse.json() as TMDbSearchResponse;
 
     if (!searchResults.results || searchResults.results.length === 0) {
       return {

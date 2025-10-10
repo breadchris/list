@@ -91,9 +91,9 @@ export function AnnotationManager({
         </div>
       </div>
 
-      <div className="p-5 space-y-5 flex-1 overflow-y-auto min-h-0">
+      <div className="p-4 space-y-4 flex-1 overflow-y-auto min-h-0">
         {/* Add Annotation Controls */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -101,10 +101,10 @@ export function AnnotationManager({
             Current: {formatTime(currentTime)}
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-1 gap-2">
             <button
               onClick={handleAddMarker}
-              className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm flex items-center justify-center gap-2"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -115,7 +115,7 @@ export function AnnotationManager({
 
             <button
               onClick={handleAddRange}
-              className="px-4 py-2.5 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+              className="px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50 transition-colors text-sm flex items-center justify-center gap-2"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -126,9 +126,9 @@ export function AnnotationManager({
         </div>
 
         {/* Annotations List */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           {sortedAnnotations.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="text-center py-8">
               <svg className="h-12 w-12 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -142,7 +142,7 @@ export function AnnotationManager({
             </div>
           ) : (
             sortedAnnotations.map((annotation, index) => (
-              <div key={annotation.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <div key={annotation.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                 {editingId === annotation.id ? (
                   // Edit mode
                   <div className="space-y-3">
@@ -241,11 +241,11 @@ export function AnnotationManager({
 
         {/* Video Controls */}
         {annotations.length > 0 && (
-          <div className="pt-5 border-t border-gray-200 flex-shrink-0">
+          <div className="pt-4 border-t border-gray-200 flex-shrink-0">
             <div className="flex items-center justify-between">
               <button
                 onClick={onPlayPause}
-                className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium flex items-center gap-2"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm flex items-center gap-2"
               >
                 {isPlaying ? (
                   <>
