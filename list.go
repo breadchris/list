@@ -14,19 +14,6 @@ func createHTTPServer() *http.ServeMux {
 		serveReactApp(w, r, "index.tsx", "App")
 	})
 
-	// Legal pages
-	mux.HandleFunc("/terms-of-service", func(w http.ResponseWriter, r *http.Request) {
-		serveReactApp(w, r, "index.tsx", "App")
-	})
-
-	mux.HandleFunc("/privacy-policy", func(w http.ResponseWriter, r *http.Request) {
-		serveReactApp(w, r, "index.tsx", "App")
-	})
-
-	mux.HandleFunc("/refund-policy", func(w http.ResponseWriter, r *http.Request) {
-		serveReactApp(w, r, "index.tsx", "App")
-	})
-
 	// Component renderer endpoint for debugging
 	mux.HandleFunc("/render/", handleRenderComponent)
 
@@ -54,7 +41,8 @@ func serveReactApp(w http.ResponseWriter, r *http.Request, componentPath, compon
 	}
 
 	// Generate HTML page for the component
-	htmlPage := generateComponentHTML(componentName, componentPath)
+	//htmlPage := generateComponentHTML(componentName, componentPath)
+	htmlPage := generateRenderComponentHTML(componentName, componentPath)
 	w.Header().Set("Content-Type", "text/html")
 	w.Write([]byte(htmlPage))
 }
@@ -94,4 +82,3 @@ func generateDefaultHTML() string {
 </body>
 </html>`
 }
-

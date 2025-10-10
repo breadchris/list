@@ -32,13 +32,20 @@ export const YouTubeVideoCard: React.FC<YouTubeVideoCardProps> = ({
 
   // Get the best quality thumbnail
   const getThumbnailUrl = () => {
-    if (!metadata.youtube_thumbnails || metadata.youtube_thumbnails.length === 0) {
-      return null;
+    // First try to use thumbnails from metadata (from Lambda response)
+    if (metadata.youtube_thumbnails && metadata.youtube_thumbnails.length > 0) {
+      // Sort by width (largest first) and return the first one
+      const sorted = [...metadata.youtube_thumbnails].sort((a, b) => b.width - a.width);
+      return sorted[0].url;
     }
 
-    // Sort by width (largest first) and return the first one
-    const sorted = [...metadata.youtube_thumbnails].sort((a, b) => b.width - a.width);
-    return sorted[0].url;
+    // Fallback: Construct YouTube thumbnail URL from video ID
+    // This handles old data created before thumbnails were saved
+    if (metadata.youtube_video_id) {
+      return `https://img.youtube.com/vi/${metadata.youtube_video_id}/hqdefault.jpg`;
+    }
+
+    return null;
   };
 
   // Format duration from seconds to MM:SS or HH:MM:SS

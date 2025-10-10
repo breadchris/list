@@ -14,6 +14,7 @@ import { MicroGameOverlay } from './MicroGameOverlay';
 import { SEOProgressOverlay, SEOProgressItem } from './SEOProgressOverlay';
 import { MarkdownProgressOverlay } from './MarkdownProgressOverlay';
 import { YouTubeProgressOverlay } from './YouTubeProgressOverlay';
+import { YouTubeVideoAnnotatorModal } from './YouTubeVideoAnnotatorModal';
 import { TMDbSearchModal } from './TMDbSearchModal';
 import { SharingSettingsModal } from './SharingSettingsModal';
 import { GroupDropdown } from './GroupDropdown';
@@ -128,6 +129,10 @@ export const ListApp: React.FC = () => {
   // Claude Code Prompt modal state
   const [showClaudeCodeModal, setShowClaudeCodeModal] = useState(false);
   const [selectedContentForClaudeCode, setSelectedContentForClaudeCode] = useState<Content[]>([]);
+
+  // YouTube Video Annotator modal state
+  const [showYouTubeAnnotator, setShowYouTubeAnnotator] = useState(false);
+  const [selectedVideoForAnnotation, setSelectedVideoForAnnotation] = useState<Content | null>(null);
 
   // Track signup completion to prevent false toast notifications
   const hasShownWelcomeRef = useRef(false);
@@ -835,7 +840,73 @@ export const ListApp: React.FC = () => {
       toast.error('Error', 'Failed to process selected content for screenshot generation');
     }
   };
-  
+
+  const handleYouTubeAnnotation = async () => {
+    console.log('🎞️ YouTube Annotation button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    if (selectedIds.length > 1) {
+      toast.warning('Multiple items selected', 'Please select only one YouTube video to annotate');
+      return;
+    }
+
+    try {
+      // Get the content object for the selected ID
+      const contentId = selectedIds[0];
+      const content = await contentRepository.getContentById(contentId);
+
+      if (!content) {
+        toast.error('Content not found', 'Unable to find selected item in database');
+        return;
+      }
+
+      // Check if this is YouTube video content (has youtube_video_id in metadata)
+      if (!content.metadata?.youtube_video_id) {
+        toast.warning('Not a YouTube video', 'Please select a YouTube video to annotate');
+        return;
+      }
+
+      // Open YouTube annotator modal
+      setSelectedVideoForAnnotation(content);
+      setShowYouTubeAnnotator(true);
+
+      console.log('Opening YouTube annotator modal for video:', content.id);
+
+    } catch (error) {
+      console.error('Error during YouTube annotation:', error);
+      toast.error(
+        'Annotation failed',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+    } finally {
+      // Clear selection after processing
+      contentSelection.clearSelection();
+    }
+  };
+
+  const handleCloseYouTubeAnnotator = () => {
+    setShowYouTubeAnnotator(false);
+    setSelectedVideoForAnnotation(null);
+  };
+
+  const handleTimestampsCreated = () => {
+    // Refresh content list after adding timestamps
+    contentSelection.clearSelection();
+    setNewContent(undefined);
+  };
+
   // Define available workflow actions
   const workflowActions = [
     {
@@ -889,12 +960,22 @@ export const ListApp: React.FC = () => {
       }
     },
     {
+      id: 'youtube-annotate',
+      name: 'Annotate Video',
+      description: 'Add timestamps to YouTube videos',
+      icon: '🎞️',
+      onClick: () => {
+        console.log('🎞️ WorkflowAction onClick triggered for YouTube annotation');
+        handleYouTubeAnnotation();
+      }
+    },
+    {
       id: 'tmdb-search',
       name: 'Search TMDb',
       description: 'Search The Movie Database and add results',
-      icon: '🎞️',
+      icon: '🎥',
       onClick: () => {
-        console.log('🎞️ WorkflowAction onClick triggered for TMDb search');
+        console.log('🎥 WorkflowAction onClick triggered for TMDb search');
         handleTMDbSearch();
       }
     },
@@ -1853,6 +1934,14 @@ export const ListApp: React.FC = () => {
         parentContentId={currentParentId}
         onClose={handleCloseClaudeCodeModal}
         onContentGenerated={handleClaudeCodeContentGenerated}
+      />
+
+      {/* YouTube Video Annotator Modal */}
+      <YouTubeVideoAnnotatorModal
+        isVisible={showYouTubeAnnotator}
+        videoContent={selectedVideoForAnnotation}
+        onClose={handleCloseYouTubeAnnotator}
+        onTimestampsCreated={handleTimestampsCreated}
       />
 
           {/* Footer */}

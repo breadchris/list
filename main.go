@@ -317,10 +317,8 @@ func handleRenderComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate HTML page for component rendering
-	htmlPage := generateComponentHTML(componentName, componentPath)
-	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(htmlPage))
+	w.Header().Set("Content-Type", "text/javascript")
+	w.Write(result.OutputFiles[0].Contents)
 }
 
 // handleServeModule builds and serves a React component as an ES module
@@ -448,15 +446,19 @@ func buildComponentForRendering(sourceCode, resolveDir, sourcefile string) api.B
 			".tsx": api.LoaderTSX,
 			".css": api.LoaderCSS,
 		},
-		Format:          api.FormatESModule,
-		Bundle:          true,
-		Write:           false,
-		TreeShaking:     api.TreeShakingTrue,
-		Target:          api.ESNext,
-		JSX:             api.JSXAutomatic,
-		JSXImportSource: "react",
-		LogLevel:        api.LogLevelSilent,
-		External:        []string{},
+		Format:            api.FormatESModule,
+		Bundle:            true,
+		MinifyWhitespace:  true,
+		MinifyIdentifiers: true,
+		MinifySyntax:      true,
+		Write:             false,
+		TreeShaking:       api.TreeShakingTrue,
+		Target:            api.ESNext,
+		JSX:               api.JSXAutomatic,
+		JSXImportSource:   "react",
+		Sourcemap:         api.SourceMapInline,
+		LogLevel:          api.LogLevelSilent,
+		External:          []string{},
 		TsconfigRaw: `{
 			"compilerOptions": {
 				"jsx": "react-jsx",
@@ -565,6 +567,53 @@ func generateErrorHTML(componentPath string, errors []string) string {
     </div>
 </body>
 </html>`, componentPath, errorItems)
+}
+
+func generateRenderComponentHTML(componentName, componentPath string) string {
+	return fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <meta name="translate" content="no">
+    <title>%s - List App</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18",
+            "react-dom": "https://esm.sh/react-dom@18",
+            "react-dom/client": "https://esm.sh/react-dom@18/client",
+            "react/jsx-runtime": "https://esm.sh/react@18/jsx-runtime",
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+        }
+    }
+    </script>
+    <!-- Preload key Satoshi font files for better performance -->
+    <link rel="preload" href="/static/fonts/Satoshi-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
+    
+    <link rel="stylesheet" type="text/css" href="/static/styles.css">
+    <style>
+        #root { width: 100%%; height: 100vh; }
+        .error { 
+            padding: 20px; 
+            color: #dc2626; 
+            background: #fef2f2; 
+            border: 1px solid #fecaca; 
+            margin: 20px; 
+            border-radius: 8px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="/render/index.tsx"></script>
+</body>
+</html>`, componentName)
 }
 
 // generateComponentHTML creates an HTML page for rendering individual components

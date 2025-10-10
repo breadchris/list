@@ -307,6 +307,19 @@ export const ContentList: React.FC<ContentListProps> = ({
     }
   };
 
+  // Format timestamp in MM:SS or HH:MM:SS format
+  const formatTimestamp = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const isContentPublic = (content: Content): boolean => {
     const sharingData = content.metadata?.sharing as SharingMetadata;
     return sharingData?.isPublic || false;
@@ -612,6 +625,48 @@ export const ContentList: React.FC<ContentListProps> = ({
                           <p className="text-sm text-purple-800 whitespace-pre-wrap break-words">
                             {item.data}
                           </p>
+                        </div>
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : item.type === 'timestamp' ? (
+                      <div>
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">
+                            {item.metadata?.timestamp_type === 'range' ? 'Time Range' : 'Timestamp'}
+                          </span>
+                        </div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <h4 className="text-sm font-medium text-blue-900 mb-1">
+                            {item.data}
+                          </h4>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-mono text-blue-700">
+                              {formatTimestamp(item.metadata?.start_time || 0)}
+                              {item.metadata?.timestamp_type === 'range' && item.metadata?.end_time &&
+                                ` - ${formatTimestamp(item.metadata.end_time)}`
+                              }
+                            </span>
+                          </div>
+                          {item.metadata?.description && (
+                            <p className="text-xs text-blue-800 mt-1">
+                              {item.metadata.description}
+                            </p>
+                          )}
                         </div>
                         <TagDisplay tags={item.tags || []} isVisible={true} />
                         <div className="flex items-center gap-2 mt-2">

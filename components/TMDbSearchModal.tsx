@@ -92,7 +92,7 @@ export const TMDbSearchModal: React.FC<TMDbSearchModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
           <div className="flex justify-between items-center">
@@ -134,7 +134,7 @@ export const TMDbSearchModal: React.FC<TMDbSearchModalProps> = ({
           )}
 
           {!isLoading && searchResults.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="space-y-3">
               {searchResults.map((result) => {
                 const isSelected = selectedResults.has(result.tmdb_id);
 
@@ -142,59 +142,73 @@ export const TMDbSearchModal: React.FC<TMDbSearchModalProps> = ({
                   <div
                     key={result.tmdb_id}
                     onClick={() => toggleResult(result.tmdb_id)}
-                    className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                    className={`cursor-pointer rounded-lg border-2 transition-all p-3 ${
                       isSelected
-                        ? 'border-blue-500 shadow-lg transform scale-105'
-                        : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
-                    {/* Poster */}
-                    <div className="relative aspect-[2/3] bg-gray-100">
-                      {result.poster_url ? (
-                        <img
-                          src={result.poster_url}
-                          alt={result.title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400">
-                          <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-                          </svg>
-                        </div>
-                      )}
-
-                      {/* Selection Checkbox */}
-                      <div className="absolute top-2 right-2">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                          isSelected
-                            ? 'bg-blue-500'
-                            : 'bg-white bg-opacity-80'
-                        }`}>
-                          {isSelected && (
-                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    <div className="flex gap-4">
+                      {/* Poster Thumbnail */}
+                      <div className="flex-shrink-0 relative w-24 h-36 rounded overflow-hidden bg-gray-100">
+                        {result.poster_url ? (
+                          <img
+                            src={result.poster_url}
+                            alt={result.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
                             </svg>
-                          )}
+                          </div>
+                        )}
+
+                        {/* Selection Checkbox */}
+                        <div className="absolute top-2 right-2">
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                            isSelected
+                              ? 'bg-blue-500'
+                              : 'bg-white bg-opacity-90'
+                          }`}>
+                            {isSelected && (
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Media Type Badge */}
-                      <div className="absolute bottom-2 left-2">
-                        <span className="px-2 py-1 text-xs font-medium bg-black bg-opacity-70 text-white rounded">
-                          {result.media_type === 'movie' ? '🎬 Movie' : '📺 TV'}
-                        </span>
-                      </div>
-                    </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-base text-gray-900 mb-1">
+                              {result.title}
+                            </h3>
+                            {result.year && (
+                              <p className="text-sm text-gray-600">
+                                {result.year}
+                              </p>
+                            )}
+                          </div>
+                          <span className="flex-shrink-0 px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
+                            {result.media_type === 'movie' ? '🎬 Movie' : '📺 TV'}
+                          </span>
+                        </div>
 
-                    {/* Info */}
-                    <div className="p-3 bg-white">
-                      <h3 className="font-medium text-sm text-gray-900 line-clamp-2 mb-1">
-                        {result.title} {result.year && `(${result.year})`}
-                      </h3>
-                      <div className="flex items-center text-xs text-gray-600">
-                        <span className="mr-1">⭐</span>
-                        <span>{result.vote_average.toFixed(1)}</span>
+                        <p className="text-sm text-gray-700 line-clamp-3 mb-2">
+                          {result.overview}
+                        </p>
+
+                        {result.vote_average > 0 && (
+                          <div className="flex items-center text-sm text-gray-600">
+                            <span className="mr-1">⭐</span>
+                            <span className="font-medium">{result.vote_average.toFixed(1)}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
