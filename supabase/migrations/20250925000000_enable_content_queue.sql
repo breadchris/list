@@ -22,7 +22,7 @@ BEGIN
       $CRON$
       select
         net.http_post(
-            url:='https://zazsrepfnamdmibcyenx.supabase.co/functions/v1/content',
+            url:='https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com/content',
             headers:=jsonb_build_object(),
             body:='{"action": "queue-process"}',
             timeout_milliseconds:=1000

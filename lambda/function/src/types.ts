@@ -13,7 +13,7 @@ export interface ContentQueueJob {
 }
 
 export interface ContentRequest {
-	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'youtube-playlist-extract' | 'tmdb-search';
+	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'vibe-coding' | 'claude-code-status' | 'youtube-playlist-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job';
 	payload: any;
 	useQueue?: boolean;
 }
@@ -105,6 +105,28 @@ export interface ClaudeCodeExecutePayload {
 	parent_content_id?: string | null;
 }
 
+// Claude Code Job Status Types
+export interface ClaudeCodeStatusPayload {
+	job_id: string;
+}
+
+export interface ClaudeCodeJobResponse {
+	job_id: string;
+	status: 'pending' | 'running' | 'completed' | 'error';
+	created_at: string;
+	result?: {
+		success: boolean;
+		session_id?: string;
+		messages?: any[];
+		s3_url?: string;
+		error?: string;
+		stdout?: string;
+		stderr?: string;
+		exitCode?: number;
+	};
+	error?: string;
+}
+
 // YouTube Playlist Types
 export interface YouTubePlaylistPayload {
 	selectedContent: ContentItem[];
@@ -184,4 +206,82 @@ export interface OpenAIMessage {
 	content: string;
 	tool_calls?: any[];
 	tool_call_id?: string;
+}
+
+// Libgen Types
+export interface LibgenSearchPayload {
+	selectedContent: ContentItem[];
+	searchType?: 'default' | 'title' | 'author';
+	topics?: string[];
+	filters?: Record<string, string>;
+	maxResults?: number; // Max results per content item
+}
+
+// Job Queue Types
+export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface ContentJob {
+	job_id: string;
+	user_id: string;
+	group_id: string;
+	action: string;
+	payload: any;
+	created_at: string;
+}
+
+export interface JobStatusResponse {
+	job_id: string;
+	status: JobStatus;
+	action: string;
+	created_at: string;
+	updated_at: string;
+	started_at?: string;
+	completed_at?: string;
+	progress?: {
+		current?: number;
+		total?: number;
+		message?: string;
+	};
+	result?: any;
+	error?: string;
+	content_ids?: string[];
+}
+
+export interface CreateJobResponse {
+	success: boolean;
+	job_id?: string;
+	status?: JobStatus;
+	error?: string;
+}
+
+export interface ListJobsRequest {
+	status?: JobStatus | JobStatus[];
+	limit?: number;
+	offset?: number;
+}
+
+export interface ListJobsResponse {
+	success: boolean;
+	jobs?: JobStatusResponse[];
+	total?: number;
+	error?: string;
+}
+
+export interface CancelJobRequest {
+	job_id: string;
+}
+
+export interface CancelJobResponse {
+	success: boolean;
+	error?: string;
+}
+
+// SQS Event Types
+export interface SQSMessageBody {
+	job_id: string;
+	user_id: string;
+	group_id: string;
+	action: string;
+	payload: any;
+	created_at: string;
 }

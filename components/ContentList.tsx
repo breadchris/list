@@ -13,6 +13,7 @@ import { ContentSelectionState } from '../hooks/useContentSelection';
 import { ContentListSkeleton } from './SkeletonComponents';
 import { ContentInput } from './ContentInput';
 import { TagButton } from './TagButton';
+import { TruncatedContent } from './TruncatedContent';
 
 interface ContentListProps {
   groupId: string;
@@ -26,6 +27,7 @@ interface ContentListProps {
   onInputClose?: () => void;
   onContentAdded?: (content: Content) => void;
   viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
+  contentType?: 'text' | 'ai-chat';
 }
 
 interface TagDisplayProps {
@@ -54,6 +56,50 @@ const TagDisplay: React.FC<TagDisplayProps> = ({ tags, isVisible }) => {
   );
 };
 
+interface DateDividerProps {
+  date: string;
+}
+
+const DateDivider: React.FC<DateDividerProps> = ({ date }) => {
+  const formatDateDividerLocal = (dateString: string): string => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    // Normalize to midnight for comparison
+    const dateNormalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const todayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const yesterdayNormalized = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+
+    if (dateNormalized.getTime() === todayNormalized.getTime()) {
+      return 'Today';
+    } else if (dateNormalized.getTime() === yesterdayNormalized.getTime()) {
+      return 'Yesterday';
+    } else {
+      // Format as "Monday, January 15" or similar
+      return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: dateNormalized.getFullYear() !== todayNormalized.getFullYear() ? 'numeric' : undefined
+      });
+    }
+  };
+
+  const label = formatDateDividerLocal(date);
+
+  return (
+    <div className="flex items-center my-6 first:mt-0">
+      <div className="flex-1 border-t border-gray-200"></div>
+      <div className="px-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
+        {label}
+      </div>
+      <div className="flex-1 border-t border-gray-200"></div>
+    </div>
+  );
+};
+
 export const ContentList: React.FC<ContentListProps> = ({
   groupId,
   newContent,
@@ -65,7 +111,8 @@ export const ContentList: React.FC<ContentListProps> = ({
   showInput = false,
   onInputClose,
   onContentAdded,
-  viewMode = 'chronological'
+  viewMode = 'chronological',
+  contentType = 'text'
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -207,6 +254,24 @@ export const ContentList: React.FC<ContentListProps> = ({
     };
   }, [groupId, newContent, parentContentId, queryClient]);
 
+  // Set up real-time subscription for content_tags changes
+  useEffect(() => {
+    if (!groupId) return;
+
+    const tagsSubscription = contentRepository.subscribeToContentTags(
+      groupId,
+      (payload) => {
+        // When tags change, invalidate content queries to refetch with updated tags
+        queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContentId) });
+        queryClient.invalidateQueries({ queryKey: QueryKeys.contentSearch(groupId) });
+      }
+    );
+
+    return () => {
+      tagsSubscription.unsubscribe();
+    };
+  }, [groupId, parentContentId, queryClient]);
+
   // Auto-retry mechanism for stuck queries - must be before early return
   useEffect(() => {
     // Only run if we have a groupId and are not in initial loading
@@ -307,6 +372,39 @@ export const ContentList: React.FC<ContentListProps> = ({
     }
   };
 
+  // Get date at midnight (normalized) for grouping
+  const getDateKey = (dateString: string): string => {
+    const date = new Date(dateString);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString();
+  };
+
+  // Format date for divider display
+  const formatDateDivider = (dateString: string): string => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    // Normalize to midnight for comparison
+    const dateNormalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const todayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const yesterdayNormalized = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+
+    if (dateNormalized.getTime() === todayNormalized.getTime()) {
+      return 'Today';
+    } else if (dateNormalized.getTime() === yesterdayNormalized.getTime()) {
+      return 'Yesterday';
+    } else {
+      // Format as "Monday, January 15" or similar
+      return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: dateNormalized.getFullYear() !== todayNormalized.getFullYear() ? 'numeric' : undefined
+      });
+    }
+  };
+
   // Format timestamp in MM:SS or HH:MM:SS format
   const formatTimestamp = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -350,6 +448,25 @@ export const ContentList: React.FC<ContentListProps> = ({
   const currentError = isSearching ? searchError : contentError;
   const currentStatus = isSearching ? searchStatus : contentStatus;
 
+  // Group content by date
+  const groupedContent = useMemo(() => {
+    const groups: { [dateKey: string]: Content[] } = {};
+
+    displayItems.forEach(item => {
+      const dateKey = getDateKey(item.created_at);
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(item);
+    });
+
+    // Convert to sorted array of [dateKey, items] pairs
+    return Object.entries(groups).sort((a, b) => {
+      // Sort by date descending (newest first)
+      return new Date(b[0]).getTime() - new Date(a[0]).getTime();
+    });
+  }, [displayItems]);
+
   // Skeleton delay effect to prevent flashing
   // useEffect(() => {
   //   if (currentLoading) {
@@ -388,12 +505,6 @@ export const ContentList: React.FC<ContentListProps> = ({
         {parentContent && !isSearching && (
           <div className="bg-blue-50 border-b-2 border-blue-200">
             <div className="p-4 sm:p-5">
-              <div className="flex items-center mb-3">
-                <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-                <span className="text-sm font-semibold text-blue-800 uppercase tracking-wide">Parent Item</span>
-              </div>
               <div className="bg-white rounded-lg border border-blue-200 p-4">
                 {parentContent.type === 'seo' ? (
                   <div>
@@ -488,6 +599,7 @@ export const ContentList: React.FC<ContentListProps> = ({
             onContentAdded={onContentAdded}
             isVisible={showInput}
             onClose={onInputClose}
+            contentType={contentType}
           />
         )}
 
@@ -518,6 +630,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                   onContentAdded={onContentAdded}
                   isVisible={showInput}
                   onClose={onInputClose}
+                  contentType={contentType}
                 />
               </div>
             )}
@@ -532,7 +645,10 @@ export const ContentList: React.FC<ContentListProps> = ({
                   </div>
                 </div>
               )}
-              {displayItems.map((item) => {
+              {groupedContent.map(([dateKey, items]) => (
+                <React.Fragment key={dateKey}>
+                  <DateDivider date={dateKey} />
+                  {items.map((item) => {
               const isSelected = selection.selectedItems.has(item.id);
               return (
                 <div
@@ -621,11 +737,13 @@ export const ContentList: React.FC<ContentListProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                          <p className="text-sm text-purple-800 whitespace-pre-wrap break-words">
-                            {item.data}
-                          </p>
-                        </div>
+                        <TruncatedContent maxHeight={200}>
+                          <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                            <p className="text-sm text-purple-800 whitespace-pre-wrap break-words">
+                              {item.data}
+                            </p>
+                          </div>
+                        </TruncatedContent>
                         <TagDisplay tags={item.tags || []} isVisible={true} />
                         <div className="flex items-center gap-2 mt-2">
                           <p className="text-xs text-gray-500">
@@ -709,6 +827,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                         <LinkifiedText
                           text={item.data}
                           className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
+                          maxHeight={200}
                         />
                         {/* URL Preview Image */}
                         {item.metadata?.url_preview && (
@@ -744,6 +863,25 @@ export const ContentList: React.FC<ContentListProps> = ({
                         </div>
                       )}
 
+                      {/* Selection button */}
+                      {hoveredItemId === item.id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!selection.isSelectionMode) {
+                              selection.toggleSelectionMode();
+                            }
+                            selection.toggleItem(item.id);
+                          }}
+                          className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
+                          title="Select for workflow"
+                        >
+                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                      )}
+
                       {/* Tag button */}
                       <TagButton
                         contentId={item.id}
@@ -756,6 +894,8 @@ export const ContentList: React.FC<ContentListProps> = ({
               </div>
               );
             })}
+                </React.Fragment>
+              ))}
             </div>
 
               {/* Show skeleton loading for initial content load (with delay to prevent flashing) */}

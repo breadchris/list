@@ -6,6 +6,7 @@ import type {
   MarkdownExtractPayload,
   YouTubePlaylistPayload,
   TMDbSearchPayload,
+  LibgenSearchPayload,
   ContentItem,
   OpenAIMessage
 } from './types.js';
@@ -13,6 +14,7 @@ import { extractUrls, extractYouTubePlaylistUrls, fetchSEOMetadata } from './uti
 import { callOpenAI, callOpenAIChat, formatContentForContext } from './openai-client.js';
 import { fetchMarkdownFromCloudflare } from './cloudflare-client.js';
 import { processTMDbSearchForContent } from './tmdb-client.js';
+import { searchLibgen, type BookInfo } from './libgen-client.js';
 
 // =============================================================================
 // SEO EXTRACTION
@@ -382,7 +384,7 @@ export async function processMarkdownForContent(supabase: any, contentItem: Cont
       // Fetch markdown from Cloudflare
       const markdown = await fetchMarkdownFromCloudflare(url);
 
-      // Create markdown content as sibling (same parent as original content)
+      // Create markdown content as child of the requesting content
       const { data: markdownContent, error: createError } = await supabase
         .from('content')
         .insert({
@@ -390,7 +392,7 @@ export async function processMarkdownForContent(supabase: any, contentItem: Cont
           data: markdown,
           group_id: contentItem.group_id,
           user_id: contentItem.user_id,
-          parent_content_id: contentItem.parent_content_id, // Same parent = sibling
+          parent_content_id: contentItem.id, // Child of the content that requested markdown
           metadata: {
             source_url: url,
             extracted_at: new Date().toISOString(),
@@ -576,4 +578,157 @@ export async function handleTMDbSearch(supabase: any, payload: TMDbSearchPayload
     success: true,
     data: results
   };
+}
+
+// =============================================================================
+// LIBGEN BOOK SEARCH
+// =============================================================================
+
+export async function handleLibgenSearch(supabase: any, payload: LibgenSearchPayload): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processLibgenSearchForContent(
+        supabase,
+        contentItem,
+        payload.searchType || 'default',
+        payload.topics || ['libgen'],
+        payload.filters,
+        payload.maxResults || 10
+      );
+      results.push(result);
+    } catch (error: any) {
+      console.error(`Error processing Libgen search for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+        books_found: 0,
+        books_created: 0
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+async function processLibgenSearchForContent(
+  supabase: any,
+  contentItem: ContentItem,
+  searchType: 'default' | 'title' | 'author',
+  topics: string[],
+  filters?: Record<string, string>,
+  maxResults: number = 10
+) {
+  // Use content data as search query
+  const query = contentItem.data.trim();
+
+  if (!query) {
+    return {
+      content_id: contentItem.id,
+      success: true,
+      books_found: 0,
+      books_created: 0,
+      book_children: []
+    };
+  }
+
+  // Search Libgen
+  const books = await searchLibgen({
+    query,
+    search_type: searchType,
+    topics,
+    filters
+  });
+
+  const bookChildren: any[] = [];
+  let booksCreated = 0;
+
+  // Limit results
+  const limitedBooks = books.slice(0, maxResults);
+
+  // Create child content items for each book
+  for (const book of limitedBooks) {
+    try {
+      // Format book data
+      const bookData = formatBookData(book);
+      const bookMetadata = {
+        libgen: {
+          id: book.id,
+          md5: book.md5,
+          publisher: book.publisher,
+          year: book.year,
+          language: book.language,
+          pages: book.pages,
+          size: book.size,
+          extension: book.extension,
+          mirrors: book.mirrors,
+          search_query: query,
+          search_type: searchType
+        }
+      };
+
+      // Insert book as child content
+      const { data: bookContent, error: insertError } = await supabase
+        .from('content')
+        .insert({
+          type: 'text',
+          data: bookData,
+          metadata: bookMetadata,
+          group_id: contentItem.group_id,
+          user_id: contentItem.user_id,
+          parent_content_id: contentItem.id
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('Error inserting book content:', insertError);
+        continue;
+      }
+
+      bookChildren.push(bookContent);
+      booksCreated++;
+    } catch (error: any) {
+      console.error(`Error creating content for book ${book.title}:`, error);
+    }
+  }
+
+  return {
+    content_id: contentItem.id,
+    success: true,
+    books_found: books.length,
+    books_created: booksCreated,
+    book_children: bookChildren
+  };
+}
+
+function formatBookData(book: BookInfo): string {
+  const parts = [];
+
+  if (book.title) {
+    parts.push(`📚 ${book.title}`);
+  }
+
+  if (book.author) {
+    parts.push(`👤 ${book.author}`);
+  }
+
+  const details = [];
+  if (book.year) details.push(book.year);
+  if (book.publisher) details.push(book.publisher);
+  if (book.language) details.push(book.language);
+  if (book.pages) details.push(`${book.pages} pages`);
+  if (book.size) details.push(book.size);
+  if (book.extension) details.push(book.extension.toUpperCase());
+
+  if (details.length > 0) {
+    parts.push(details.join(' • '));
+  }
+
+  return parts.join('\n');
 }

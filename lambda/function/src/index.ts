@@ -1,17 +1,19 @@
-import type { APIGatewayProxyHandlerV2, APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { APIGatewayProxyHandlerV2, APIGatewayProxyEventV2, APIGatewayProxyResultV2, SQSEvent, SQSRecord } from 'aws-lambda';
 import { SessionManager } from './session-manager.js';
-import { executeClaudeCode } from './claude-executor.js';
+import { executeClaudeCode, executeClaudeCodeAsync } from './claude-executor.js';
 import { getPlaylistVideos } from './youtube-client.js';
 import { getSupabaseClient } from './supabase-client.js';
+import { JobManager } from './job-manager.js';
 import {
 	handleSEOExtract,
 	handleLLMGenerate,
 	handleChatMessage,
 	handleMarkdownExtract,
 	handleYouTubePlaylistExtract,
-	handleTMDbSearch
+	handleTMDbSearch,
+	handleLibgenSearch
 } from './content-handlers.js';
-import type { ContentRequest } from './types.js';
+import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
 import { writeFileSync } from 'fs';
 
 // Helper to flush stdout/stderr before Lambda freezes
@@ -50,9 +52,158 @@ const corsHeaders = {
 	'Access-Control-Max-Age': '86400',
 };
 
+/**
+ * Generate a unique job ID for async Claude Code execution
+ */
+function generateJobId(): string {
+	const timestamp = Date.now().toString(36);
+	const randomPart = Math.random().toString(36).substring(2, 15);
+	return `job-${timestamp}-${randomPart}`;
+}
+
+/**
+ * Handle SQS event - process jobs from the queue
+ */
+async function handleSQSEvent(event: SQSEvent): Promise<any> {
+	console.log(`Processing ${event.Records.length} SQS messages`);
+
+	const supabase = getSupabaseClient();
+	const jobManager = new JobManager(supabase);
+
+	// Track failed message IDs for partial batch failure reporting
+	const batchItemFailures: Array<{ itemIdentifier: string }> = [];
+
+	for (const record of event.Records) {
+		try {
+			console.log(`Processing message: ${record.messageId}`);
+
+			// Parse SQS message body
+			const message: SQSMessageBody = JSON.parse(record.body);
+			const { job_id, action, payload } = message;
+
+			console.log(`Job ${job_id}: Starting processing for action: ${action}`);
+
+			// Load job from database
+			const job = await jobManager.getJob(job_id);
+			if (!job) {
+				console.error(`Job ${job_id} not found in database`);
+				// Don't retry if job doesn't exist
+				continue;
+			}
+
+			// Check if job was cancelled
+			if (job.status === 'cancelled') {
+				console.log(`Job ${job_id} was cancelled, skipping`);
+				continue;
+			}
+
+			// Mark job as processing
+			await jobManager.startJob(job_id);
+
+			// Execute the content handler based on action
+			let result;
+			let content_ids: string[] = [];
+
+			try {
+				switch (action) {
+					case 'seo-extract':
+						result = await handleSEOExtract(supabase, payload);
+						// Extract content IDs from result
+						if (result.data) {
+							content_ids = result.data.flatMap((item: any) =>
+								item.seo_children?.map((child: any) => child.id) || []
+							);
+						}
+						break;
+
+					case 'llm-generate':
+						result = await handleLLMGenerate(supabase, payload);
+						break;
+
+					case 'chat-message':
+						result = await handleChatMessage(supabase, payload);
+						break;
+
+					case 'markdown-extract':
+						result = await handleMarkdownExtract(supabase, payload);
+						if (result.data) {
+							content_ids = result.data.flatMap((item: any) =>
+								item.markdown_children?.map((child: any) => child.id) || []
+							);
+						}
+						break;
+
+					case 'youtube-playlist-extract':
+						result = await handleYouTubePlaylistExtract(supabase, payload);
+						if (result.data) {
+							content_ids = result.data.flatMap((item: any) =>
+								item.videos_created?.map((video: any) => video.id) || []
+							);
+						}
+						break;
+
+					case 'tmdb-search':
+						result = await handleTMDbSearch(supabase, payload);
+						if (result.data) {
+							content_ids = result.data.flatMap((item: any) =>
+								item.results_created?.map((r: any) => r.id) || []
+							);
+						}
+						break;
+
+					case 'libgen-search':
+						result = await handleLibgenSearch(supabase, payload);
+						if (result.data) {
+							content_ids = result.data.flatMap((item: any) =>
+								item.book_children?.map((book: any) => book.id) || []
+							);
+						}
+						break;
+
+					default:
+						throw new Error(`Unknown action: ${action}`);
+				}
+
+				// Mark job as completed
+				await jobManager.completeJob({
+					job_id,
+					result,
+					content_ids: content_ids.length > 0 ? content_ids : undefined
+				});
+
+				console.log(`Job ${job_id}: Completed successfully`);
+
+			} catch (handlerError) {
+				// Handler failed - mark job as failed
+				const errorMessage = handlerError instanceof Error ? handlerError.message : 'Handler execution failed';
+				console.error(`Job ${job_id}: Handler failed:`, errorMessage);
+
+				await jobManager.failJob({
+					job_id,
+					error: errorMessage
+				});
+
+				// Add to batch failures for retry
+				batchItemFailures.push({ itemIdentifier: record.messageId });
+			}
+
+		} catch (error) {
+			// Error processing this message - add to batch failures
+			console.error(`Error processing message ${record.messageId}:`, error);
+			batchItemFailures.push({ itemIdentifier: record.messageId });
+		}
+	}
+
+	// Return batch item failures for partial batch failure handling
+	// This allows SQS to retry only the failed messages
+	return {
+		batchItemFailures
+	};
+}
+
 export const handler: APIGatewayProxyHandlerV2 = async (
 	event: APIGatewayProxyEventV2 | any
-): Promise<APIGatewayProxyResultV2> => {
+): Promise<APIGatewayProxyResultV2 | any> => {
 	// Direct stderr write - should bypass all buffering
 	process.stderr.write('=== HANDLER STARTED ===\n');
 	process.stderr.write(`Event: ${JSON.stringify(event)}\n`);
@@ -60,11 +211,18 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 	console.log('LAMBDA_START: Handler invoked');
 	console.log('LAMBDA_EVENT:', JSON.stringify(event, null, 2));
 
-	// Handle direct Lambda invocation (testing) vs API Gateway invocation
-	const isDirectInvocation = !event.requestContext;
+	// Detect invocation source
+	const isSQSEvent = event.Records && Array.isArray(event.Records) && event.Records[0]?.eventSource === 'aws:sqs';
+	const isAPIGateway = event.requestContext !== undefined;
 
-	if (isDirectInvocation) {
-		// Direct invocation - event is the ClaudeCodeRequest
+	// Handle SQS event (job processing)
+	if (isSQSEvent) {
+		process.stderr.write('SQS event detected\n');
+		return await handleSQSEvent(event);
+	}
+
+	// Handle direct Lambda invocation (testing)
+	if (!isAPIGateway) {
 		process.stderr.write('Direct invocation detected\n');
 		const result = await handleClaudeCodeRequest(event as ClaudeCodeRequest);
 		await flushLogs();
@@ -346,6 +504,385 @@ async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGate
 	}
 }
 
+async function handleClaudeCodeJobSubmit(body: ClaudeCodeRequest): Promise<APIGatewayProxyResultV2> {
+	console.log('handleClaudeCodeJobSubmit called with:', JSON.stringify(body, null, 2));
+
+	const { prompt, session_id } = body;
+
+	if (!prompt) {
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'Missing required parameter: prompt'
+			})
+		};
+	}
+
+	const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+	if (!anthropicApiKey) {
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'ANTHROPIC_API_KEY not configured'
+			})
+		};
+	}
+
+	const bucketName = process.env.S3_BUCKET_NAME;
+	if (!bucketName) {
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'S3_BUCKET_NAME not configured'
+			})
+		};
+	}
+
+	try {
+		const sessionManager = new SessionManager(bucketName, process.env.AWS_REGION);
+
+		// Generate unique job ID
+		const job_id = generateJobId();
+
+		// Store initial job status
+		await sessionManager.storeJobStatus(job_id, 'pending');
+
+		// Download session files if session_id provided
+		let sessionFiles: any = undefined;
+		if (session_id) {
+			const exists = await sessionManager.sessionExists(session_id);
+			if (exists) {
+				sessionFiles = await sessionManager.downloadSession(session_id);
+			}
+		}
+
+		// Start async execution (non-blocking)
+		setImmediate(() => {
+			executeClaudeCodeAsync(
+				job_id,
+				{
+					prompt,
+					sessionFiles,
+					resumeSessionId: session_id
+				},
+				sessionManager
+			).catch(error => {
+				console.error(`[Job ${job_id}] Async execution failed:`, error);
+			});
+		});
+
+		// Return job ID immediately
+		const response: ClaudeCodeJobResponse = {
+			job_id,
+			status: 'pending',
+			created_at: new Date().toISOString()
+		};
+
+		return {
+			statusCode: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify(response)
+		};
+	} catch (error) {
+		console.error('Claude Code job submission error:', error);
+
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error occurred'
+			})
+		};
+	}
+}
+
+async function handleClaudeCodeJobStatus(payload: ClaudeCodeStatusPayload): Promise<APIGatewayProxyResultV2> {
+	console.log('handleClaudeCodeJobStatus called with:', JSON.stringify(payload, null, 2));
+
+	const { job_id } = payload;
+
+	if (!job_id) {
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'Missing required parameter: job_id'
+			})
+		};
+	}
+
+	const bucketName = process.env.S3_BUCKET_NAME;
+	if (!bucketName) {
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'S3_BUCKET_NAME not configured'
+			})
+		};
+	}
+
+	try {
+		const sessionManager = new SessionManager(bucketName, process.env.AWS_REGION);
+
+		// Check if job exists
+		const jobExists = await sessionManager.jobExists(job_id);
+		if (!jobExists) {
+			return {
+				statusCode: 404,
+				headers: {
+					'Content-Type': 'application/json',
+					...corsHeaders
+				},
+				body: JSON.stringify({
+					success: false,
+					error: `Job ${job_id} not found`
+				})
+			};
+		}
+
+		// Get job status
+		const status = await sessionManager.getJobStatus(job_id);
+
+		// If completed, get the result
+		let result;
+		if (status.status === 'completed') {
+			result = await sessionManager.getJobResult(job_id);
+		}
+
+		const response: ClaudeCodeJobResponse = {
+			job_id,
+			status: status.status,
+			created_at: status.created_at,
+			result: result,
+			error: status.error
+		};
+
+		return {
+			statusCode: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify(response)
+		};
+	} catch (error) {
+		console.error('Claude Code job status error:', error);
+
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error occurred'
+			})
+		};
+	}
+}
+
+/**
+ * Get specific job status
+ */
+async function handleGetJobStatus(jobManager: JobManager, payload: any): Promise<APIGatewayProxyResultV2> {
+	const { job_id } = payload;
+
+	if (!job_id) {
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'Missing required parameter: job_id'
+			})
+		};
+	}
+
+	try {
+		const job = await jobManager.getJob(job_id);
+
+		if (!job) {
+			return {
+				statusCode: 404,
+				headers: {
+					'Content-Type': 'application/json',
+					...corsHeaders
+				},
+				body: JSON.stringify({
+					success: false,
+					error: 'Job not found'
+				})
+			};
+		}
+
+		return {
+			statusCode: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: true,
+				job
+			})
+		};
+	} catch (error) {
+		console.error('Error getting job status:', error);
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: error instanceof Error ? error.message : 'Failed to get job status'
+			})
+		};
+	}
+}
+
+/**
+ * List user's jobs with optional filtering
+ */
+async function handleListJobs(jobManager: JobManager, payload: any): Promise<APIGatewayProxyResultV2> {
+	const { user_id, status, limit, offset } = payload;
+
+	if (!user_id) {
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'Missing required parameter: user_id'
+			})
+		};
+	}
+
+	try {
+		const jobs = await jobManager.listUserJobs({
+			user_id,
+			status,
+			limit,
+			offset
+		});
+
+		return {
+			statusCode: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: true,
+				jobs,
+				total: jobs.length
+			})
+		};
+	} catch (error) {
+		console.error('Error listing jobs:', error);
+		return {
+			statusCode: 500,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: error instanceof Error ? error.message : 'Failed to list jobs'
+			})
+		};
+	}
+}
+
+/**
+ * Cancel a pending job
+ */
+async function handleCancelJob(jobManager: JobManager, payload: any): Promise<APIGatewayProxyResultV2> {
+	const { job_id, user_id } = payload;
+
+	if (!job_id || !user_id) {
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'Missing required parameters: job_id, user_id'
+			})
+		};
+	}
+
+	try {
+		const cancelled = await jobManager.cancelJob(job_id, user_id);
+
+		return {
+			statusCode: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: true,
+				cancelled
+			})
+		};
+	} catch (error) {
+		console.error('Error cancelling job:', error);
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: error instanceof Error ? error.message : 'Failed to cancel job'
+			})
+		};
+	}
+}
+
 async function handleContentRequest(request: ContentRequest): Promise<APIGatewayProxyResultV2> {
 	const { action, payload } = request;
 
@@ -365,32 +902,114 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 
 	try {
 		const supabase = getSupabaseClient();
+		const queueUrl = process.env.CONTENT_QUEUE_URL;
+		const jobManager = new JobManager(supabase, queueUrl);
+
+		// Actions that should be enqueued (async processing)
+		const queueableActions = [
+			'seo-extract',
+			'llm-generate',
+			'markdown-extract',
+			'youtube-playlist-extract',
+			'tmdb-search',
+			'libgen-search'
+		];
+
+		if (queueableActions.includes(action)) {
+			// Extract user_id and group_id from payload
+			// Assuming selectedContent[0] has these fields
+			const firstContent = payload.selectedContent?.[0];
+			if (!firstContent) {
+				return {
+					statusCode: 400,
+					headers: {
+						'Content-Type': 'application/json',
+						...corsHeaders
+					},
+					body: JSON.stringify({
+						success: false,
+						error: 'Missing selectedContent in payload'
+					})
+				};
+			}
+
+			const user_id = firstContent.user_id;
+			const group_id = firstContent.group_id;
+
+			if (!user_id || !group_id) {
+				return {
+					statusCode: 400,
+					headers: {
+						'Content-Type': 'application/json',
+						...corsHeaders
+					},
+					body: JSON.stringify({
+						success: false,
+						error: 'Missing user_id or group_id in selectedContent'
+					})
+				};
+			}
+
+			// Create job in database
+			const job = await jobManager.createJob({
+				user_id,
+				group_id,
+				action,
+				payload
+			});
+
+			// Enqueue job to SQS
+			if (queueUrl) {
+				await jobManager.enqueueJob(job);
+			} else {
+				console.warn('Queue URL not configured - job created but not enqueued');
+			}
+
+			// Return job ID immediately
+			return {
+				statusCode: 200,
+				headers: {
+					'Content-Type': 'application/json',
+					...corsHeaders
+				},
+				body: JSON.stringify({
+					success: true,
+					job_id: job.id,
+					status: 'pending'
+				})
+			};
+		}
+
+		// Handle special actions that don't use queue
 		let result;
 
 		switch (action) {
-			case 'seo-extract':
-				result = await handleSEOExtract(supabase, payload);
-				break;
-
-			case 'llm-generate':
-				result = await handleLLMGenerate(supabase, payload);
-				break;
-
 			case 'chat-message':
 				result = await handleChatMessage(supabase, payload);
 				break;
 
-			case 'markdown-extract':
-				result = await handleMarkdownExtract(supabase, payload);
-				break;
+			case 'claude-code':
+			case 'vibe-coding':
+				// Extract prompt and session_id from payload
+				const { prompt, session_id } = payload;
+				// Delegate to async job submission handler
+				return await handleClaudeCodeJobSubmit({ prompt, session_id });
 
-			case 'youtube-playlist-extract':
-				result = await handleYouTubePlaylistExtract(supabase, payload);
-				break;
+			case 'claude-code-status':
+				// Delegate to job status handler
+				return await handleClaudeCodeJobStatus(payload as ClaudeCodeStatusPayload);
 
-			case 'tmdb-search':
-				result = await handleTMDbSearch(supabase, payload);
-				break;
+			case 'get-job':
+				// Get specific job status
+				return await handleGetJobStatus(jobManager, payload);
+
+			case 'list-jobs':
+				// List user's jobs
+				return await handleListJobs(jobManager, payload);
+
+			case 'cancel-job':
+				// Cancel a pending job
+				return await handleCancelJob(jobManager, payload);
 
 			default:
 				return {

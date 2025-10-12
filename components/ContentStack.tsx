@@ -24,6 +24,7 @@ interface ContentStackProps {
   onInputClose?: () => void;
   onContentAdded?: (content: Content) => void;
   viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
+  contentType?: 'text' | 'ai-chat';
 }
 
 export const ContentStack: React.FC<ContentStackProps> = ({
@@ -37,7 +38,8 @@ export const ContentStack: React.FC<ContentStackProps> = ({
   showInput = false,
   onInputClose,
   onContentAdded,
-  viewMode = 'chronological'
+  viewMode = 'chronological',
+  contentType = 'text'
 }) => {
   const deleteContentMutation = useDeleteContentMutation();
   const toast = useToast();
@@ -185,14 +187,15 @@ export const ContentStack: React.FC<ContentStackProps> = ({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Content Input */}
-      {showInput && (
+      {showInput && onInputClose && (
         <div className="border-b border-gray-200 bg-white">
           <ContentInput
             groupId={groupId}
             parentContentId={parentContentId}
             onContentAdded={handleContentAdded}
+            isVisible={showInput}
             onClose={onInputClose}
-            autoFocus={true}
+            contentType={contentType}
           />
         </div>
       )}

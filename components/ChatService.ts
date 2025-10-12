@@ -1,4 +1,5 @@
 import { supabase } from './SupabaseClient';
+import { LambdaClient } from './LambdaClient';
 
 export interface ChatRequest {
   chat_content_id: string;  // Parent chat content ID
@@ -29,34 +30,23 @@ export class ChatService {
         throw new Error('Group ID is required');
       }
 
-      // Call the consolidated content function with chat-message action
-      const { data, error } = await supabase.functions.invoke('content', {
-        body: {
-          action: 'chat-message',
-          payload: {
-            chat_content_id: request.chat_content_id,
-            message: request.message,
-            group_id: request.group_id
-          }
+      // Call Lambda content endpoint
+      const response = await LambdaClient.invoke({
+        action: 'chat-message',
+        payload: {
+          chat_content_id: request.chat_content_id,
+          message: request.message,
+          group_id: request.group_id
         }
       });
 
-      if (error) {
-        console.error('Edge Function error:', error);
-        throw new Error(`Chat service error: ${error.message || 'Unknown error'}`);
-      }
-
-      if (!data) {
-        throw new Error('No response from chat service');
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || 'Chat message failed');
+      if (!response.success) {
+        throw new Error(response.error || 'Chat message failed');
       }
 
       return {
         success: true,
-        assistant_message: data.assistant_message
+        assistant_message: response.data.assistant_message
       };
 
     } catch (error) {
@@ -71,23 +61,8 @@ export class ChatService {
 
   static async testConnection(): Promise<boolean> {
     try {
-      // Simple test to verify the chat-message action is accessible
-      const { error } = await supabase.functions.invoke('content', {
-        body: {
-          action: 'chat-message',
-          payload: {
-            chat_content_id: 'test',
-            message: 'test',
-            group_id: 'test'
-          }
-        }
-      });
-
-      // We expect this to fail with validation error, but if function is accessible
-      // the error should be about missing/invalid data, not about function not found
-      return error?.message?.includes('chat_content_id') ||
-             error?.message?.includes('authorization') ||
-             error?.message?.includes('Missing or invalid');
+      // Simple test to verify the Lambda endpoint is accessible
+      return await LambdaClient.testConnection();
     } catch (error) {
       console.error('Chat Service connection test failed:', error);
       return false;

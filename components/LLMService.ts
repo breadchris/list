@@ -1,5 +1,6 @@
 import { supabase } from './SupabaseClient';
 import { Content } from './ContentRepository';
+import { LambdaClient } from './LambdaClient';
 
 export interface LLMRequest {
   system_prompt: string;
@@ -37,42 +38,23 @@ export class LLMService {
         throw new Error('Group ID is required');
       }
 
-      // Call the consolidated content function
-      const { data, error } = await supabase.functions.invoke('content', {
-        body: {
-          action: 'llm-generate',
-          payload: {
-            system_prompt: request.system_prompt,
-            selected_content: request.selected_content,
-            group_id: request.group_id,
-            parent_content_id: request.parent_content_id
-          },
-          useQueue
+      // Call Lambda content endpoint
+      const response = await LambdaClient.invoke({
+        action: 'llm-generate',
+        payload: {
+          system_prompt: request.system_prompt,
+          selected_content: request.selected_content,
+          group_id: request.group_id,
+          parent_content_id: request.parent_content_id
         }
       });
 
-      if (error) {
-        console.error('Edge Function error:', error);
-        throw new Error(`LLM service error: ${error.message || 'Unknown error'}`);
-      }
-
-      if (!data) {
-        throw new Error('No response from LLM service');
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || 'LLM generation failed');
-      }
-
-      if (data.queued) {
-        return {
-          success: true,
-          queued: true
-        };
+      if (!response.success) {
+        throw new Error(response.error || 'LLM generation failed');
       }
 
       // For immediate processing, extract the actual response data
-      const responseData = data.data;
+      const responseData = response.data;
       return {
         success: true,
         generated_content: responseData.generated_content,
@@ -91,23 +73,8 @@ export class LLMService {
 
   static async testConnection(): Promise<boolean> {
     try {
-      // Simple test to verify the consolidated content function is accessible
-      const { error } = await supabase.functions.invoke('content', {
-        body: {
-          action: 'llm-generate',
-          payload: {
-            system_prompt: 'test',
-            selected_content: [],
-            group_id: 'test'
-          }
-        }
-      });
-
-      // We expect this to fail with validation error, but if function is accessible
-      // the error should be about missing content, not about function not found
-      return error?.message?.includes('selected_content') ||
-             error?.message?.includes('authorization') ||
-             error?.message?.includes('Missing or invalid');
+      // Simple test to verify the Lambda endpoint is accessible
+      return await LambdaClient.testConnection();
     } catch (error) {
       console.error('LLM Service connection test failed:', error);
       return false;

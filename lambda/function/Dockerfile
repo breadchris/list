@@ -40,7 +40,7 @@ COPY tsconfig.json ./
 
 # Install build dependencies and compile TypeScript
 RUN npm install typescript @types/node @types/aws-lambda && \
-    npx tsc && \
+    npx tsc --skipLibCheck && \
     npm uninstall typescript @types/node @types/aws-lambda
 
 # Set the CMD to your handler

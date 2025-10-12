@@ -84,6 +84,26 @@ const s3Policy = new aws.iam.RolePolicy('lambda-s3-policy', {
 	}))
 });
 
+// Create custom policy for SQS access
+const sqsPolicy = new aws.iam.RolePolicy('lambda-sqs-policy', {
+	role: lambdaRole.id,
+	policy: pulumi.interpolate`{
+		"Version": "2012-10-17",
+		"Statement": [
+			{
+				"Effect": "Allow",
+				"Action": [
+					"sqs:ReceiveMessage",
+					"sqs:DeleteMessage",
+					"sqs:GetQueueAttributes",
+					"sqs:SendMessage"
+				],
+				"Resource": "*"
+			}
+		]
+	}`
+});
+
 // Create ECR repository for Lambda Docker image
 const ecrRepo = new aws.ecr.Repository('claude-code-lambda-repo', {
 	name: 'claude-code-lambda',
@@ -114,6 +134,32 @@ const image = new docker.Image('claude-code-lambda-image', {
 	}
 });
 
+// Create SQS Dead Letter Queue for failed content processing jobs
+const contentDLQ = new aws.sqs.Queue('content-processing-dlq', {
+	name: 'content-processing-dlq',
+	messageRetentionSeconds: 1209600, // 14 days
+	tags: {
+		Name: 'Content Processing DLQ',
+		ManagedBy: 'Pulumi'
+	}
+});
+
+// Create SQS Queue for content processing jobs
+const contentQueue = new aws.sqs.Queue('content-processing-queue', {
+	name: 'content-processing-queue',
+	visibilityTimeoutSeconds: 360, // 6 minutes (longer than Lambda timeout)
+	messageRetentionSeconds: 345600, // 4 days
+	receiveWaitTimeSeconds: 20, // Long polling
+	redrivePolicy: contentDLQ.arn.apply(dlqArn => JSON.stringify({
+		deadLetterTargetArn: dlqArn,
+		maxReceiveCount: 3 // Retry failed messages 3 times before moving to DLQ
+	})),
+	tags: {
+		Name: 'Content Processing Queue',
+		ManagedBy: 'Pulumi'
+	}
+});
+
 // Create Lambda function with Docker image
 const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 	packageType: 'Image',
@@ -125,6 +171,7 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 		variables: {
 			NODE_ENV: 'production',
 			S3_BUCKET_NAME: sessionBucket.bucket,
+			CONTENT_QUEUE_URL: contentQueue.url,
 			ANTHROPIC_API_KEY: anthropicApiKey,
 			SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
 			SUPABASE_URL: supabaseUrl,
@@ -165,21 +212,7 @@ const integration = new aws.apigatewayv2.Integration('lambda-integration', {
 	payloadFormatVersion: '2.0'
 });
 
-// Create route for /claude-code
-const route = new aws.apigatewayv2.Route('claude-code-route', {
-	apiId: api.id,
-	routeKey: 'POST /claude-code',
-	target: pulumi.interpolate`integrations/${integration.id}`
-});
-
-// Create route for /youtube/playlist
-const youtubeRoute = new aws.apigatewayv2.Route('youtube-playlist-route', {
-	apiId: api.id,
-	routeKey: 'POST /youtube/playlist',
-	target: pulumi.interpolate`integrations/${integration.id}`
-});
-
-// Create route for /content (content handlers)
+// Create route for /content (unified endpoint for all operations)
 const contentRoute = new aws.apigatewayv2.Route('content-route', {
 	apiId: api.id,
 	routeKey: 'POST /content',
@@ -203,6 +236,22 @@ const lambdaPermission = new aws.lambda.Permission('api-gateway-invoke', {
 	function: lambdaFunction.name,
 	principal: 'apigateway.amazonaws.com',
 	sourceArn: pulumi.interpolate`${api.executionArn}/*/*`
+});
+
+// Create Lambda event source mapping for SQS content queue
+const sqsEventSource = new aws.lambda.EventSourceMapping('content-queue-event-source', {
+	eventSourceArn: contentQueue.arn,
+	functionName: lambdaFunction.name,
+	batchSize: 1, // Process one message at a time (jobs can be long-running)
+	maximumBatchingWindowInSeconds: 0, // Start processing immediately
+	functionResponseTypes: ['ReportBatchItemFailures'], // Enable partial batch responses
+	scalingConfig: {
+		maximumConcurrency: 10 // Limit concurrent executions to 10
+	},
+	tags: {
+		Name: 'Content Queue Event Source',
+		ManagedBy: 'Pulumi'
+	}
 });
 
 // Create IAM user for Supabase Edge Function (read-only S3 access)
@@ -241,13 +290,20 @@ const supabaseAccessKey = new aws.iam.AccessKey('supabase-access-key', {
 });
 
 // Export outputs
-export const apiUrl = pulumi.interpolate`${api.apiEndpoint}/claude-code`;
+export const apiUrl = pulumi.interpolate`${api.apiEndpoint}/content`;
+export const contentEndpoint = pulumi.interpolate`${api.apiEndpoint}/content`;
 export const bucketName = sessionBucket.bucket;
 export const lambdaArn = lambdaFunction.arn;
+
+// Export SQS queue information
+export const contentQueueUrl = contentQueue.url;
+export const contentQueueArn = contentQueue.arn;
+export const contentDLQUrl = contentDLQ.url;
+export const contentDLQArn = contentDLQ.arn;
 
 // Export Supabase Edge Function credentials (for setting as Supabase secrets)
 export const supabaseAwsAccessKeyId = supabaseAccessKey.id;
 export const supabaseAwsSecretAccessKey = pulumi.secret(supabaseAccessKey.secret);
 export const supabaseAwsRegion = pulumi.output('us-east-1');
 export const supabaseS3BucketName = sessionBucket.bucket;
-export const supabaseLambdaEndpoint = pulumi.interpolate`${api.apiEndpoint}/claude-code`;
+export const supabaseLambdaEndpoint = pulumi.interpolate`${api.apiEndpoint}/content`;

@@ -88,7 +88,7 @@ func handlePlaylist(params json.RawMessage) (*PlaylistResponse, error) {
 				ChannelID:     video.ChannelID,
 				ChannelHandle: video.ChannelHandle,
 				Description:   video.Description,
-				Views:         video.Views,
+				Views:         uint64(video.Views),
 				PublishDate:   publishDate,
 				Thumbnails:    thumbnails,
 			}

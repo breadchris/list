@@ -19,9 +19,7 @@ export const TagSelector: React.FC<TagSelectorProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
-  const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(
-    new Set(existingTags.map(tag => tag.id))
-  );
+  const [selectedTags, setSelectedTags] = useState<Tag[]>(existingTags);
   const [isLoading, setIsLoading] = useState(false);
   const debouncedSearch = useDebounce(searchQuery, 300);
   const selectorRef = useRef<HTMLDivElement>(null);
@@ -75,15 +73,14 @@ export const TagSelector: React.FC<TagSelectorProps> = ({
     return () => document.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
-  const toggleTag = (tagId: string) => {
-    setSelectedTagIds(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(tagId)) {
-        newSet.delete(tagId);
+  const toggleTag = (tag: Tag) => {
+    setSelectedTags(prev => {
+      const isSelected = prev.some(t => t.id === tag.id);
+      if (isSelected) {
+        return prev.filter(t => t.id !== tag.id);
       } else {
-        newSet.add(tagId);
+        return [...prev, tag];
       }
-      return newSet;
     });
   };
 
@@ -96,7 +93,7 @@ export const TagSelector: React.FC<TagSelectorProps> = ({
       });
 
       // Auto-select the newly created tag
-      setSelectedTagIds(prev => new Set(prev).add(newTag.id));
+      setSelectedTags(prev => [...prev, newTag]);
 
       // Add to available tags list
       setAvailableTags(prev => [newTag, ...prev]);
@@ -112,6 +109,7 @@ export const TagSelector: React.FC<TagSelectorProps> = ({
   const handleSave = async () => {
     try {
       const existingTagIds = new Set(existingTags.map(tag => tag.id));
+      const selectedTagIds = new Set(selectedTags.map(tag => tag.id));
 
       // Find tags to add (in selectedTagIds but not in existingTagIds)
       const tagsToAdd = Array.from(selectedTagIds).filter(id => !existingTagIds.has(id));
@@ -154,7 +152,7 @@ export const TagSelector: React.FC<TagSelectorProps> = ({
       );
 
       if (exactMatch) {
-        toggleTag(exactMatch.id);
+        toggleTag(exactMatch);
         setSearchQuery('');
       } else if (searchQuery.trim()) {
         // Otherwise create a new tag
@@ -188,6 +186,40 @@ export const TagSelector: React.FC<TagSelectorProps> = ({
 
       {/* Tag List */}
       <div className="max-h-60 overflow-y-auto">
+        {/* Selected Tags Section */}
+        {selectedTags.length > 0 && (
+          <div className="border-b border-gray-200">
+            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Selected ({selectedTags.length})
+            </div>
+            <div className="pb-2">
+              {selectedTags.map(tag => (
+                <label
+                  key={tag.id}
+                  className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={true}
+                    onChange={() => toggleTag(tag)}
+                    className="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span
+                    className="inline-block px-2 py-1 text-xs rounded-full text-gray-600 bg-gray-100 border"
+                    style={{
+                      backgroundColor: tag.color ? `${tag.color}20` : undefined,
+                      borderColor: tag.color || undefined
+                    }}
+                  >
+                    {tag.name}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Search Results Section */}
         {isLoading ? (
           <div className="p-4 text-center text-gray-500 text-sm">
             <div className="flex items-center justify-center">
@@ -197,38 +229,40 @@ export const TagSelector: React.FC<TagSelectorProps> = ({
           </div>
         ) : availableTags.length > 0 ? (
           <div className="py-2">
-            {availableTags.map(tag => (
-              <label
-                key={tag.id}
-                className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedTagIds.has(tag.id)}
-                  onChange={() => toggleTag(tag.id)}
-                  className="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <span
-                  className="inline-block px-2 py-1 text-xs rounded-full text-gray-600 bg-gray-100 border"
-                  style={{
-                    backgroundColor: tag.color ? `${tag.color}20` : undefined,
-                    borderColor: tag.color || undefined
-                  }}
+            {availableTags
+              .filter(tag => !selectedTags.some(st => st.id === tag.id))
+              .map(tag => (
+                <label
+                  key={tag.id}
+                  className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
                 >
-                  {tag.name}
-                </span>
-              </label>
-            ))}
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => toggleTag(tag)}
+                    className="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span
+                    className="inline-block px-2 py-1 text-xs rounded-full text-gray-600 bg-gray-100 border"
+                    style={{
+                      backgroundColor: tag.color ? `${tag.color}20` : undefined,
+                      borderColor: tag.color || undefined
+                    }}
+                  >
+                    {tag.name}
+                  </span>
+                </label>
+              ))}
           </div>
         ) : searchQuery.trim() ? (
           <div className="p-4 text-center text-gray-500 text-sm">
             No matching tags found
           </div>
-        ) : (
+        ) : selectedTags.length === 0 ? (
           <div className="p-4 text-center text-gray-400 text-sm">
             Start typing to search tags
           </div>
-        )}
+        ) : null}
 
         {/* Create New Tag Option */}
         {searchQuery.trim() && !hasExactMatch && (

@@ -1,0 +1,3 @@
+{
+  "prompt": "<selected_content>\nContent Item 1:\nType: text\nData: https://example.com/article-about-react\n---\nContent Item 2:\nType: text\nData: https://github.com/facebook/react\n</selected_content>\n\nCreate a simple React component that displays the selected content links as a list."
+}

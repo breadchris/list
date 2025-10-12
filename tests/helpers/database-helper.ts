@@ -454,4 +454,161 @@ export class DatabaseHelper {
       throw new Error(`Failed to deactivate invite code: ${error.message}`);
     }
   }
+
+  /**
+   * Create test content in database
+   */
+  async createTestContent(content: {
+    type: string;
+    data: string;
+    group_id: string;
+    user_id: string;
+    parent_content_id: string | null;
+    metadata?: any;
+  }): Promise<string> {
+    const { data, error } = await this.adminClient
+      .from('content')
+      .insert([content])
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create test content: ${error.message}`);
+    }
+
+    return data.id;
+  }
+
+  /**
+   * Delete test content from database
+   */
+  async deleteTestContent(contentId: string): Promise<void> {
+    // First delete child content
+    const { error: childError } = await this.adminClient
+      .from('content')
+      .delete()
+      .eq('parent_content_id', contentId);
+
+    if (childError) {
+      console.warn('Failed to delete child content:', childError);
+    }
+
+    // Then delete the content itself
+    const { error } = await this.adminClient
+      .from('content')
+      .delete()
+      .eq('id', contentId);
+
+    if (error) {
+      throw new Error(`Failed to delete test content: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get content by parent ID
+   */
+  async getContentByParentId(parentContentId: string): Promise<any[]> {
+    const { data, error } = await this.adminClient
+      .from('content')
+      .select('*')
+      .eq('parent_content_id', parentContentId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to get content by parent ID: ${error.message}`);
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get Claude Code session metadata for content
+   */
+  async getClaudeCodeSession(contentId: string): Promise<{
+    session_id: string;
+    s3_url?: string;
+    initial_prompt: string;
+    created_at: string;
+    last_updated_at?: string;
+  } | null> {
+    const { data, error } = await this.adminClient
+      .from('content')
+      .select('metadata')
+      .eq('id', contentId)
+      .single();
+
+    if (error) {
+      console.warn('Failed to get Claude Code session:', error);
+      return null;
+    }
+
+    return data?.metadata?.claude_code_session || null;
+  }
+
+  /**
+   * Delete test user from auth system
+   */
+  async deleteTestUser(userId: string): Promise<void> {
+    try {
+      // Use admin client to delete user from auth
+      const { error } = await this.adminClient.auth.admin.deleteUser(userId);
+
+      if (error) {
+        console.warn('Failed to delete test user from auth:', error);
+      }
+
+      // Also clean up from users table
+      await this.adminClient
+        .from('users')
+        .delete()
+        .eq('id', userId);
+    } catch (error) {
+      console.warn('Error during test user deletion:', error);
+      // Don't throw - cleanup should be best effort
+    }
+  }
+
+  /**
+   * Delete test group from database
+   */
+  async deleteTestGroup(groupId: string): Promise<void> {
+    try {
+      // Delete group memberships first
+      await this.adminClient
+        .from('group_memberships')
+        .delete()
+        .eq('group_id', groupId);
+
+      // Delete the group
+      const { error } = await this.adminClient
+        .from('groups')
+        .delete()
+        .eq('id', groupId);
+
+      if (error) {
+        console.warn('Failed to delete test group:', error);
+      }
+    } catch (error) {
+      console.warn('Error during test group deletion:', error);
+      // Don't throw - cleanup should be best effort
+    }
+  }
+
+  /**
+   * Get content by ID
+   */
+  async getContentById(contentId: string): Promise<any | null> {
+    const { data, error } = await this.adminClient
+      .from('content')
+      .select('*')
+      .eq('id', contentId)
+      .single();
+
+    if (error) {
+      console.warn('Failed to get content by ID:', error);
+      return null;
+    }
+
+    return data;
+  }
 }

@@ -4,6 +4,8 @@ import { useCreateContentMutation } from '../hooks/useContentQueries';
 import { LexicalContentInput, LexicalContentInputRef } from './LexicalContentInput';
 import { ChatService } from './ChatService';
 import { useToast } from './ToastProvider';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from '../hooks/queryKeys';
 
 interface ContentInputProps {
   groupId: string;
@@ -11,6 +13,7 @@ interface ContentInputProps {
   onContentAdded: (content: Content) => void;
   isVisible: boolean;
   onClose: () => void;
+  contentType: 'text' | 'ai-chat';
 }
 
 export const ContentInput: React.FC<ContentInputProps> = ({
@@ -18,16 +21,26 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   parentContentId = null,
   onContentAdded,
   isVisible,
-  onClose
+  onClose,
+  contentType
 }) => {
   const createContentMutation = useCreateContentMutation();
   const lexicalInputRef = useRef<LexicalContentInputRef>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const pendingAISubmitRef = useRef(false);
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const handleSubmit = async (text: string) => {
     if (!text || (createContentMutation.isPending && !pendingAISubmitRef.current)) return;
+
+    console.log('Submitting content:', { text, contentType, parentContentId });
+
+    // If content type is AI chat, route to AI handler
+    if (contentType === 'ai-chat') {
+      handleAISubmit(text);
+      return;
+    }
 
     // If AI submit is pending, route to AI handler
     if (pendingAISubmitRef.current) {
@@ -90,6 +103,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
       toast.success('AI Responded', 'Message sent and AI has responded');
 
+      // Invalidate cache to show new assistant message
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.contentByParent(groupId, chatContentId)
+      });
+
       onContentAdded(userMessage);
       onClose();
 
@@ -141,6 +159,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         'AI has responded to your message'
       );
 
+      // Invalidate cache to show new assistant message
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.contentByParent(groupId, chatContent.id)
+      });
+
       onContentAdded(chatContent);
       onClose();
 
@@ -157,20 +180,6 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-gray-700">
-          {parentContentId ? "Add sub-item" : "Add new item"}
-        </h3>
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-gray-600"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
       <div className="flex items-end space-x-3">
         <div className="flex-1">
           <LexicalContentInput
@@ -179,9 +188,6 @@ export const ContentInput: React.FC<ContentInputProps> = ({
             disabled={createContentMutation.isPending || isGeneratingAI}
             parentContentId={parentContentId}
           />
-          <p className="text-xs text-gray-500 mt-1">
-            Press Enter to add, Shift+Enter for new line
-          </p>
         </div>
 
         <div className="flex space-x-2">
@@ -200,30 +206,6 @@ export const ContentInput: React.FC<ContentInputProps> = ({
               </div>
             ) : (
               'Add'
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              pendingAISubmitRef.current = true;
-              lexicalInputRef.current?.submit();
-            }}
-            disabled={createContentMutation.isPending || isGeneratingAI}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isGeneratingAI ? (
-              <div className="flex items-center">
-                <div className="animate-spin -ml-1 mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                AI...
-              </div>
-            ) : (
-              <div className="flex items-center space-x-1">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                </svg>
-                <span>AI</span>
-              </div>
             )}
           </button>
         </div>

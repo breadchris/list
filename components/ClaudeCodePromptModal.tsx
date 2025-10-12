@@ -76,20 +76,23 @@ export const ClaudeCodePromptModal: React.FC<ClaudeCodePromptModalProps> = ({
     setExecutionProgress('Preparing Claude Code execution...');
 
     try {
-      setExecutionProgress('Calling Claude Code worker...');
-
-      // Execute Claude Code with optional session continuation
+      // Execute Claude Code with progress callback
       const response = await ClaudeCodeService.executeClaudeCode(
         prompt,
-        sessionInfo?.session_id
+        sessionInfo?.session_id,
+        selectedContent,
+        (status) => {
+          // Update progress in real-time
+          setExecutionProgress(status);
+        }
       );
 
       if (!response.success) {
         throw new Error(response.error || 'Execution failed');
       }
 
-      if (!response.session_id || !response.r2_url) {
-        throw new Error('Invalid response from Claude Code worker');
+      if (!response.session_id) {
+        throw new Error('Invalid response from Claude Code Lambda - missing session_id');
       }
 
       setExecutionProgress('Creating content record...');
@@ -105,7 +108,7 @@ export const ClaudeCodePromptModal: React.FC<ClaudeCodePromptModalProps> = ({
       // Store session metadata
       await contentRepository.storeClaudeCodeSession(newContent.id, {
         session_id: response.session_id,
-        r2_url: response.r2_url,
+        s3_url: response.s3_url,
         initial_prompt: sessionInfo?.initial_prompt || prompt,
         last_updated_at: new Date().toISOString()
       });

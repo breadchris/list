@@ -1,0 +1,9 @@
+{
+  "body": "{\"prompt\":\"<selected_content>\\nContent Item 1:\\nType: text\\nData: https://example.com/article-about-react\\nMetadata: {\\\"url\\\":\\\"https://example.com/article-about-react\\\",\\\"title\\\":\\\"Building React Apps\\\",\\\"domain\\\":\\\"example.com\\\"}\\n---\\nContent Item 2:\\nType: text\\nData: https://github.com/facebook/react\\nMetadata: {\\\"url\\\":\\\"https://github.com/facebook/react\\\",\\\"title\\\":\\\"React GitHub Repository\\\",\\\"domain\\\":\\\"github.com\\\"}\\n</selected_content>\\n\\nCreate a simple React component that displays the selected content links as a list with their titles.\"}",
+  "requestContext": {
+    "http": {
+      "method": "POST"
+    }
+  },
+  "rawPath": "/claude-code"
+}

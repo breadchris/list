@@ -9,7 +9,7 @@ import { ContentStack } from './ContentStack';
 import { ContentInput } from './ContentInput';
 import { JsEditorView } from './JsEditorView';
 import { AppSidebar } from './AppSidebar';
-import { FloatingActionButton } from './FloatingActionButton';
+import { ContentTypeSelector, ContentType } from './ContentTypeSelector';
 import { WorkflowFAB } from './WorkflowFAB';
 import { MicroGameOverlay } from './MicroGameOverlay';
 import { SEOProgressOverlay, SEOProgressItem } from './SEOProgressOverlay';
@@ -18,6 +18,7 @@ import { YouTubeProgressOverlay } from './YouTubeProgressOverlay';
 import { YouTubeVideoAnnotatorModal } from './YouTubeVideoAnnotatorModal';
 import { TMDbSearchModal } from './TMDbSearchModal';
 import { SharingSettingsModal } from './SharingSettingsModal';
+import { LibgenSearchModal, LibgenSearchConfig } from './LibgenSearchModal';
 import { GroupDropdown } from './GroupDropdown';
 import { AppSkeleton, HeaderSkeleton, ContentListSkeleton } from './SkeletonComponents';
 import { Footer } from './Footer';
@@ -30,6 +31,7 @@ import { useContentSelection } from '../hooks/useContentSelection';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
 import { useMarkdownExtraction, MarkdownProgressItem } from '../hooks/useMarkdownExtraction';
 import { useYouTubePlaylistExtraction, YouTubeProgressItem } from '../hooks/useYouTubePlaylistExtraction';
+import { useLibgenSearch } from '../hooks/useLibgenSearch';
 import { useToast } from './ToastProvider';
 import { extractUrls, getFirstUrl } from '../utils/urlDetection';
 import { Clock, SkipBack, ArrowDownAZ, Shuffle } from 'lucide-react';
@@ -62,7 +64,8 @@ export const ListApp: React.FC = () => {
   const [currentJsContent, setCurrentJsContent] = useState<Content | null>(null);
   const [navigationStack, setNavigationStack] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'Root'}]);
   const [showSidebar, setShowSidebar] = useState(false);
-  const [showInput, setShowInput] = useState(false);
+  const [showInput, setShowInput] = useState(true);
+  const [selectedContentType, setSelectedContentType] = useState<ContentType>('text');
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupModalMode, setGroupModalMode] = useState<'create' | 'join'>('create');
 
@@ -82,6 +85,7 @@ export const ListApp: React.FC = () => {
   const seoExtractionMutation = useSEOExtraction();
   const markdownExtractionMutation = useMarkdownExtraction();
   const youTubeExtractionMutation = useYouTubePlaylistExtraction();
+  const libgenSearchMutation = useLibgenSearch();
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,6 +126,10 @@ export const ListApp: React.FC = () => {
   // TMDb Search modal state
   const [showTMDbModal, setShowTMDbModal] = useState(false);
   const [selectedContentForTMDb, setSelectedContentForTMDb] = useState<Content | null>(null);
+
+  // Libgen Search modal state
+  const [showLibgenModal, setShowLibgenModal] = useState(false);
+  const [selectedContentForLibgen, setSelectedContentForLibgen] = useState<Content[]>([]);
 
   // Sharing settings modal state
   const [showSharingModal, setShowSharingModal] = useState(false);
@@ -645,6 +653,82 @@ export const ListApp: React.FC = () => {
     setNewContent(undefined);
   };
 
+  // Libgen Search handlers
+  const handleLibgenSearch = async () => {
+    console.log('📚 Libgen Search button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    try {
+      // Get the content objects for the selected IDs
+      const selectedContent = await Promise.all(
+        selectedIds.map(id => contentRepository.getContentById(id))
+      );
+
+      const validContent = selectedContent.filter((c): c is Content => c !== null);
+
+      if (validContent.length === 0) {
+        toast.error('Content not found', 'Unable to find selected items in database');
+        return;
+      }
+
+      // Open Libgen search modal
+      setSelectedContentForLibgen(validContent);
+      setShowLibgenModal(true);
+
+      console.log('Opening Libgen search modal for content:', validContent.map(c => c.id));
+
+    } catch (error) {
+      console.error('Error during Libgen search:', error);
+      toast.error(
+        'Libgen search failed',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+    }
+  };
+
+  const handleCloseLibgenModal = () => {
+    setShowLibgenModal(false);
+    setSelectedContentForLibgen([]);
+  };
+
+  const handleLibgenSearchExecute = async (config: LibgenSearchConfig) => {
+    console.log('Executing Libgen search with config:', config);
+
+    try {
+      await libgenSearchMutation.mutateAsync({
+        selectedContent: selectedContentForLibgen,
+        config
+      });
+
+      toast.success(
+        'Books Found!',
+        `Successfully searched ${selectedContentForLibgen.length} item${selectedContentForLibgen.length !== 1 ? 's' : ''}`
+      );
+
+      // Close modal and clear selection
+      handleCloseLibgenModal();
+      contentSelection.clearSelection();
+    } catch (error) {
+      console.error('Libgen search mutation failed:', error);
+      toast.error(
+        'Search Failed',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+    }
+  };
+
   const handleOpenSharingModal = async () => {
     if (!currentParentId) return;
     
@@ -965,6 +1049,16 @@ export const ListApp: React.FC = () => {
       }
     },
     {
+      id: 'libgen-search',
+      name: 'Search Books',
+      description: 'Search for books on Library Genesis',
+      icon: '📚',
+      onClick: () => {
+        console.log('📚 WorkflowAction onClick triggered for Libgen search');
+        handleLibgenSearch();
+      }
+    },
+    {
       id: 'youtube-annotate',
       name: 'Annotate Video',
       description: 'Add timestamps to YouTube videos',
@@ -1235,7 +1329,8 @@ export const ListApp: React.FC = () => {
     setTimeout(() => setNewContent(undefined), 100);
   };
 
-  const handleFABClick = () => {
+  const handleContentTypeSelect = (type: ContentType) => {
+    setSelectedContentType(type);
     setShowInput(true);
   };
 
@@ -1577,12 +1672,12 @@ export const ListApp: React.FC = () => {
       )}
 
       {/* Loading State */}
-      {(appState === 'loading' || (joinGroupMutation.isPending && window.location.pathname.startsWith('/invite/'))) && (
+      {(appState === 'loading' || (joinGroupMutation.isPending && window.location.pathname.startsWith('/invite/')) || (appState === 'ready' && user && !currentGroup && (groupsLoading || groups.length > 0))) && (
         <AppSkeleton />
       )}
 
       {/* Main App Content */}
-      {appState === 'ready' && user && (
+      {appState === 'ready' && user && (currentGroup || (!groupsLoading && groups.length === 0)) && (
         <>
           {/* Header */}
           <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200 w-full">
@@ -1731,7 +1826,7 @@ export const ListApp: React.FC = () => {
             </div>
           </header>
 
-          <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full bg-white shadow-sm transition-all duration-200 ease-in-out">
+          <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full shadow-sm transition-all duration-200 ease-in-out">
             {/* Back Button Navigation */}
             {currentGroup && navigationStack.length > 1 && (
               <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2">
@@ -1812,6 +1907,13 @@ export const ListApp: React.FC = () => {
           </div>
         )}
 
+        {/* Content Type Selector */}
+        <ContentTypeSelector
+          selectedType={selectedContentType}
+          onSelectType={handleContentTypeSelect}
+          isVisible={!!currentGroup && !currentJsContent}
+        />
+
         {/* Content List or JS Editor View */}
         {currentJsContent ? (
           <JsEditorView
@@ -1855,15 +1957,10 @@ export const ListApp: React.FC = () => {
             onInputClose={handleInputClose}
             onContentAdded={handleContentAdded}
             viewMode={viewMode}
+            contentType={selectedContentType}
           />
         )}
       </div>
-
-      {/* Floating Action Button */}
-      <FloatingActionButton
-        onClick={handleFABClick}
-        isVisible={!!currentGroup && !showInput}
-      />
 
       {/* Workflow FAB for selected items */}
       <WorkflowFAB
@@ -1953,6 +2050,14 @@ export const ListApp: React.FC = () => {
           onResultsAdded={handleTMDbResultsAdded}
         />
       )}
+
+      {/* Libgen Search Modal */}
+      <LibgenSearchModal
+        isVisible={showLibgenModal}
+        selectedContent={selectedContentForLibgen}
+        onClose={handleCloseLibgenModal}
+        onSearch={handleLibgenSearchExecute}
+      />
 
       {/* Sharing Settings Modal */}
       <SharingSettingsModal

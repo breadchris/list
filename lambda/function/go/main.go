@@ -32,6 +32,8 @@ func handleRequest(req Request) {
 	switch req.Method {
 	case "youtube.playlist":
 		handlePlaylistRequest(req.Params)
+	case "libgen.search":
+		handleLibgenSearchRequest(req.Params)
 	default:
 		writeError(fmt.Sprintf("unknown method: %s", req.Method))
 	}
@@ -39,6 +41,22 @@ func handleRequest(req Request) {
 
 func handlePlaylistRequest(params json.RawMessage) {
 	result, err := handlePlaylist(params)
+	if err != nil {
+		writeError(err.Error())
+		return
+	}
+
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		writeError(fmt.Sprintf("failed to marshal result: %v", err))
+		return
+	}
+
+	writeSuccess(resultJSON)
+}
+
+func handleLibgenSearchRequest(params json.RawMessage) {
+	result, err := handleLibgenSearch(params)
 	if err != nil {
 		writeError(err.Error())
 		return

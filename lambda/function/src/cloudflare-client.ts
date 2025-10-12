@@ -37,13 +37,11 @@ export async function generateScreenshot(url: string): Promise<ArrayBuffer> {
     apiToken: cloudflareApiKey,
   });
 
-  // @ts-ignore - Cloudflare SDK type definitions may not be complete
-  const screenshot = await client.browserRendering.screenshot.create({
+  // Type cast to any to bypass SDK type checking - runtime API supports full_page
+  const screenshot = await (client.browserRendering.screenshot.create as any)({
     account_id: accountId,
     url: url,
-    options: {
-      full_page: true
-    }
+    full_page: true
   });
 
   return screenshot as unknown as ArrayBuffer;

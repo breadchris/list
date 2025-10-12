@@ -1,5 +1,6 @@
 import { supabase } from './SupabaseClient';
 import { Content } from './ContentRepository';
+import { LambdaClient } from './LambdaClient';
 
 export interface MarkdownRequest {
   selected_content: Content[];
@@ -37,32 +38,21 @@ export class MarkdownService {
         throw new Error('At least one content item must be selected');
       }
 
-      // Call the consolidated content function
-      const { data, error } = await supabase.functions.invoke('content', {
-        body: {
-          action: 'markdown-extract',
-          payload: {
-            selectedContent: content
-          }
+      // Call Lambda content endpoint
+      const response = await LambdaClient.invoke({
+        action: 'markdown-extract',
+        payload: {
+          selectedContent: content
         }
       });
 
-      if (error) {
-        console.error('Edge Function error:', error);
-        throw new Error(`Markdown service error: ${error.message || 'Unknown error'}`);
-      }
-
-      if (!data) {
-        throw new Error('No response from markdown service');
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || 'Markdown extraction failed');
+      if (!response.success) {
+        throw new Error(response.error || 'Markdown extraction failed');
       }
 
       return {
         success: true,
-        data: data.data
+        data: response.data
       };
 
     } catch (error) {
@@ -77,18 +67,8 @@ export class MarkdownService {
 
   static async testConnection(): Promise<boolean> {
     try {
-      // Simple test to verify the consolidated content function is accessible
-      const { error } = await supabase.functions.invoke('content', {
-        body: {
-          action: 'markdown-extract',
-          payload: {
-            selectedContent: []
-          }
-        }
-      });
-
-      // We expect this to succeed (empty results are valid)
-      return !error || error.message?.includes('authorization');
+      // Simple test to verify the Lambda endpoint is accessible
+      return await LambdaClient.testConnection();
     } catch (error) {
       console.error('Markdown Service connection test failed:', error);
       return false;

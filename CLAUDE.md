@@ -984,6 +984,50 @@ struct ShareItem: Codable {
 
 **CRITICAL**: Always test locally with Docker before deploying to AWS
 
+### Lambda Endpoint Architecture
+
+**CRITICAL**: The content Lambda has ONE endpoint only: `/content`
+
+**Design Principles:**
+- **Single endpoint pattern** - All content processing operations use POST `/content`
+- **Action-based routing** - Functionality is added via the `action` field in the request payload
+- **NEVER add new endpoints** - Do not create `/content/seo`, `/content/libgen`, etc.
+- **Payload-driven design** - All variations handled through the payload structure
+
+**Request Format:**
+```json
+{
+  "action": "libgen-search",
+  "payload": {
+    "selectedContent": [...],
+    "searchType": "author",
+    "topics": ["libgen"],
+    "maxResults": 10
+  }
+}
+```
+
+**Why Single Endpoint?**
+- Simpler API Gateway configuration
+- Consistent routing pattern
+- Easier to add features (just add new action type)
+- No need to update infrastructure for new functionality
+- Clear separation of concerns (routing vs. processing)
+
+**Adding New Functionality:**
+1. Add new action type to `ContentRequest` type in `types.ts`
+2. Add handler function in `content-handlers.ts`
+3. Add case to switch statement in `handleContentRequest()`
+4. NO infrastructure changes needed
+
+**Examples of Actions:**
+- `seo-extract` - Extract SEO metadata from URLs
+- `libgen-search` - Search Library Genesis for books
+- `tmdb-search` - Search The Movie Database
+- `llm-generate` - Generate content with LLM
+- `markdown-extract` - Extract markdown from URLs
+- `youtube-playlist-extract` - Extract YouTube playlist videos
+
 ### Local-First Development Workflow
 
 The Lambda function for Claude Code execution should always be tested locally before deployment. This provides immediate feedback and avoids slow CloudWatch log debugging.

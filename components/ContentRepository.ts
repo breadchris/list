@@ -1,4 +1,5 @@
 import { supabase, withRetry } from './SupabaseClient';
+import { LambdaClient } from './LambdaClient';
 
 // Types based on our database schema
 export interface User {
@@ -268,7 +269,18 @@ export class ContentRepository {
   async getContentById(id: string): Promise<Content | null> {
     const { data, error } = await supabase
       .from('content')
-      .select('*')
+      .select(`
+        *,
+        content_tags!left (
+          tags (
+            id,
+            created_at,
+            name,
+            color,
+            user_id
+          )
+        )
+      `)
       .eq('id', id)
       .single();
 
@@ -280,7 +292,13 @@ export class ContentRepository {
       throw new Error(error.message);
     }
 
-    return data;
+    // Transform the data to include tags properly
+    const contentWithTags = {
+      ...data,
+      tags: (data as any).content_tags?.map((ct: any) => ct.tags).filter(Boolean) || []
+    };
+
+    return contentWithTags;
   }
 
   async searchContent(
@@ -792,6 +810,21 @@ export class ContentRepository {
       .subscribe();
   }
 
+  subscribeToContentTags(groupId: string, callback: (payload: any) => void) {
+    return supabase
+      .channel(`content_tags:${groupId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'content_tags',
+        },
+        callback
+      )
+      .subscribe();
+  }
+
   // SEO extraction functionality using consolidated content function
   async extractSEOInformation(contentId: string, useQueue: boolean = false): Promise<{
     seo_children: Content[],
@@ -807,34 +840,13 @@ export class ContentRepository {
         throw new Error('Content not found');
       }
 
-      // Get the current user session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session?.access_token) {
-        throw new Error('User not authenticated');
-      }
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+      const result = await LambdaClient.invoke({
+        action: 'seo-extract',
+        payload: {
+          selectedContent: [contentItem]
         },
-        body: JSON.stringify({
-          action: 'seo-extract',
-          payload: {
-            selectedContent: [contentItem]
-          },
-          useQueue
-        }),
+        useQueue
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
-      }
-
-      const result = await response.json();
 
       if (!result.success) {
         throw new Error(result.error || 'SEO extraction failed');
@@ -913,33 +925,12 @@ export class ContentRepository {
         throw new Error('Content not found');
       }
 
-      // Get the current user session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session?.access_token) {
-        throw new Error('User not authenticated');
-      }
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          action: 'youtube-playlist-extract',
-          payload: {
-            selectedContent: [contentItem]
-          }
-        }),
+      const result = await LambdaClient.invoke({
+        action: 'youtube-playlist-extract',
+        payload: {
+          selectedContent: [contentItem]
+        }
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
-      }
-
-      const result = await response.json();
 
       if (!result.success) {
         throw new Error(result.error || 'YouTube playlist extraction failed');
@@ -997,34 +988,14 @@ export class ContentRepository {
         throw new Error('Content not found');
       }
 
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session?.access_token) {
-        throw new Error('User not authenticated');
-      }
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          action: 'tmdb-search',
-          payload: {
-            selectedContent: [contentItem],
-            searchType,
-            mode: 'search-only'
-          }
-        }),
+      const result = await LambdaClient.invoke({
+        action: 'tmdb-search',
+        payload: {
+          selectedContent: [contentItem],
+          searchType,
+          mode: 'search-only'
+        }
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
-      }
-
-      const result = await response.json();
 
       if (!result.success) {
         throw new Error(result.error || 'TMDb search failed');
@@ -1068,35 +1039,15 @@ export class ContentRepository {
         throw new Error('Content not found');
       }
 
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session?.access_token) {
-        throw new Error('User not authenticated');
-      }
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          action: 'tmdb-search',
-          payload: {
-            selectedContent: [contentItem],
-            searchType,
-            mode: 'add-selected',
-            selectedResults: tmdbIds
-          }
-        }),
+      const result = await LambdaClient.invoke({
+        action: 'tmdb-search',
+        payload: {
+          selectedContent: [contentItem],
+          searchType,
+          mode: 'add-selected',
+          selectedResults: tmdbIds
+        }
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
-      }
-
-      const result = await response.json();
 
       if (!result.success) {
         throw new Error(result.error || 'TMDb add results failed');
@@ -1126,8 +1077,52 @@ export class ContentRepository {
     }
   }
 
+  // Libgen Book Search
+  async searchLibgen(
+    selectedContent: Content[],
+    searchType?: 'default' | 'title' | 'author',
+    topics?: string[],
+    filters?: Record<string, string>,
+    maxResults?: number
+  ): Promise<{
+    success: boolean;
+    data: Array<{
+      content_id: string;
+      success: boolean;
+      books_found: number;
+      books_created: number;
+      error?: string;
+    }>;
+  }> {
+    try {
+      // Call Lambda content endpoint
+      const response = await LambdaClient.invoke({
+        action: 'libgen-search',
+        payload: {
+          selectedContent,
+          searchType: searchType || 'default',
+          topics: topics || ['libgen'],
+          filters,
+          maxResults: maxResults || 10
+        }
+      });
+
+      if (!response.success) {
+        throw new Error(response.error || 'Libgen search failed');
+      }
+
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      console.error('Failed to search Libgen:', error);
+      throw error;
+    }
+  }
+
   // Public Content Sharing Methods
-  
+
   // Toggle content public sharing
   async toggleContentSharing(contentId: string, isPublic: boolean): Promise<SharingResponse> {
     try {
@@ -1297,36 +1292,15 @@ export class ContentRepository {
     try {
       console.log(`Generating URL preview for content ${contentId} with URL: ${url}`);
 
-      // Get the current user session for authentication
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session?.access_token) {
-        throw new Error('User not authenticated');
-      }
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          action: 'screenshot-queue',
-          payload: {
-            jobs: [{
-              contentId: contentId,
-              url: url
-            }]
-          }
-        }),
+      const result = await LambdaClient.invoke({
+        action: 'screenshot-queue',
+        payload: {
+          jobs: [{
+            contentId: contentId,
+            url: url
+          }]
+        }
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
-      }
-
-      const result = await response.json();
 
       if (!result.success) {
         console.error('Screenshot generation failed:', result.error);
@@ -1364,33 +1338,12 @@ export class ContentRepository {
     try {
       console.log(`Generating batch URL previews for ${jobs.length} jobs`);
 
-      // Get the current user session for authentication
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session?.access_token) {
-        throw new Error('User not authenticated');
-      }
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/content`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          action: 'screenshot-queue',
-          payload: {
-            jobs: jobs
-          }
-        }),
+      const result = await LambdaClient.invoke({
+        action: 'screenshot-queue',
+        payload: {
+          jobs: jobs
+        }
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
-      }
-
-      const result = await response.json();
 
       if (!result.success) {
         console.error('Batch screenshot generation failed:', result.error);
@@ -1460,7 +1413,8 @@ export class ContentRepository {
     contentId: string,
     sessionData: {
       session_id: string;
-      r2_url: string;
+      s3_url?: string;
+      r2_url?: string; // Deprecated - kept for backward compatibility
       initial_prompt: string;
       last_updated_at?: string;
     }
@@ -1482,7 +1436,8 @@ export class ContentRepository {
         ...content.metadata,
         claude_code_session: {
           session_id: sessionData.session_id,
-          r2_url: sessionData.r2_url,
+          s3_url: sessionData.s3_url,
+          r2_url: sessionData.r2_url, // Keep for backward compatibility
           initial_prompt: sessionData.initial_prompt,
           created_at: content.metadata?.claude_code_session?.created_at || new Date().toISOString(),
           last_updated_at: sessionData.last_updated_at || new Date().toISOString()
@@ -1510,7 +1465,8 @@ export class ContentRepository {
    */
   async getClaudeCodeSession(contentId: string): Promise<{
     session_id: string;
-    r2_url: string;
+    s3_url?: string;
+    r2_url?: string; // Deprecated - kept for backward compatibility
     initial_prompt: string;
     created_at: string;
     last_updated_at?: string;
@@ -1531,11 +1487,12 @@ export class ContentRepository {
         if (content.metadata?.claude_code_session) {
           const session = content.metadata.claude_code_session;
 
-          // Validate session has required fields
-          if (session.session_id && session.r2_url) {
+          // Validate session has required fields - support both s3_url (new) and r2_url (legacy)
+          if (session.session_id && (session.s3_url || session.r2_url)) {
             return {
               session_id: session.session_id,
-              r2_url: session.r2_url,
+              s3_url: session.s3_url,
+              r2_url: session.r2_url, // Keep for backward compatibility
               initial_prompt: session.initial_prompt || '',
               created_at: session.created_at || new Date().toISOString(),
               last_updated_at: session.last_updated_at
@@ -1561,6 +1518,114 @@ export class ContentRepository {
   async hasClaudeCodeSession(contentId: string): Promise<boolean> {
     const session = await this.getClaudeCodeSession(contentId);
     return session !== null;
+  }
+
+  // Job Management Methods
+
+  /**
+   * Get a specific job by ID
+   */
+  async getJob(job_id: string): Promise<any> {
+    try {
+      const result = await LambdaClient.invoke({
+        action: 'get-job',
+        payload: {
+          job_id
+        }
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to get job');
+      }
+
+      return result.job;
+    } catch (error) {
+      console.error('Failed to get job:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * List jobs for the current user
+   */
+  async listJobs(params?: {
+    status?: string | string[];
+    limit?: number;
+    offset?: number;
+  }): Promise<any[]> {
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const result = await LambdaClient.invoke({
+        action: 'list-jobs',
+        payload: {
+          user_id: user.id,
+          ...params
+        }
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to list jobs');
+      }
+
+      return result.jobs || [];
+    } catch (error) {
+      console.error('Failed to list jobs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Cancel a pending job
+   */
+  async cancelJob(job_id: string): Promise<boolean> {
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const result = await LambdaClient.invoke({
+        action: 'cancel-job',
+        payload: {
+          job_id,
+          user_id: user.id
+        }
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to cancel job');
+      }
+
+      return result.cancelled;
+    } catch (error) {
+      console.error('Failed to cancel job:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Subscribe to job updates for realtime notifications
+   */
+  subscribeToJobs(userId: string, callback: (payload: any) => void) {
+    return supabase
+      .channel(`jobs:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'content_processing_jobs',
+          filter: `user_id=eq.${userId}`
+        },
+        callback
+      )
+      .subscribe();
   }
 }
 

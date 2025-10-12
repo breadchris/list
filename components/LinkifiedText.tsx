@@ -1,4 +1,5 @@
 import React from 'react';
+import { TruncatedContent } from './TruncatedContent';
 
 interface TextSegment {
   text: string;
@@ -55,12 +56,17 @@ const parseTextWithUrls = (text: string): TextSegment[] => {
 interface LinkifiedTextProps {
   text: string;
   className?: string;
+  maxHeight?: number; // Optional max height for truncation (in pixels)
 }
 
-export const LinkifiedText: React.FC<LinkifiedTextProps> = ({ text, className = '' }) => {
+export const LinkifiedText: React.FC<LinkifiedTextProps> = ({
+  text,
+  className = '',
+  maxHeight
+}) => {
   const segments = parseTextWithUrls(text);
 
-  return (
+  const content = (
     <span className={className}>
       {segments.map((segment, index) => {
         if (segment.isUrl) {
@@ -91,4 +97,11 @@ export const LinkifiedText: React.FC<LinkifiedTextProps> = ({ text, className = 
       })}
     </span>
   );
+
+  // If maxHeight is provided, wrap in TruncatedContent
+  if (maxHeight) {
+    return <TruncatedContent maxHeight={maxHeight}>{content}</TruncatedContent>;
+  }
+
+  return content;
 };

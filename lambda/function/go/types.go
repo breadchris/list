@@ -46,3 +46,32 @@ type VideoInfo struct {
 	PublishDate   string      `json:"publish_date"`   // ISO 8601 formatted date
 	Thumbnails    []Thumbnail `json:"thumbnails"`     // Video thumbnails
 }
+
+// LibgenSearchRequest contains parameters for a Libgen book search
+type LibgenSearchRequest struct {
+	Query      string            `json:"query"`                 // Search query
+	SearchType string            `json:"search_type,omitempty"` // "default", "title", "author"
+	Topics     []string          `json:"topics,omitempty"`      // "libgen", "fiction", "comics", etc.
+	Filters    map[string]string `json:"filters,omitempty"`     // Optional filters (year, extension, etc.)
+}
+
+// BookInfo represents information about a single book from Libgen
+type BookInfo struct {
+	ID        string   `json:"id"`        // Book ID
+	Title     string   `json:"title"`     // Book title
+	Author    string   `json:"author"`    // Author name
+	Publisher string   `json:"publisher"` // Publisher name
+	Year      string   `json:"year"`      // Publication year
+	Language  string   `json:"language"`  // Book language
+	Pages     string   `json:"pages"`     // Number of pages
+	Size      string   `json:"size"`      // File size
+	Extension string   `json:"extension"` // File format (pdf, epub, etc.)
+	MD5       string   `json:"md5"`       // MD5 hash
+	Mirrors   []string `json:"mirrors"`   // Download mirror URLs
+}
+
+// LibgenSearchResponse contains the results of a Libgen search
+type LibgenSearchResponse struct {
+	Books []BookInfo `json:"books"` // List of found books
+	Query string     `json:"query"` // Original search query
+}
