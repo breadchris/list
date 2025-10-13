@@ -7,12 +7,13 @@ import type {
   YouTubePlaylistPayload,
   TMDbSearchPayload,
   LibgenSearchPayload,
+  ScreenshotQueuePayload,
   ContentItem,
   OpenAIMessage
 } from './types.js';
 import { extractUrls, extractYouTubePlaylistUrls, fetchSEOMetadata } from './utils.js';
 import { callOpenAI, callOpenAIChat, formatContentForContext } from './openai-client.js';
-import { fetchMarkdownFromCloudflare } from './cloudflare-client.js';
+import { fetchMarkdownFromCloudflare, generateScreenshot } from './cloudflare-client.js';
 import { processTMDbSearchForContent } from './tmdb-client.js';
 import { searchLibgen, type BookInfo } from './libgen-client.js';
 
@@ -731,4 +732,113 @@ function formatBookData(book: BookInfo): string {
   }
 
   return parts.join('\n');
+}
+
+// =============================================================================
+// SCREENSHOT GENERATION
+// =============================================================================
+
+export async function handleScreenshotQueue(supabase: any, payload: ScreenshotQueuePayload): Promise<ContentResponse> {
+  const results = [];
+
+  for (const job of payload.jobs) {
+    try {
+      const result = await processScreenshotForContent(supabase, job.contentId, job.url);
+      results.push(result);
+    } catch (error: any) {
+      console.error(`Error processing screenshot for content ${job.contentId}:`, error);
+      results.push({
+        content_id: job.contentId,
+        url: job.url,
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+async function processScreenshotForContent(supabase: any, contentId: string, url: string) {
+  try {
+    console.log(`Generating screenshot for content ${contentId} with URL: ${url}`);
+
+    // Generate screenshot using Cloudflare Browser Rendering
+    const screenshotBuffer = await generateScreenshot(url);
+
+    // Convert ArrayBuffer to Buffer (Node.js)
+    const buffer = Buffer.from(screenshotBuffer);
+
+    // Generate unique filename
+    const timestamp = Date.now();
+    const filename = `screenshots/${contentId}-${timestamp}.png`;
+
+    console.log(`Uploading screenshot to storage: ${filename}`);
+
+    // Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabase
+      .storage
+      .from('content')
+      .upload(filename, buffer, {
+        contentType: 'image/png',
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload screenshot: ${uploadError.message}`);
+    }
+
+    // Get public URL
+    const { data: publicUrlData } = supabase
+      .storage
+      .from('content')
+      .getPublicUrl(filename);
+
+    const publicUrl = publicUrlData.publicUrl;
+
+    console.log(`Screenshot uploaded successfully: ${publicUrl}`);
+
+    // Update content metadata with url_preview
+    const { data: content, error: fetchError } = await supabase
+      .from('content')
+      .select('metadata')
+      .eq('id', contentId)
+      .single();
+
+    if (fetchError) {
+      throw new Error(`Failed to fetch content metadata: ${fetchError.message}`);
+    }
+
+    // Update metadata with url_preview
+    const updatedMetadata = {
+      ...content.metadata,
+      url_preview: publicUrl
+    };
+
+    const { error: updateError } = await supabase
+      .from('content')
+      .update({ metadata: updatedMetadata })
+      .eq('id', contentId);
+
+    if (updateError) {
+      throw new Error(`Failed to update metadata: ${updateError.message}`);
+    }
+
+    console.log(`Updated content ${contentId} with url_preview: ${publicUrl}`);
+
+    return {
+      content_id: contentId,
+      url: url,
+      success: true,
+      screenshot_url: publicUrl
+    };
+
+  } catch (error: any) {
+    console.error(`Error processing screenshot for ${url}:`, error);
+    throw error;
+  }
 }

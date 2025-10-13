@@ -14,6 +14,10 @@ import { ContentListSkeleton } from './SkeletonComponents';
 import { ContentInput } from './ContentInput';
 import { TagButton } from './TagButton';
 import { TruncatedContent } from './TruncatedContent';
+import { SearchWorkflowSelector } from './SearchWorkflowSelector';
+import { WorkflowAction } from './WorkflowFAB';
+import { ContentJobsIndicator } from './ContentJobsIndicator';
+import { useActiveJobs } from '../hooks/useJobsQueries';
 
 interface ContentListProps {
   groupId: string;
@@ -27,7 +31,9 @@ interface ContentListProps {
   onInputClose?: () => void;
   onContentAdded?: (content: Content) => void;
   viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
-  contentType?: 'text' | 'ai-chat';
+  contentType?: 'text' | 'ai-chat' | 'search';
+  searchWorkflows?: WorkflowAction[];
+  onSearchQueryChange?: (query: string) => void;
 }
 
 interface TagDisplayProps {
@@ -112,7 +118,9 @@ export const ContentList: React.FC<ContentListProps> = ({
   onInputClose,
   onContentAdded,
   viewMode = 'chronological',
-  contentType = 'text'
+  contentType = 'text',
+  searchWorkflows = [],
+  onSearchQueryChange
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -160,6 +168,9 @@ export const ContentList: React.FC<ContentListProps> = ({
     parentContentId || '',
     { enabled: !!parentContentId && !isSearching }
   );
+
+  // Fetch all active jobs for the group (optimized single query)
+  const { jobsByContentId } = useActiveJobs(groupId);
 
   // Handle optimistic updates for new content
   useEffect(() => {
@@ -271,6 +282,20 @@ export const ContentList: React.FC<ContentListProps> = ({
       tagsSubscription.unsubscribe();
     };
   }, [groupId, parentContentId, queryClient]);
+
+  // Set up real-time subscription for job status changes
+  useEffect(() => {
+    if (!groupId) return;
+
+    const jobsSubscription = contentRepository.subscribeToJobs(groupId, (payload) => {
+      // When job status changes, invalidate jobs query to refetch
+      queryClient.invalidateQueries({ queryKey: QueryKeys.activeJobsByGroup(groupId) });
+    });
+
+    return () => {
+      jobsSubscription.unsubscribe();
+    };
+  }, [groupId, queryClient]);
 
   // Auto-retry mechanism for stuck queries - must be before early return
   useEffect(() => {
@@ -624,14 +649,25 @@ export const ContentList: React.FC<ContentListProps> = ({
             {/* Root-level Input - Show at top when adding root items */}
             {showInput && !parentContentId && onContentAdded && onInputClose && (
               <div className="mb-4">
-                <ContentInput
-                  groupId={groupId}
-                  parentContentId={parentContentId}
-                  onContentAdded={onContentAdded}
-                  isVisible={showInput}
-                  onClose={onInputClose}
-                  contentType={contentType}
-                />
+                {contentType === 'search' ? (
+                  <SearchWorkflowSelector
+                    workflows={searchWorkflows}
+                    isVisible={showInput}
+                    onClose={onInputClose}
+                    searchQuery={searchQuery}
+                    onSearchChange={onSearchQueryChange || (() => {})}
+                    isSearching={isSearching}
+                  />
+                ) : (
+                  <ContentInput
+                    groupId={groupId}
+                    parentContentId={parentContentId}
+                    onContentAdded={onContentAdded}
+                    isVisible={showInput}
+                    onClose={onInputClose}
+                    contentType={contentType}
+                  />
+                )}
               </div>
             )}
 
@@ -688,6 +724,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                           onClick={() => handleContentClick(item)}
                         />
                         <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                         <div className="flex items-center gap-2 mt-2">
                           <p className="text-xs text-gray-500">
                             {formatRelativeTime(item.created_at)}
@@ -711,6 +748,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                         </div>
                         <JsContentDisplay code={item.data} maxLines={8} />
                         <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                         <div className="flex items-center gap-2 mt-2">
                           <p className="text-xs text-gray-500">
                             {formatRelativeTime(item.created_at)}
@@ -745,6 +783,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                           </div>
                         </TruncatedContent>
                         <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                         <div className="flex items-center gap-2 mt-2">
                           <p className="text-xs text-gray-500">
                             {formatRelativeTime(item.created_at)}
@@ -787,6 +826,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                           )}
                         </div>
                         <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                         <div className="flex items-center gap-2 mt-2">
                           <p className="text-xs text-gray-500">
                             {formatRelativeTime(item.created_at)}
@@ -809,6 +849,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                           onClick={() => handleContentClick(item)}
                         />
                         <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                         <div className="flex items-center gap-2 mt-2">
                           <p className="text-xs text-gray-500">
                             {formatRelativeTime(item.created_at)}
@@ -847,6 +888,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                           ) : null}
                           <TagDisplay tags={item.tags || []} isVisible={true} />
                         </div>
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                       </div>
                     )}
                   </div>

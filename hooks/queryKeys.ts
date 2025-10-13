@@ -31,6 +31,11 @@ export const QueryKeys = {
   // SEO operations
   seoChildren: (contentId: string) =>
     ['content', 'seo-children', contentId] as const,
+
+  // Job operations
+  jobs: ['jobs'] as const,
+  activeJobsByGroup: (groupId: string) =>
+    ['jobs', 'active', groupId] as const,
 } as const;
 
 /**

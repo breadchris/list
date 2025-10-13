@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 
-interface WorkflowAction {
+export interface WorkflowAction {
   id: string;
   name: string;
   description: string;
   icon: string;
   onClick: () => void;
+  category?: string[];
 }
 
 interface WorkflowFABProps {

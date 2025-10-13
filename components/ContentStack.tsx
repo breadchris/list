@@ -11,6 +11,8 @@ import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentM
 import { ContentSelectionState } from '../hooks/useContentSelection';
 import { ContentInput } from './ContentInput';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { SearchWorkflowSelector } from './SearchWorkflowSelector';
+import { WorkflowAction } from './WorkflowFAB';
 
 interface ContentStackProps {
   groupId: string;
@@ -24,7 +26,9 @@ interface ContentStackProps {
   onInputClose?: () => void;
   onContentAdded?: (content: Content) => void;
   viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
-  contentType?: 'text' | 'ai-chat';
+  contentType?: 'text' | 'ai-chat' | 'search';
+  searchWorkflows?: WorkflowAction[];
+  onSearchQueryChange?: (query: string) => void;
 }
 
 export const ContentStack: React.FC<ContentStackProps> = ({
@@ -39,7 +43,9 @@ export const ContentStack: React.FC<ContentStackProps> = ({
   onInputClose,
   onContentAdded,
   viewMode = 'chronological',
-  contentType = 'text'
+  contentType = 'text',
+  searchWorkflows = [],
+  onSearchQueryChange
 }) => {
   const deleteContentMutation = useDeleteContentMutation();
   const toast = useToast();
@@ -189,14 +195,25 @@ export const ContentStack: React.FC<ContentStackProps> = ({
       {/* Content Input */}
       {showInput && onInputClose && (
         <div className="border-b border-gray-200 bg-white">
-          <ContentInput
-            groupId={groupId}
-            parentContentId={parentContentId}
-            onContentAdded={handleContentAdded}
-            isVisible={showInput}
-            onClose={onInputClose}
-            contentType={contentType}
-          />
+          {contentType === 'search' ? (
+            <SearchWorkflowSelector
+              workflows={searchWorkflows}
+              isVisible={showInput}
+              onClose={onInputClose}
+              searchQuery={searchQuery}
+              onSearchChange={onSearchQueryChange || (() => {})}
+              isSearching={isSearching}
+            />
+          ) : (
+            <ContentInput
+              groupId={groupId}
+              parentContentId={parentContentId}
+              onContentAdded={handleContentAdded}
+              isVisible={showInput}
+              onClose={onInputClose}
+              contentType={contentType}
+            />
+          )}
         </div>
       )}
 

@@ -1,5 +1,6 @@
 import { Content } from './ContentRepository';
 import { LambdaClient } from './LambdaClient';
+import { supabase } from './SupabaseClient';
 
 export interface ClaudeCodeRequest {
   prompt: string;
@@ -81,8 +82,27 @@ ${formattedItems}
         fullPrompt = contextString + fullPrompt;
       }
 
-      const requestPayload: ClaudeCodeRequest = {
-        prompt: fullPrompt
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get user's default group
+      const { data: groups } = await supabase
+        .from('group_memberships')
+        .select('group_id')
+        .eq('user_id', user.id)
+        .limit(1);
+
+      if (!groups?.[0]?.group_id && !selectedContent?.[0]?.group_id) {
+        throw new Error('No group found for user');
+      }
+
+      const requestPayload: any = {
+        prompt: fullPrompt,
+        user_id: user.id,
+        group_id: groups?.[0]?.group_id || selectedContent?.[0]?.group_id
       };
 
       // Add session_id if continuing an existing session
@@ -158,9 +178,9 @@ ${formattedItems}
       }
 
       try {
-        // Check job status
+        // Check job status using get-job action
         const statusResponse = await LambdaClient.invoke({
-          action: 'claude-code-status',
+          action: 'get-job',
           payload: { job_id }
         });
 
@@ -173,26 +193,27 @@ ${formattedItems}
           throw new Error(statusResponse.error || 'Failed to check job status');
         }
 
-        const jobStatus = statusResponse as unknown as ClaudeCodeJobResponse;
+        // Extract job data from response
+        const jobData = statusResponse.job;
         const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
 
-        console.log(`[Attempt ${attempt}] Job ${job_id} status: ${jobStatus.status} (${elapsedSeconds}s elapsed)`);
+        console.log(`[Attempt ${attempt}] Job ${job_id} status: ${jobData.status} (${elapsedSeconds}s elapsed)`);
 
         // Update progress
-        if (jobStatus.status === 'pending') {
+        if (jobData.status === 'pending') {
           onProgress?.(`Waiting for execution... (${elapsedSeconds}s)`);
-        } else if (jobStatus.status === 'running') {
+        } else if (jobData.status === 'processing') {
           onProgress?.(`Executing Claude Code... (${elapsedSeconds}s)`);
-        } else if (jobStatus.status === 'completed') {
+        } else if (jobData.status === 'completed') {
           onProgress?.('Execution completed!');
 
-          if (!jobStatus.result) {
+          if (!jobData.result) {
             throw new Error('Job completed but no result available');
           }
 
-          return jobStatus.result;
-        } else if (jobStatus.status === 'error') {
-          throw new Error(jobStatus.error || 'Job execution failed');
+          return jobData.result;
+        } else if (jobData.status === 'failed') {
+          throw new Error(jobData.error || 'Job execution failed');
         }
 
       } catch (error) {

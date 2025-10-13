@@ -34,6 +34,7 @@ export interface CreateJobParams {
 	group_id: string;
 	action: string;
 	payload: any;
+	target_content_ids?: string[];
 }
 
 export interface UpdateJobStatusParams {
@@ -82,17 +83,24 @@ export class JobManager {
 	 * Create a new job record in the database
 	 */
 	async createJob(params: CreateJobParams): Promise<ContentProcessingJob> {
-		const { user_id, group_id, action, payload } = params;
+		const { user_id, group_id, action, payload, target_content_ids } = params;
+
+		const insertData: any = {
+			user_id,
+			group_id,
+			action,
+			payload,
+			status: 'pending' as JobStatus
+		};
+
+		// Add content_ids if target content IDs were provided
+		if (target_content_ids && target_content_ids.length > 0) {
+			insertData.content_ids = target_content_ids;
+		}
 
 		const { data, error } = await this.supabase
 			.from('content_processing_jobs')
-			.insert({
-				user_id,
-				group_id,
-				action,
-				payload,
-				status: 'pending' as JobStatus
-			})
+			.insert(insertData)
 			.select()
 			.single();
 

@@ -20,6 +20,7 @@ import { TMDbSearchModal } from './TMDbSearchModal';
 import { SharingSettingsModal } from './SharingSettingsModal';
 import { LibgenSearchModal, LibgenSearchConfig } from './LibgenSearchModal';
 import { GroupDropdown } from './GroupDropdown';
+import SendToGroupModal from './SendToGroupModal';
 import { AppSkeleton, HeaderSkeleton, ContentListSkeleton } from './SkeletonComponents';
 import { Footer } from './Footer';
 import { LLMPromptModal } from './LLMPromptModal';
@@ -146,6 +147,10 @@ export const ListApp: React.FC = () => {
   // YouTube Video Annotator modal state
   const [showYouTubeAnnotator, setShowYouTubeAnnotator] = useState(false);
   const [selectedVideoForAnnotation, setSelectedVideoForAnnotation] = useState<Content | null>(null);
+
+  // Send to Group modal state
+  const [showSendToGroupModal, setShowSendToGroupModal] = useState(false);
+  const [isSendingToGroup, setIsSendingToGroup] = useState(false);
 
   // Track signup completion to prevent false toast notifications
   const hasShownWelcomeRef = useRef(false);
@@ -343,6 +348,52 @@ export const ListApp: React.FC = () => {
         'Delete failed',
         error instanceof Error ? error.message : 'Failed to delete items'
       );
+    }
+  };
+
+  const handleSendToGroup = async (targetGroupId: string) => {
+    const selectedIds = Array.from(contentSelection.selectedItems);
+
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    if (!currentGroup) {
+      toast.error('Error', 'No current group selected');
+      return;
+    }
+
+    try {
+      setIsSendingToGroup(true);
+
+      // Copy content to target group
+      const copiedContent = await contentRepository.copyContentToGroup(
+        selectedIds,
+        targetGroupId,
+        true // Copy tags
+      );
+
+      // Close modal
+      setShowSendToGroupModal(false);
+
+      // Clear selection
+      contentSelection.clearSelection();
+
+      // Show success message
+      const itemText = copiedContent.length === 1 ? 'item' : 'items';
+      toast.success(
+        'Sent to group',
+        `Successfully copied ${copiedContent.length} ${itemText}`
+      );
+
+    } catch (error) {
+      console.error('Send to group failed:', error);
+      toast.error(
+        'Send failed',
+        error instanceof Error ? error.message : 'Failed to send items to group'
+      );
+    } finally {
+      setIsSendingToGroup(false);
     }
   };
 
@@ -889,6 +940,7 @@ export const ListApp: React.FC = () => {
 
       let successCount = 0;
       let failureCount = 0;
+      const queuedJobs: Array<{ contentId: string; jobId: string }> = [];
 
       // Process each URL
       for (const { url, contentId } of urlsToProcess) {
@@ -897,11 +949,17 @@ export const ListApp: React.FC = () => {
 
           const result = await contentRepository.generateUrlPreview(contentId, url);
 
-          if (result.success && result.screenshot_url) {
+          if (result.job_id) {
+            // Job queued successfully
+            queuedJobs.push({ contentId, jobId: result.job_id });
+            console.log(`Screenshot job queued for ${contentId}: ${result.job_id}`);
+          } else if (result.success && result.screenshot_url) {
+            // Immediate success (shouldn't happen with queue)
             await contentRepository.updateContentUrlPreview(contentId, result.screenshot_url);
             console.log(`Successfully generated screenshot for ${contentId}: ${result.screenshot_url}`);
             successCount++;
           } else {
+            // Actual failure
             console.error(`Failed to generate screenshot for ${contentId}:`, result.error);
             failureCount++;
           }
@@ -912,10 +970,16 @@ export const ListApp: React.FC = () => {
       }
 
       // Show completion notification
-      if (successCount > 0 && failureCount === 0) {
+      if (queuedJobs.length > 0 && successCount === 0 && failureCount === 0) {
+        toast.info('Jobs Queued', `${queuedJobs.length} screenshot job${queuedJobs.length > 1 ? 's' : ''} queued for processing`);
+      } else if (successCount > 0 && failureCount === 0) {
         toast.success('Screenshots Generated', `Successfully generated ${successCount} screenshot${successCount > 1 ? 's' : ''}!`);
-      } else if (successCount > 0 && failureCount > 0) {
-        toast.warning('Partially Complete', `Generated ${successCount} screenshot${successCount > 1 ? 's' : ''}, ${failureCount} failed.`);
+      } else if (queuedJobs.length > 0 || successCount > 0) {
+        const parts: string[] = [];
+        if (queuedJobs.length > 0) parts.push(`${queuedJobs.length} queued`);
+        if (successCount > 0) parts.push(`${successCount} completed`);
+        if (failureCount > 0) parts.push(`${failureCount} failed`);
+        toast.info('Processing Screenshots', parts.join(', '));
       } else {
         toast.error('Generation Failed', 'Failed to generate any screenshots. Please try again later.');
       }
@@ -1053,6 +1117,7 @@ export const ListApp: React.FC = () => {
       name: 'Search Books',
       description: 'Search for books on Library Genesis',
       icon: '📚',
+      category: ['search'],
       onClick: () => {
         console.log('📚 WorkflowAction onClick triggered for Libgen search');
         handleLibgenSearch();
@@ -1073,6 +1138,7 @@ export const ListApp: React.FC = () => {
       name: 'Search TMDb',
       description: 'Search The Movie Database and add results',
       icon: '🎥',
+      category: ['search'],
       onClick: () => {
         console.log('🎥 WorkflowAction onClick triggered for TMDb search');
         handleTMDbSearch();
@@ -1089,6 +1155,16 @@ export const ListApp: React.FC = () => {
       }
     },
     {
+      id: 'send-to-group',
+      name: 'Send to Group',
+      description: 'Copy selected items to another group',
+      icon: '📤',
+      onClick: () => {
+        console.log('📤 WorkflowAction onClick triggered for send to group');
+        setShowSendToGroupModal(true);
+      }
+    },
+    {
       id: 'bulk-delete',
       name: 'Delete Items',
       description: 'Delete selected items',
@@ -1096,6 +1172,9 @@ export const ListApp: React.FC = () => {
       onClick: handleBulkDelete
     }
   ];
+
+  // Filter workflows by category for search workflows
+  const searchWorkflows = workflowActions.filter(action => action.category?.includes('search'));
 
   // Gradual initialization with deliberate delays to prevent DOM conflicts
   const initializeApp = async () => {
@@ -1468,16 +1547,22 @@ export const ListApp: React.FC = () => {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchQuery(query);
-    
+
     // Clear previous timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
-    
+
     // Set new timeout for debounced search activation
     searchTimeoutRef.current = setTimeout(() => {
       setIsSearching(!!query.trim());
     }, 300);
+  };
+
+  // Handle content search query change (without debouncing for SearchWorkflowSelector)
+  const handleContentSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setIsSearching(!!query.trim());
   };
 
   // Helper function to load content from URL params
@@ -1701,37 +1786,10 @@ export const ListApp: React.FC = () => {
                 isLoading={groupsLoading}
               />
             </div>
-            
-            {/* Search Bar and View Mode Selector */}
-            {currentGroup && (
-              <div className="flex-1 flex items-center space-x-2 max-w-md mx-2 sm:mx-4">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchQuery}
-                    onChange={handleSearchChange}
-                    className="w-full px-3 sm:px-4 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => {
-                        setSearchQuery('');
-                        setIsSearching(false);
-                        if (searchTimeoutRef.current) {
-                          clearTimeout(searchTimeoutRef.current);
-                        }
-                      }}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-                    >
-                      <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
 
-                {/* View Mode Selector */}
+            {/* View Mode Selector */}
+            {currentGroup && (
+              <div className="flex items-center mx-2 sm:mx-4">
                 <select
                   value={viewMode}
                   onChange={(e) => setViewMode(e.target.value as ViewMode)}
@@ -1943,6 +2001,9 @@ export const ListApp: React.FC = () => {
             onInputClose={handleInputClose}
             onContentAdded={handleContentAdded}
             viewMode={viewMode}
+            contentType={selectedContentType}
+            searchWorkflows={searchWorkflows}
+            onSearchQueryChange={handleContentSearchChange}
           />
         ) : (
           <ContentList
@@ -1958,6 +2019,8 @@ export const ListApp: React.FC = () => {
             onContentAdded={handleContentAdded}
             viewMode={viewMode}
             contentType={selectedContentType}
+            searchWorkflows={searchWorkflows}
+            onSearchQueryChange={handleContentSearchChange}
           />
         )}
       </div>
@@ -2057,6 +2120,17 @@ export const ListApp: React.FC = () => {
         selectedContent={selectedContentForLibgen}
         onClose={handleCloseLibgenModal}
         onSearch={handleLibgenSearchExecute}
+      />
+
+      {/* Send to Group Modal */}
+      <SendToGroupModal
+        isVisible={showSendToGroupModal}
+        groups={groups}
+        currentGroupId={currentGroup?.id || ''}
+        selectedCount={contentSelection.selectedCount}
+        onClose={() => setShowSendToGroupModal(false)}
+        onSend={handleSendToGroup}
+        isLoading={isSendingToGroup}
       />
 
       {/* Sharing Settings Modal */}

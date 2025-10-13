@@ -1,6 +1,6 @@
 import type { APIGatewayProxyHandlerV2, APIGatewayProxyEventV2, APIGatewayProxyResultV2, SQSEvent, SQSRecord } from 'aws-lambda';
 import { SessionManager } from './session-manager.js';
-import { executeClaudeCode, executeClaudeCodeAsync } from './claude-executor.js';
+import { executeClaudeCode } from './claude-executor.js';
 import { getPlaylistVideos } from './youtube-client.js';
 import { getSupabaseClient } from './supabase-client.js';
 import { JobManager } from './job-manager.js';
@@ -11,7 +11,8 @@ import {
 	handleMarkdownExtract,
 	handleYouTubePlaylistExtract,
 	handleTMDbSearch,
-	handleLibgenSearch
+	handleLibgenSearch,
+	handleScreenshotQueue
 } from './content-handlers.js';
 import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
 import { writeFileSync } from 'fs';
@@ -159,6 +160,58 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 							);
 						}
 						break;
+
+					case 'screenshot-queue':
+						result = await handleScreenshotQueue(supabase, payload);
+						if (result.data) {
+							content_ids = result.data
+								.filter((item: any) => item.success)
+								.map((item: any) => item.content_id);
+						}
+						break;
+
+					case 'claude-code': {
+						const bucketName = process.env.S3_BUCKET_NAME;
+						if (!bucketName) {
+							throw new Error('S3_BUCKET_NAME not configured');
+						}
+
+						const sessionManager = new SessionManager(bucketName, process.env.AWS_REGION);
+
+						// Download session files if continuing session
+						let sessionFiles;
+						if (payload.session_id) {
+							const exists = await sessionManager.sessionExists(payload.session_id);
+							if (exists) {
+								sessionFiles = await sessionManager.downloadSession(payload.session_id);
+							}
+						}
+
+						// Execute Claude Code
+						const claudeResult = await executeClaudeCode({
+							prompt: payload.prompt,
+							sessionFiles,
+							resumeSessionId: payload.session_id
+						});
+
+						// Upload output files to S3
+						let s3_url = '';
+						if (claudeResult.outputFiles?.length > 0) {
+							s3_url = await sessionManager.uploadSession(claudeResult.session_id, claudeResult.outputFiles);
+						}
+
+						result = {
+							success: claudeResult.status === 'completed',
+							session_id: claudeResult.session_id,
+							messages: claudeResult.messages,
+							s3_url,
+							stdout: claudeResult.stdout,
+							stderr: claudeResult.stderr,
+							exitCode: claudeResult.exitCode,
+							file_count: claudeResult.outputFiles?.length || 0
+						};
+						break;
+					}
 
 					default:
 						throw new Error(`Unknown action: ${action}`);
@@ -504,215 +557,6 @@ async function handleClaudeCodeRequest(body: ClaudeCodeRequest): Promise<APIGate
 	}
 }
 
-async function handleClaudeCodeJobSubmit(body: ClaudeCodeRequest): Promise<APIGatewayProxyResultV2> {
-	console.log('handleClaudeCodeJobSubmit called with:', JSON.stringify(body, null, 2));
-
-	const { prompt, session_id } = body;
-
-	if (!prompt) {
-		return {
-			statusCode: 400,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify({
-				success: false,
-				error: 'Missing required parameter: prompt'
-			})
-		};
-	}
-
-	const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-	if (!anthropicApiKey) {
-		return {
-			statusCode: 500,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify({
-				success: false,
-				error: 'ANTHROPIC_API_KEY not configured'
-			})
-		};
-	}
-
-	const bucketName = process.env.S3_BUCKET_NAME;
-	if (!bucketName) {
-		return {
-			statusCode: 500,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify({
-				success: false,
-				error: 'S3_BUCKET_NAME not configured'
-			})
-		};
-	}
-
-	try {
-		const sessionManager = new SessionManager(bucketName, process.env.AWS_REGION);
-
-		// Generate unique job ID
-		const job_id = generateJobId();
-
-		// Store initial job status
-		await sessionManager.storeJobStatus(job_id, 'pending');
-
-		// Download session files if session_id provided
-		let sessionFiles: any = undefined;
-		if (session_id) {
-			const exists = await sessionManager.sessionExists(session_id);
-			if (exists) {
-				sessionFiles = await sessionManager.downloadSession(session_id);
-			}
-		}
-
-		// Start async execution (non-blocking)
-		setImmediate(() => {
-			executeClaudeCodeAsync(
-				job_id,
-				{
-					prompt,
-					sessionFiles,
-					resumeSessionId: session_id
-				},
-				sessionManager
-			).catch(error => {
-				console.error(`[Job ${job_id}] Async execution failed:`, error);
-			});
-		});
-
-		// Return job ID immediately
-		const response: ClaudeCodeJobResponse = {
-			job_id,
-			status: 'pending',
-			created_at: new Date().toISOString()
-		};
-
-		return {
-			statusCode: 200,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify(response)
-		};
-	} catch (error) {
-		console.error('Claude Code job submission error:', error);
-
-		return {
-			statusCode: 500,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify({
-				success: false,
-				error: error instanceof Error ? error.message : 'Unknown error occurred'
-			})
-		};
-	}
-}
-
-async function handleClaudeCodeJobStatus(payload: ClaudeCodeStatusPayload): Promise<APIGatewayProxyResultV2> {
-	console.log('handleClaudeCodeJobStatus called with:', JSON.stringify(payload, null, 2));
-
-	const { job_id } = payload;
-
-	if (!job_id) {
-		return {
-			statusCode: 400,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify({
-				success: false,
-				error: 'Missing required parameter: job_id'
-			})
-		};
-	}
-
-	const bucketName = process.env.S3_BUCKET_NAME;
-	if (!bucketName) {
-		return {
-			statusCode: 500,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify({
-				success: false,
-				error: 'S3_BUCKET_NAME not configured'
-			})
-		};
-	}
-
-	try {
-		const sessionManager = new SessionManager(bucketName, process.env.AWS_REGION);
-
-		// Check if job exists
-		const jobExists = await sessionManager.jobExists(job_id);
-		if (!jobExists) {
-			return {
-				statusCode: 404,
-				headers: {
-					'Content-Type': 'application/json',
-					...corsHeaders
-				},
-				body: JSON.stringify({
-					success: false,
-					error: `Job ${job_id} not found`
-				})
-			};
-		}
-
-		// Get job status
-		const status = await sessionManager.getJobStatus(job_id);
-
-		// If completed, get the result
-		let result;
-		if (status.status === 'completed') {
-			result = await sessionManager.getJobResult(job_id);
-		}
-
-		const response: ClaudeCodeJobResponse = {
-			job_id,
-			status: status.status,
-			created_at: status.created_at,
-			result: result,
-			error: status.error
-		};
-
-		return {
-			statusCode: 200,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify(response)
-		};
-	} catch (error) {
-		console.error('Claude Code job status error:', error);
-
-		return {
-			statusCode: 500,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders
-			},
-			body: JSON.stringify({
-				success: false,
-				error: error instanceof Error ? error.message : 'Unknown error occurred'
-			})
-		};
-	}
-}
-
 /**
  * Get specific job status
  */
@@ -912,42 +756,121 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 			'markdown-extract',
 			'youtube-playlist-extract',
 			'tmdb-search',
-			'libgen-search'
+			'libgen-search',
+			'screenshot-queue',
+			'claude-code'
 		];
 
 		if (queueableActions.includes(action)) {
 			// Extract user_id and group_id from payload
-			// Assuming selectedContent[0] has these fields
-			const firstContent = payload.selectedContent?.[0];
-			if (!firstContent) {
-				return {
-					statusCode: 400,
-					headers: {
-						'Content-Type': 'application/json',
-						...corsHeaders
-					},
-					body: JSON.stringify({
-						success: false,
-						error: 'Missing selectedContent in payload'
-					})
-				};
+			let user_id: string;
+			let group_id: string;
+
+			// Special handling for screenshot-queue which has jobs array instead of selectedContent
+			if (action === 'screenshot-queue') {
+				const firstJob = payload.jobs?.[0];
+				if (!firstJob || !firstJob.contentId) {
+					return {
+						statusCode: 400,
+						headers: {
+							'Content-Type': 'application/json',
+							...corsHeaders
+						},
+						body: JSON.stringify({
+							success: false,
+							error: 'Missing jobs array or contentId in payload'
+						})
+					};
+				}
+
+				// Fetch content to get user_id and group_id
+				const { data: content, error: fetchError } = await supabase
+					.from('content')
+					.select('user_id, group_id')
+					.eq('id', firstJob.contentId)
+					.single();
+
+				if (fetchError || !content) {
+					return {
+						statusCode: 400,
+						headers: {
+							'Content-Type': 'application/json',
+							...corsHeaders
+						},
+						body: JSON.stringify({
+							success: false,
+							error: `Failed to fetch content: ${fetchError?.message || 'Content not found'}`
+						})
+					};
+				}
+
+				user_id = content.user_id;
+				group_id = content.group_id;
+			} else if (action === 'claude-code') {
+				// Special handling for claude-code which has user_id and group_id directly in payload
+				user_id = payload.user_id;
+				group_id = payload.group_id;
+
+				if (!user_id || !group_id) {
+					return {
+						statusCode: 400,
+						headers: {
+							'Content-Type': 'application/json',
+							...corsHeaders
+						},
+						body: JSON.stringify({
+							success: false,
+							error: 'Missing user_id or group_id in payload'
+						})
+					};
+				}
+			} else {
+				// Standard handling for actions with selectedContent
+				const firstContent = payload.selectedContent?.[0];
+				if (!firstContent) {
+					return {
+						statusCode: 400,
+						headers: {
+							'Content-Type': 'application/json',
+							...corsHeaders
+						},
+						body: JSON.stringify({
+							success: false,
+							error: 'Missing selectedContent in payload'
+						})
+					};
+				}
+
+				user_id = firstContent.user_id;
+				group_id = firstContent.group_id;
+
+				if (!user_id || !group_id) {
+					return {
+						statusCode: 400,
+						headers: {
+							'Content-Type': 'application/json',
+							...corsHeaders
+						},
+						body: JSON.stringify({
+							success: false,
+							error: 'Missing user_id or group_id in selectedContent'
+						})
+					};
+				}
 			}
 
-			const user_id = firstContent.user_id;
-			const group_id = firstContent.group_id;
-
-			if (!user_id || !group_id) {
-				return {
-					statusCode: 400,
-					headers: {
-						'Content-Type': 'application/json',
-						...corsHeaders
-					},
-					body: JSON.stringify({
-						success: false,
-						error: 'Missing user_id or group_id in selectedContent'
-					})
-				};
+			// Extract target content IDs from payload
+			let target_content_ids: string[] = [];
+			if (action === 'screenshot-queue' && payload.jobs) {
+				// Extract content IDs from screenshot jobs array
+				target_content_ids = payload.jobs
+					.map((job: any) => job.contentId)
+					.filter((id: string) => id);
+			} else if (payload.selectedContent && Array.isArray(payload.selectedContent)) {
+				// Extract IDs from selectedContent array
+				target_content_ids = payload.selectedContent
+					.map((content: any) => content.id)
+					.filter((id: string) => id);
 			}
 
 			// Create job in database
@@ -955,7 +878,8 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 				user_id,
 				group_id,
 				action,
-				payload
+				payload,
+				target_content_ids: target_content_ids.length > 0 ? target_content_ids : undefined
 			});
 
 			// Enqueue job to SQS
@@ -987,17 +911,6 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 			case 'chat-message':
 				result = await handleChatMessage(supabase, payload);
 				break;
-
-			case 'claude-code':
-			case 'vibe-coding':
-				// Extract prompt and session_id from payload
-				const { prompt, session_id } = payload;
-				// Delegate to async job submission handler
-				return await handleClaudeCodeJobSubmit({ prompt, session_id });
-
-			case 'claude-code-status':
-				// Delegate to job status handler
-				return await handleClaudeCodeJobStatus(payload as ClaudeCodeStatusPayload);
 
 			case 'get-job':
 				// Get specific job status

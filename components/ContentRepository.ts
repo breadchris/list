@@ -436,6 +436,83 @@ export class ContentRepository {
     }
   }
 
+  async copyContentToGroup(
+    contentIds: string[],
+    targetGroupId: string,
+    copyTags: boolean = true
+  ): Promise<Content[]> {
+    if (contentIds.length === 0) return [];
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const copiedContent: Content[] = [];
+
+      // Process each content item
+      for (const contentId of contentIds) {
+        // Fetch the content item with tags
+        const content = await this.getContentById(contentId);
+        if (!content) {
+          console.warn(`Content ${contentId} not found, skipping`);
+          continue;
+        }
+
+        // Create copy metadata
+        const copyMetadata = {
+          ...content.metadata,
+          copied_from_content_id: content.id,
+          copied_from_group_id: content.group_id,
+          copied_at: new Date().toISOString()
+        };
+
+        // Create the content copy
+        const { data: newContent, error: createError } = await supabase
+          .from('content')
+          .insert([{
+            type: content.type,
+            data: content.data,
+            group_id: targetGroupId,
+            parent_content_id: null, // Always create as top-level item
+            metadata: copyMetadata
+          }])
+          .select()
+          .single();
+
+        if (createError) {
+          console.error(`Error copying content ${contentId}:`, createError);
+          throw new Error(`Failed to copy content: ${createError.message}`);
+        }
+
+        // Copy tags if requested
+        if (copyTags && content.tags && content.tags.length > 0) {
+          const tagInserts = content.tags.map(tag => ({
+            content_id: newContent.id,
+            tag_id: tag.id
+          }));
+
+          const { error: tagError } = await supabase
+            .from('content_tags')
+            .insert(tagInserts);
+
+          if (tagError) {
+            console.warn(`Error copying tags for content ${contentId}:`, tagError);
+            // Don't fail the entire operation if tag copying fails
+          }
+        }
+
+        copiedContent.push(newContent);
+      }
+
+      return copiedContent;
+    } catch (error) {
+      console.error('Error copying content to group:', error);
+      throw error;
+    }
+  }
+
   // Group methods
   async createGroup(name: string): Promise<Group> {
     try {
@@ -1288,7 +1365,7 @@ export class ContentRepository {
   }
 
   // URL Preview / Screenshot functionality using consolidated content function
-  async generateUrlPreview(contentId: string, url: string, useQueue: boolean = true): Promise<{ success: boolean; screenshot_url?: string; error?: string; queued?: boolean }> {
+  async generateUrlPreview(contentId: string, url: string, useQueue: boolean = true): Promise<{ success: boolean; screenshot_url?: string; error?: string; queued?: boolean; job_id?: string; status?: string }> {
     try {
       console.log(`Generating URL preview for content ${contentId} with URL: ${url}`);
 
@@ -1302,11 +1379,22 @@ export class ContentRepository {
         }
       });
 
-      if (!result.success) {
+      if (!result.success && !result.job_id) {
         console.error('Screenshot generation failed:', result.error);
         return {
           success: false,
           error: result.error || 'Screenshot generation failed'
+        };
+      }
+
+      // Job was queued successfully
+      if (result.job_id) {
+        console.log(`Screenshot job queued for content ${contentId}: ${result.job_id}`);
+        return {
+          success: true,
+          queued: true,
+          job_id: result.job_id,
+          status: result.status || 'pending'
         };
       }
 
@@ -1402,6 +1490,108 @@ export class ContentRepository {
       console.error('Failed to update content URL preview:', error);
       throw error;
     }
+  }
+
+  // Job Status Query Methods
+
+  /**
+   * Get all active jobs for a group (optimized - single query)
+   * More efficient than querying per content item
+   */
+  async getActiveJobsForGroup(groupId: string, statusFilter?: string[]): Promise<any[]> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      let query = supabase
+        .from('content_processing_jobs')
+        .select('*')
+        .eq('group_id', groupId)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (statusFilter && statusFilter.length > 0) {
+        query = query.in('status', statusFilter);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching active jobs for group:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all jobs related to a specific content item
+   */
+  async getJobsForContent(contentId: string, statusFilter?: string[]): Promise<any[]> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      let query = supabase
+        .from('content_processing_jobs')
+        .select('*')
+        .contains('content_ids', [contentId])
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (statusFilter && statusFilter.length > 0) {
+        query = query.in('status', statusFilter);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching jobs for content:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Subscribe to job status updates for a specific content item
+   * Returns unsubscribe function
+   */
+  subscribeToContentJobs(
+    contentId: string,
+    callback: (job: any) => void
+  ): () => void {
+    const channel = supabase
+      .channel(`content-jobs-${contentId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'content_processing_jobs'
+        },
+        (payload) => {
+          // Client-side filter for this specific content
+          const job = payload.new as any;
+          if (job.content_ids && Array.isArray(job.content_ids) && job.content_ids.includes(contentId)) {
+            callback(job);
+          }
+        }
+      )
+      .subscribe();
+
+    // Return unsubscribe function
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }
 
   // Claude Code Session Management Methods
@@ -1518,6 +1708,90 @@ export class ContentRepository {
   async hasClaudeCodeSession(contentId: string): Promise<boolean> {
     const session = await this.getClaudeCodeSession(contentId);
     return session !== null;
+  }
+
+  // Image Upload Methods
+
+  /**
+   * Upload an image to Supabase storage with content UUID prefix
+   * Path pattern: <content-uuid>/<filename>
+   * Returns the public URL of the uploaded image
+   */
+  async uploadImage(file: File, contentId: string): Promise<string> {
+    try {
+      // Generate filename with timestamp to avoid conflicts
+      const timestamp = Date.now();
+      const fileExtension = file.name.split('.').pop() || 'jpg';
+      const fileName = `${timestamp}.${fileExtension}`;
+
+      // Path pattern: <content-uuid>/<filename>
+      const filePath = `${contentId}/${fileName}`;
+
+      console.log(`Uploading image to: ${filePath}`);
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase
+        .storage
+        .from('content')
+        .upload(filePath, file, {
+          contentType: file.type,
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(`Failed to upload image: ${uploadError.message}`);
+      }
+
+      console.log('Upload successful:', uploadData);
+
+      // Get public URL
+      const { data: publicUrlData } = supabase
+        .storage
+        .from('content')
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicUrlData.publicUrl;
+      console.log(`Image uploaded successfully: ${publicUrl}`);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Failed to upload image:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete an image from Supabase storage
+   * Extracts the path from the public URL and deletes the file
+   */
+  async deleteImage(publicUrl: string): Promise<void> {
+    try {
+      // Extract the path from the public URL
+      // URL format: https://<project>.supabase.co/storage/v1/object/public/content/<path>
+      const urlParts = publicUrl.split('/content/');
+      if (urlParts.length !== 2) {
+        throw new Error('Invalid image URL format');
+      }
+
+      const filePath = urlParts[1];
+
+      const { error } = await supabase
+        .storage
+        .from('content')
+        .remove([filePath]);
+
+      if (error) {
+        console.error('Delete error:', error);
+        throw new Error(`Failed to delete image: ${error.message}`);
+      }
+
+      console.log(`Image deleted successfully: ${filePath}`);
+    } catch (error) {
+      console.error('Failed to delete image:', error);
+      throw error;
+    }
   }
 
   // Job Management Methods

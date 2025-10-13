@@ -13,7 +13,7 @@ interface ContentInputProps {
   onContentAdded: (content: Content) => void;
   isVisible: boolean;
   onClose: () => void;
-  contentType: 'text' | 'ai-chat';
+  contentType: 'text' | 'ai-chat' | 'search';
 }
 
 export const ContentInput: React.FC<ContentInputProps> = ({
