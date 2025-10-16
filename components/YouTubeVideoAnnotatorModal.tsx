@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Content, contentRepository } from './ContentRepository';
 import { VideoPlayer } from './video-annotator/VideoPlayer';
 import { AnnotationManager } from './video-annotator/AnnotationManager';
-import { VideoAnnotation } from './video-annotator/types';
+import { HorizontalTimeline, TimestampAnnotation, VideoSection } from './video-annotator/HorizontalTimeline';
+import { SectionEditor } from './video-annotator/SectionEditor';
+import { VideoAnnotation, videoAnnotationToTimestamp } from './video-annotator/types';
 import { useToast } from './ToastProvider';
+import { Card } from './ui/card';
 
 interface YouTubeVideoAnnotatorModalProps {
   isVisible: boolean;
@@ -25,61 +28,206 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
   const [seekTo, setSeekTo] = useState<number | undefined>();
   const [isSaving, setIsSaving] = useState(false);
 
+  // Section and loop state
+  const [sections, setSections] = useState<VideoSection[]>([]);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [isLooping, setIsLooping] = useState(false);
+  const [loopRange, setLoopRange] = useState<{start: number, end: number} | null>(null);
+  const lastTimeRef = useRef<number>(0);
+  const activeLoopingSectionRef = useRef<string | null>(null);
+
   const toast = useToast();
 
-  if (!isVisible || !videoContent) return null;
+  // Load existing timestamp children and sections when modal opens
+  useEffect(() => {
+    const loadExistingData = async () => {
+      if (!videoContent?.id) return;
 
-  // Extract YouTube URL from video content
-  const getYouTubeUrl = (): string => {
-    // First try metadata.youtube_url
-    if (videoContent.metadata?.youtube_url) {
-      return videoContent.metadata.youtube_url;
-    }
+      try {
+        const children = await contentRepository.getContentByParent(
+          videoContent.group_id,
+          videoContent.id
+        );
 
-    // Fallback: construct from video ID
-    if (videoContent.metadata?.youtube_video_id) {
-      return `https://www.youtube.com/watch?v=${videoContent.metadata.youtube_video_id}`;
-    }
+        // Load timestamps
+        const timestamps = children
+          .filter(c => c.type === 'timestamp')
+          .map(c => ({
+            id: c.id,
+            title: c.data,
+            description: c.metadata?.description || '',
+            startTime: c.metadata?.start_time || 0,
+            endTime: c.metadata?.end_time || 0,
+            type: (c.metadata?.timestamp_type || 'marker') as 'marker' | 'range'
+          }));
 
-    // Last resort: extract from data field
-    const lines = videoContent.data.split('\n');
-    const urlLine = lines.find(line => line.includes('youtube.com') || line.includes('youtu.be'));
-    return urlLine || '';
-  };
+        // Load sections
+        const sectionItems = children
+          .filter(c => c.type === 'video_section')
+          .map(c => ({
+            id: c.id,
+            title: c.data,
+            startTime: c.metadata?.start_time || 0,
+            endTime: c.metadata?.end_time || 0,
+            timestampIds: c.metadata?.timestamp_ids || []
+          }));
 
-  const videoUrl = getYouTubeUrl();
+        setAnnotations(timestamps);
+        setSections(sectionItems);
+      } catch (error) {
+        console.error('Failed to load existing data:', error);
+      }
+    };
 
-  const handleTimeUpdate = (time: number) => {
+    loadExistingData();
+  }, [videoContent?.id]);
+
+  // Handler functions (must be defined before early return to satisfy Rules of Hooks)
+  const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
-  };
+  }, []);
 
-  const handleDurationChange = (duration: number) => {
+  const handleDurationChange = useCallback((duration: number) => {
     setVideoDuration(duration);
-  };
+  }, []);
 
-  const handlePlayStateChange = (playing: boolean) => {
+  const handlePlayStateChange = useCallback((playing: boolean) => {
     setIsPlaying(playing);
-  };
+  }, []);
 
-  const handleAnnotationsChange = (newAnnotations: VideoAnnotation[]) => {
+  const handleAnnotationsChange = useCallback((newAnnotations: VideoAnnotation[]) => {
     setAnnotations(newAnnotations);
-  };
+  }, []);
 
-  const handleSeekTo = (time: number) => {
+  const handleSeekTo = useCallback((time: number) => {
     setSeekTo(time);
     // Reset seekTo after a moment to allow multiple seeks to the same time
     setTimeout(() => setSeekTo(undefined), 100);
-  };
+  }, []);
 
-  const handlePlayPause = () => {
+  const handlePlayPause = useCallback(() => {
     setIsPlaying(!isPlaying);
-  };
+  }, [isPlaying]);
 
-  const handleSave = async () => {
-    if (annotations.length === 0) {
-      toast.info('No timestamps to save', 'Please add at least one timestamp before saving.');
+  // Section management handlers
+  const handleAddAnnotation = useCallback((timestamp: number) => {
+    const newAnnotation: VideoAnnotation = {
+      id: crypto.randomUUID(),
+      title: `Timestamp ${annotations.length + 1}`,
+      description: '',
+      startTime: timestamp,
+      endTime: timestamp,
+      type: 'marker'
+    };
+    setAnnotations(prev => [...prev, newAnnotation]);
+  }, [annotations.length]);
+
+  const handleCreateSection = useCallback((startTime: number, endTime: number, timestampIds: string[]) => {
+    const title = prompt("Enter a title for this section:", `Section ${sections.length + 1}`);
+    if (!title) return;
+
+    const sectionId = crypto.randomUUID();
+    const newSection: VideoSection = {
+      id: sectionId,
+      title: title.trim(),
+      startTime,
+      endTime,
+      timestampIds
+    };
+
+    setSections(prev => [...prev, newSection]);
+    setActiveSection(sectionId);
+  }, [sections.length]);
+
+  const handleUpdateSectionTitle = useCallback((id: string, title: string) => {
+    setSections(prev =>
+      prev.map(section =>
+        section.id === id ? { ...section, title } : section
+      )
+    );
+  }, []);
+
+  const handleUpdateSectionBoundary = useCallback((id: string, startTime: number, endTime: number) => {
+    setSections(prev =>
+      prev.map(section =>
+        section.id === id ? { ...section, startTime, endTime } : section
+      )
+    );
+
+    // If this section is being looped, update the loop range
+    if (isLooping && activeLoopingSectionRef.current === id) {
+      setLoopRange({ start: startTime, end: endTime });
+    }
+  }, [isLooping]);
+
+  const handleDeleteSection = useCallback((id: string) => {
+    // If this section was being looped, disable looping
+    if (activeLoopingSectionRef.current === id && isLooping) {
+      setIsLooping(false);
+      setLoopRange(null);
+      activeLoopingSectionRef.current = null;
+    }
+
+    setSections(prev => prev.filter(s => s.id !== id));
+
+    if (activeSection === id) {
+      setActiveSection(null);
+    }
+  }, [isLooping, activeSection]);
+
+  const handleSetLoopSelection = useCallback((startTime: number, endTime: number, sectionId?: string) => {
+    setLoopRange({ start: startTime, end: endTime });
+
+    if (sectionId) {
+      activeLoopingSectionRef.current = sectionId;
+    } else {
+      activeLoopingSectionRef.current = null;
+    }
+  }, []);
+
+  const handleToggleLooping = useCallback(() => {
+    setIsLooping(prev => !prev);
+
+    if (isLooping) {
+      activeLoopingSectionRef.current = null;
+    }
+  }, [isLooping]);
+
+  const handleClose = useCallback(() => {
+    // Reset state
+    setAnnotations([]);
+    setSections([]);
+    setActiveSection(null);
+    setIsLooping(false);
+    setLoopRange(null);
+    setCurrentTime(0);
+    setVideoDuration(0);
+    setIsPlaying(false);
+    setSeekTo(undefined);
+    activeLoopingSectionRef.current = null;
+    onClose();
+  }, [onClose]);
+
+  const handleSave = useCallback(async () => {
+    if (!videoContent) return;
+    if (annotations.length === 0 && sections.length === 0) {
+      toast.info('Nothing to save', 'Please add at least one timestamp or section before saving.');
       return;
     }
+
+    // Extract YouTube URL from video content
+    const getYouTubeUrl = (): string => {
+      if (videoContent.metadata?.youtube_url) {
+        return videoContent.metadata.youtube_url;
+      }
+      if (videoContent.metadata?.youtube_video_id) {
+        return `https://www.youtube.com/watch?v=${videoContent.metadata.youtube_video_id}`;
+      }
+      const lines = videoContent.data.split('\n');
+      const urlLine = lines.find(line => line.includes('youtube.com') || line.includes('youtu.be'));
+      return urlLine || '';
+    };
+    const videoUrl = getYouTubeUrl();
 
     setIsSaving(true);
 
@@ -102,9 +250,27 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
         });
       });
 
-      await Promise.all(timestampPromises);
+      // Create section content items as children of the video
+      const sectionPromises = sections.map(async (section) => {
+        return await contentRepository.createContent({
+          type: 'video_section',
+          data: section.title,
+          group_id: videoContent.group_id,
+          parent_content_id: videoContent.id,
+          metadata: {
+            start_time: section.startTime,
+            end_time: section.endTime,
+            timestamp_ids: section.timestampIds,
+            youtube_video_id: videoContent.metadata?.youtube_video_id,
+            youtube_url: videoUrl
+          }
+        });
+      });
 
-      toast.success('Timestamps saved!', `Created ${annotations.length} timestamp${annotations.length !== 1 ? 's' : ''}.`);
+      await Promise.all([...timestampPromises, ...sectionPromises]);
+
+      const totalItems = annotations.length + sections.length;
+      toast.success('Content saved!', `Created ${annotations.length} timestamp${annotations.length !== 1 ? 's' : ''} and ${sections.length} section${sections.length !== 1 ? 's' : ''}.`);
 
       // Notify parent to refresh content
       onTimestampsCreated();
@@ -112,24 +278,37 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
       // Close modal
       handleClose();
     } catch (error) {
-      console.error('Failed to save timestamps:', error);
-      toast.error('Failed to save timestamps', 'Please try again.');
+      console.error('Failed to save content:', error);
+      toast.error('Failed to save content', 'Please try again.');
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [videoContent, annotations, sections, toast, onTimestampsCreated, handleClose]);
 
-  const handleClose = () => {
-    // Reset state
-    setAnnotations([]);
-    setCurrentTime(0);
-    setVideoDuration(0);
-    setIsPlaying(false);
-    setSeekTo(undefined);
-    onClose();
+  // Early return after all hooks are defined
+  if (!isVisible || !videoContent) return null;
+
+  // Extract YouTube URL from video content
+  const getYouTubeUrl = (): string => {
+    if (videoContent.metadata?.youtube_url) {
+      return videoContent.metadata.youtube_url;
+    }
+    if (videoContent.metadata?.youtube_video_id) {
+      return `https://www.youtube.com/watch?v=${videoContent.metadata.youtube_video_id}`;
+    }
+    const lines = videoContent.data.split('\n');
+    const urlLine = lines.find(line => line.includes('youtube.com') || line.includes('youtu.be'));
+    return urlLine || '';
   };
+  const videoUrl = getYouTubeUrl();
 
   const videoTitle = videoContent.metadata?.youtube_title || videoContent.data.split('\n')[0] || 'YouTube Video';
+
+  // Convert annotations to timestamp format for HorizontalTimeline
+  const timestampAnnotations: TimestampAnnotation[] = annotations.map(videoAnnotationToTimestamp);
+
+  // Get active section object
+  const activeSectionObject = activeSection ? sections.find(s => s.id === activeSection) || null : null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -137,7 +316,7 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-red-50 to-orange-50">
           <div className="flex justify-between items-center">
-            <div>
+            <div className="flex-1">
               <h2 className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
                 <span>🎞️</span>
                 <span>Annotate Video</span>
@@ -146,6 +325,7 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
                 {videoTitle}
               </p>
             </div>
+
             <button
               onClick={handleClose}
               className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -159,22 +339,67 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-            {/* Video Player - Takes 2 columns on large screens */}
-            <div className="lg:col-span-2">
-              <VideoPlayer
-                videoUrl={videoUrl}
-                annotations={annotations}
-                onTimeUpdate={handleTimeUpdate}
-                onDurationChange={handleDurationChange}
-                onPlayStateChange={handlePlayStateChange}
-                seekTo={seekTo}
-              />
-            </div>
+        <div className="flex-1 overflow-auto min-h-0">
+          <div className="space-y-0">
+            <Card className="border shadow-sm overflow-hidden">
+              {/* Video Player */}
+              <div className="aspect-video bg-black relative">
+                <VideoPlayer
+                  videoUrl={videoUrl}
+                  annotations={annotations}
+                  onTimeUpdate={handleTimeUpdate}
+                  onDurationChange={handleDurationChange}
+                  onPlayStateChange={handlePlayStateChange}
+                  seekTo={seekTo}
+                  isLooping={isLooping}
+                  loopRange={loopRange}
+                />
 
-            {/* Annotation Manager - Takes 1 column on large screens */}
-            <div className="lg:col-span-1 h-full">
+                {/* Loop indicator */}
+                {isLooping && loopRange && (
+                  <div className="absolute top-2 right-2 bg-green-600 text-white px-3 py-1 rounded-full text-sm flex items-center z-20 bg-opacity-80 shadow-md">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>Looping</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Section Editor (conditional) */}
+              {activeSection && activeSectionObject && (
+                <SectionEditor
+                  activeSection={activeSectionObject}
+                  isLooping={isLooping}
+                  onUpdateSectionTitle={handleUpdateSectionTitle}
+                  onDeleteSection={handleDeleteSection}
+                  onJumpToTimestamp={handleSeekTo}
+                  onSetLoopSelection={handleSetLoopSelection}
+                  toggleLooping={handleToggleLooping}
+                  onClose={() => setActiveSection(null)}
+                />
+              )}
+
+              {/* Horizontal Timeline */}
+              <HorizontalTimeline
+                currentTime={currentTime}
+                duration={videoDuration}
+                annotations={timestampAnnotations}
+                sections={sections}
+                activeSection={activeSection}
+                setActiveSection={setActiveSection}
+                onAddAnnotation={handleAddAnnotation}
+                onCreateSection={handleCreateSection}
+                onJumpToTimestamp={handleSeekTo}
+                onSetLoopSelection={handleSetLoopSelection}
+                isLooping={isLooping}
+                toggleLooping={handleToggleLooping}
+                onUpdateSectionBoundary={handleUpdateSectionBoundary}
+              />
+            </Card>
+
+            {/* Annotation Manager - Below timeline */}
+            <div className="px-6 py-4">
               <AnnotationManager
                 annotations={annotations}
                 currentTime={currentTime}
@@ -192,7 +417,7 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
-              {annotations.length} timestamp{annotations.length !== 1 ? 's' : ''} created
+              {annotations.length} timestamp{annotations.length !== 1 ? 's' : ''}, {sections.length} section{sections.length !== 1 ? 's' : ''}
             </div>
             <div className="flex gap-3">
               <button

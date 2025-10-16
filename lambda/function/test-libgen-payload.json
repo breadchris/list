@@ -1,0 +1,9 @@
+{
+  "body": "{\"action\":\"libgen-search\",\"sync\":true,\"payload\":{\"selectedContent\":[{\"id\":\"test-id\",\"data\":\"python\",\"type\":\"text\",\"group_id\":\"test-group\",\"user_id\":\"test-user\",\"parent_content_id\":null,\"created_at\":\"2025-01-15T00:00:00Z\",\"updated_at\":\"2025-01-15T00:00:00Z\"}],\"searchType\":\"title\",\"topics\":[\"libgen\"],\"maxResults\":5}}",
+  "requestContext": {
+    "http": {
+      "method": "POST"
+    }
+  },
+  "rawPath": "/content"
+}

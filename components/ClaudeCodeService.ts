@@ -35,6 +35,26 @@ export interface ClaudeCodeSessionMetadata {
   last_updated_at?: string;
 }
 
+const CLAUDE_CODE_BASE_PROMPT = `You will only create tsx components that have no backend. They will only use react and no other external dependencies.
+
+All dependencies will use esm.sh syntax:
+\`\`\`
+import React from "https://esm.sh/react"; // latest
+import React from "https://esm.sh/react@18"; // 18.2.0
+import React from "https://esm.sh/react@next"; // next tag
+import { renderToString } from "https://esm.sh/react-dom/server"; // sub-modules
+\`\`\`
+
+CRITICAL: The component will only ever be written to one file in the CURRENT WORKING DIRECTORY.
+- You MUST write files with RELATIVE paths only (e.g., "Counter.tsx")
+- DO NOT use absolute paths starting with "/" (e.g., "/tmp/Counter.tsx" is WRONG)
+- DO NOT write to /tmp/ directory directly
+- Write directly to the current working directory using just the filename
+
+Example: Use Write tool with file_path: "Counter.tsx" (not "/tmp/Counter.tsx")
+
+`;
+
 export class ClaudeCodeService {
 
   /**
@@ -65,8 +85,10 @@ ${formattedItems}
    */
   static async executeClaudeCode(
     prompt: string,
+    groupId: string,
     sessionId?: string,
     selectedContent?: Content[],
+    parentContentId?: string,
     onProgress?: (status: string) => void
   ): Promise<ClaudeCodeResponse> {
     try {
@@ -75,11 +97,17 @@ ${formattedItems}
         throw new Error('Prompt is required');
       }
 
-      // Format selected content and prepend to prompt if provided
-      let fullPrompt = prompt.trim();
+      if (!groupId) {
+        throw new Error('Group ID is required');
+      }
+
+      // Prepend base prompt to all Claude Code executions
+      let fullPrompt = CLAUDE_CODE_BASE_PROMPT + prompt.trim();
+
+      // Format selected content and prepend if provided
       if (selectedContent && selectedContent.length > 0) {
         const contextString = this.formatSelectedContentForContext(selectedContent);
-        fullPrompt = contextString + fullPrompt;
+        fullPrompt = CLAUDE_CODE_BASE_PROMPT + contextString + prompt.trim();
       }
 
       // Get current user
@@ -88,21 +116,11 @@ ${formattedItems}
         throw new Error('User not authenticated');
       }
 
-      // Get user's default group
-      const { data: groups } = await supabase
-        .from('group_memberships')
-        .select('group_id')
-        .eq('user_id', user.id)
-        .limit(1);
-
-      if (!groups?.[0]?.group_id && !selectedContent?.[0]?.group_id) {
-        throw new Error('No group found for user');
-      }
-
       const requestPayload: any = {
         prompt: fullPrompt,
         user_id: user.id,
-        group_id: groups?.[0]?.group_id || selectedContent?.[0]?.group_id
+        group_id: groupId,
+        parent_content_id: parentContentId || null
       };
 
       // Add session_id if continuing an existing session

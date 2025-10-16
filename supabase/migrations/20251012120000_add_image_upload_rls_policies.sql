@@ -1,6 +1,4 @@
--- Enable RLS on storage.objects if not already enabled
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
+-- RLS is already enabled on storage.objects by Supabase
 -- Drop existing policies if they exist (for idempotent migrations)
 DROP POLICY IF EXISTS "Users can upload images to their content" ON storage.objects;
 DROP POLICY IF EXISTS "Users can view images from their content" ON storage.objects;
@@ -62,6 +60,4 @@ USING (
   )
 );
 
--- Grant necessary permissions
-GRANT ALL ON storage.objects TO authenticated;
-GRANT ALL ON storage.buckets TO authenticated;
+-- Permissions are already granted by Supabase on storage tables

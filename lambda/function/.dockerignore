@@ -4,9 +4,9 @@ npm-debug.log
 package-lock.json
 
 # Build outputs
-dist/
+# dist/ - REMOVED: needed for Docker build to copy bundled Lambda
 *.js.map
-*.bundled.js
+# *.bundled.js - REMOVED: needed for Docker build
 
 # Development files
 bundle.js

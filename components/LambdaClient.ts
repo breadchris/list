@@ -6,6 +6,7 @@ const LAMBDA_ENDPOINT = 'https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com/
 export interface LambdaRequest {
   action: string;
   payload: any;
+  sync?: boolean; // When true, execute immediately and return results. When false/omitted, queue job and return job_id (default)
 }
 
 export interface LambdaResponse {

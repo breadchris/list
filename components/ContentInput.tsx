@@ -6,6 +6,9 @@ import { ChatService } from './ChatService';
 import { useToast } from './ToastProvider';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from '../hooks/queryKeys';
+import { ImageUploadInput } from './ImageUploadInput';
+import { EpubUploadInput } from './EpubUploadInput';
+import { AudioUploadInput } from './AudioUploadInput';
 
 interface ContentInputProps {
   groupId: string;
@@ -13,7 +16,7 @@ interface ContentInputProps {
   onContentAdded: (content: Content) => void;
   isVisible: boolean;
   onClose: () => void;
-  contentType: 'text' | 'ai-chat' | 'search';
+  contentType: 'text' | 'ai-chat' | 'search' | 'image' | 'epub' | 'audio';
 }
 
 export const ContentInput: React.FC<ContentInputProps> = ({
@@ -176,8 +179,96 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     }
   };
 
+  const handleImageUploaded = async (imageUrl: string, contentId: string) => {
+    try {
+      // Fetch the created content to pass to parent
+      const content = await contentRepository.getContentById(contentId);
+      if (content) {
+        onContentAdded(content);
+        toast.success('Image Uploaded', 'Your image has been uploaded successfully');
+      }
+      onClose();
+    } catch (error) {
+      console.error('Error fetching uploaded content:', error);
+      toast.error('Error', 'Failed to fetch uploaded image');
+    }
+  };
+
+  const handleEpubUploaded = async (epubUrl: string, contentId: string) => {
+    try {
+      // Fetch the created content to pass to parent
+      const content = await contentRepository.getContentById(contentId);
+      if (content) {
+        onContentAdded(content);
+        toast.success('Book Uploaded', 'Your book has been uploaded successfully');
+      }
+      onClose();
+    } catch (error) {
+      console.error('Error fetching uploaded content:', error);
+      toast.error('Error', 'Failed to fetch uploaded book');
+    }
+  };
+
+  const handleAudioUploaded = async (audioUrl: string, contentId: string) => {
+    try {
+      // Fetch the created content to pass to parent
+      const content = await contentRepository.getContentById(contentId);
+      if (content) {
+        onContentAdded(content);
+        toast.success('Audio Uploaded', 'Your audio has been uploaded successfully');
+      }
+      onClose();
+    } catch (error) {
+      console.error('Error fetching uploaded content:', error);
+      toast.error('Error', 'Failed to fetch uploaded audio');
+    }
+  };
+
   if (!isVisible) return null;
 
+  // Show image upload UI for image content type
+  if (contentType === 'image') {
+    return (
+      <div className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
+        <ImageUploadInput
+          groupId={groupId}
+          parentContentId={parentContentId}
+          onImageUploaded={handleImageUploaded}
+          onClose={onClose}
+        />
+      </div>
+    );
+  }
+
+  // Show epub upload UI for epub content type
+  if (contentType === 'epub') {
+    return (
+      <div className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
+        <EpubUploadInput
+          groupId={groupId}
+          parentContentId={parentContentId}
+          onEpubUploaded={handleEpubUploaded}
+          onClose={onClose}
+        />
+      </div>
+    );
+  }
+
+  // Show audio upload UI for audio content type
+  if (contentType === 'audio') {
+    return (
+      <div className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
+        <AudioUploadInput
+          groupId={groupId}
+          parentContentId={parentContentId}
+          onAudioUploaded={handleAudioUploaded}
+          onClose={onClose}
+        />
+      </div>
+    );
+  }
+
+  // Show text input for other content types
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
       <div className="flex items-end space-x-3">

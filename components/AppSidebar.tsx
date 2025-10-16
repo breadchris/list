@@ -88,8 +88,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   return (
     <>
       {/* Overlay */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-40"
+      <div
+        className="fixed inset-0 bg-gray-900 bg-opacity-10 z-40 transition-opacity duration-300 ease-in-out"
         onClick={onClose}
       />
 

@@ -9,11 +9,24 @@ export interface LibgenSearchConfig {
   maxResults?: number;
 }
 
+export interface LibgenBook {
+  id: string;
+  title: string;
+  author: string;
+  publisher?: string;
+  year?: string;
+  language?: string;
+  pages?: number;
+  extension?: string;
+  size?: string;
+}
+
 export interface LibgenSearchResult {
   content_id: string;
   success: boolean;
   books_found: number;
   books_created: number;
+  book_children?: LibgenBook[];
   error?: string;
 }
 

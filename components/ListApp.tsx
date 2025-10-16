@@ -8,7 +8,6 @@ import { ContentList } from './ContentList';
 import { ContentStack } from './ContentStack';
 import { ContentInput } from './ContentInput';
 import { JsEditorView } from './JsEditorView';
-import { AppSidebar } from './AppSidebar';
 import { ContentTypeSelector, ContentType } from './ContentTypeSelector';
 import { WorkflowFAB } from './WorkflowFAB';
 import { MicroGameOverlay } from './MicroGameOverlay';
@@ -25,6 +24,7 @@ import { AppSkeleton, HeaderSkeleton, ContentListSkeleton } from './SkeletonComp
 import { Footer } from './Footer';
 import { LLMPromptModal } from './LLMPromptModal';
 import { ClaudeCodePromptModal } from './ClaudeCodePromptModal';
+import { ClaudeCodeService } from './ClaudeCodeService';
 import { Group, Content, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
 import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
@@ -64,11 +64,11 @@ export const ListApp: React.FC = () => {
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
   const [currentJsContent, setCurrentJsContent] = useState<Content | null>(null);
   const [navigationStack, setNavigationStack] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'Root'}]);
-  const [showSidebar, setShowSidebar] = useState(false);
   const [showInput, setShowInput] = useState(true);
   const [selectedContentType, setSelectedContentType] = useState<ContentType>('text');
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupModalMode, setGroupModalMode] = useState<'create' | 'join'>('create');
+  const [activeExternalSearch, setActiveExternalSearch] = useState<string | null>(null);
 
   // React Query hooks - only enable when we have user and app is ready for data loading
   const { data: groups = [], isLoading: groupsLoading, error: groupsError } = useGroupsQuery({ 
@@ -127,10 +127,13 @@ export const ListApp: React.FC = () => {
   // TMDb Search modal state
   const [showTMDbModal, setShowTMDbModal] = useState(false);
   const [selectedContentForTMDb, setSelectedContentForTMDb] = useState<Content | null>(null);
+  const [tmdbSearchQuery, setTmdbSearchQuery] = useState<string | undefined>(undefined);
 
   // Libgen Search modal state
   const [showLibgenModal, setShowLibgenModal] = useState(false);
   const [selectedContentForLibgen, setSelectedContentForLibgen] = useState<Content[]>([]);
+  const [libgenSearchResults, setLibgenSearchResults] = useState<any[]>([]);
+  const [isLibgenSearching, setIsLibgenSearching] = useState(false);
 
   // Sharing settings modal state
   const [showSharingModal, setShowSharingModal] = useState(false);
@@ -696,6 +699,7 @@ export const ListApp: React.FC = () => {
   const handleCloseTMDbModal = () => {
     setShowTMDbModal(false);
     setSelectedContentForTMDb(null);
+    setTmdbSearchQuery(undefined);
   };
 
   const handleTMDbResultsAdded = () => {
@@ -752,31 +756,103 @@ export const ListApp: React.FC = () => {
   const handleCloseLibgenModal = () => {
     setShowLibgenModal(false);
     setSelectedContentForLibgen([]);
+    setLibgenSearchResults([]);
+    setIsLibgenSearching(false);
   };
 
   const handleLibgenSearchExecute = async (config: LibgenSearchConfig) => {
     console.log('Executing Libgen search with config:', config);
 
     try {
-      await libgenSearchMutation.mutateAsync({
+      setIsLibgenSearching(true);
+      const results = await libgenSearchMutation.mutateAsync({
         selectedContent: selectedContentForLibgen,
         config
       });
 
+      // Store results to display in modal
+      setLibgenSearchResults(results);
+      setIsLibgenSearching(false);
+
+      const totalBooksFound = results.reduce((sum, r) => sum + r.books_found, 0);
+      const totalBooksCreated = results.reduce((sum, r) => sum + r.books_created, 0);
+
       toast.success(
         'Books Found!',
-        `Successfully searched ${selectedContentForLibgen.length} item${selectedContentForLibgen.length !== 1 ? 's' : ''}`
+        `Added ${totalBooksCreated} out of ${totalBooksFound} books found`
       );
 
-      // Close modal and clear selection
-      handleCloseLibgenModal();
+      // Clear selection but keep modal open for user to see results
       contentSelection.clearSelection();
     } catch (error) {
       console.error('Libgen search mutation failed:', error);
+      setIsLibgenSearching(false);
       toast.error(
         'Search Failed',
         error instanceof Error ? error.message : 'Unknown error'
       );
+    }
+  };
+
+  // Query-based external search handlers (from SearchWorkflowSelector)
+  const handleTMDbSearchWithQuery = async (query: string) => {
+    if (!query.trim() || !currentGroup) return;
+
+    console.log('🎬 TMDb Search with query:', query);
+
+    // Create minimal content object for modal (only used for context, not database lookup)
+    const tempContent: Content = {
+      id: 'temp-tmdb-search',
+      data: query,
+      type: 'text',
+      group_id: currentGroup.id,
+      user_id: user?.id || '',
+      parent_content_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      has_children: false,
+      is_public: false
+    };
+
+    // Open TMDb modal with query passed directly
+    setSelectedContentForTMDb(tempContent);
+    setTmdbSearchQuery(query);
+    setShowTMDbModal(true);
+    setActiveExternalSearch(null); // Reset active search
+  };
+
+  const handleLibgenSearchWithQuery = async (query: string) => {
+    if (!query.trim() || !currentGroup) return;
+
+    console.log('📚 Libgen Search with query:', query);
+
+    // Create temporary content object with the search query
+    const tempContent: Content = {
+      id: 'temp-search',
+      data: query,
+      type: 'text',
+      group_id: currentGroup.id,
+      user_id: user?.id || '',
+      parent_content_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      has_children: false,
+      is_public: false
+    };
+
+    // Open Libgen modal with the temporary content
+    setSelectedContentForLibgen([tempContent]);
+    setShowLibgenModal(true);
+    setActiveExternalSearch(null); // Reset active search
+  };
+
+  const handleExecuteExternalSearch = () => {
+    if (!activeExternalSearch || !searchQuery.trim()) return;
+
+    if (activeExternalSearch === 'tmdb-search') {
+      handleTMDbSearchWithQuery(searchQuery);
+    } else if (activeExternalSearch === 'libgen-search') {
+      handleLibgenSearchWithQuery(searchQuery);
     }
   };
 
@@ -843,13 +919,69 @@ export const ListApp: React.FC = () => {
 
       console.log('Fetched content objects:', selectedContent);
 
-      // Set selected content and show modal
-      setSelectedContentForClaudeCode(selectedContent);
-      setShowClaudeCodeModal(true);
+      // Generate default prompt based on content
+      const defaultPrompt = 'Create an interactive TSX component based on the selected content. Make it visually appealing and functional.';
+
+      toast.info('Claude Code Starting', 'Generating component from selected content...');
+
+      // Create content item for the execution with selected content in metadata
+      const newContent = await contentRepository.createContent({
+        type: 'claude-code',
+        data: defaultPrompt,
+        group_id: currentGroup?.id || '',
+        parent_content_id: currentParentId,
+        metadata: {
+          selected_content: selectedContent.map(c => ({
+            id: c.id,
+            type: c.type,
+            data: c.data,
+            metadata: c.metadata
+          })),
+          selected_content_count: selectedContent.length
+        }
+      });
+
+      // Execute Claude Code immediately with selected content
+      const response = await ClaudeCodeService.executeClaudeCode(
+        defaultPrompt,
+        currentGroup?.id || '',
+        undefined, // No session ID for new execution
+        selectedContent,
+        newContent.id,
+        (status) => {
+          console.log('Claude Code progress:', status);
+        }
+      );
+
+      if (!response.success) {
+        throw new Error(response.error || 'Execution failed');
+      }
+
+      if (!response.session_id) {
+        throw new Error('Invalid response from Claude Code Lambda - missing session_id');
+      }
+
+      // Store session metadata
+      await contentRepository.storeClaudeCodeSession(newContent.id, {
+        session_id: response.session_id,
+        s3_url: response.s3_url,
+        initial_prompt: defaultPrompt,
+        last_updated_at: new Date().toISOString()
+      });
+
+      toast.success(
+        'Claude Code Complete!',
+        `Generated component from ${selectedContent.length} item${selectedContent.length !== 1 ? 's' : ''}`
+      );
+
+      // Clear selection and refresh
+      contentSelection.clearSelection();
+      setNewContent(undefined);
 
     } catch (error) {
-      console.error('Error fetching selected content:', error);
-      toast.error('Error', 'Failed to load selected content');
+      console.error('Error executing Claude Code:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      toast.error('Claude Code Failed', errorMessage);
     }
   };
 
@@ -1152,6 +1284,16 @@ export const ListApp: React.FC = () => {
       onClick: () => {
         console.log('📸 WorkflowAction onClick triggered for screenshot generation');
         handleScreenshotGeneration();
+      }
+    },
+    {
+      id: 'transcribe-audio',
+      name: 'Transcribe Audio',
+      description: 'Generate transcripts from audio files',
+      icon: '🎙️',
+      onClick: () => {
+        console.log('🎙️ WorkflowAction onClick triggered for audio transcription');
+        handleTranscribeAudio();
       }
     },
     {
@@ -1768,24 +1910,15 @@ export const ListApp: React.FC = () => {
           <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200 w-full">
             <div className="w-full px-4 py-3">
               <div className="flex justify-between items-center">
-                <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
-              {/* Hamburger Menu */}
-              <button
-                data-testid="sidebar-toggle"
-                onClick={() => setShowSidebar(true)}
-                className="text-gray-500 hover:text-gray-700 p-1"
-              >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <GroupDropdown
-                currentGroup={currentGroup}
-                groups={groups}
-                onGroupChange={handleGroupChange}
-                isLoading={groupsLoading}
-              />
-            </div>
+                {/* Centered Group Dropdown */}
+                <div className="flex-1 flex justify-center">
+                  <GroupDropdown
+                    currentGroup={currentGroup}
+                    groups={groups}
+                    onGroupChange={handleGroupChange}
+                    isLoading={groupsLoading}
+                  />
+                </div>
 
             {/* View Mode Selector */}
             {currentGroup && (
@@ -1848,14 +1981,10 @@ export const ListApp: React.FC = () => {
                   </svg>
                 </button>
               )}
-              {/* User info - responsive layout */}
+              {/* User info */}
               <div className="flex items-center space-x-1 sm:space-x-2">
-                {/* Show email only on larger screens */}
-                <span className="hidden sm:inline text-sm text-gray-600 truncate max-w-32">
-                  {user.email}
-                </span>
-                {/* User avatar on mobile */}
-                <div className="w-6 h-6 sm:hidden bg-gray-400 rounded-full flex items-center justify-center">
+                {/* User avatar - always shown */}
+                <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center" title={user.email || undefined}>
                   <span className="text-xs text-white font-medium">
                     {user.email?.charAt(0).toUpperCase()}
                   </span>
@@ -2004,10 +2133,14 @@ export const ListApp: React.FC = () => {
             contentType={selectedContentType}
             searchWorkflows={searchWorkflows}
             onSearchQueryChange={handleContentSearchChange}
+            activeExternalSearch={activeExternalSearch}
+            onActivateExternalSearch={setActiveExternalSearch}
+            onExecuteExternalSearch={handleExecuteExternalSearch}
           />
         ) : (
           <ContentList
             groupId={currentGroup?.id || ''}
+            userId={user?.id}
             newContent={newContent}
             parentContentId={currentParentId}
             onNavigate={handleNavigate}
@@ -2021,6 +2154,9 @@ export const ListApp: React.FC = () => {
             contentType={selectedContentType}
             searchWorkflows={searchWorkflows}
             onSearchQueryChange={handleContentSearchChange}
+            activeExternalSearch={activeExternalSearch}
+            onActivateExternalSearch={setActiveExternalSearch}
+            onExecuteExternalSearch={handleExecuteExternalSearch}
           />
         )}
       </div>
@@ -2032,19 +2168,6 @@ export const ListApp: React.FC = () => {
         selectedCount={contentSelection.selectedCount}
       />
 
-      {/* Sidebar */}
-      <AppSidebar
-        isOpen={showSidebar}
-        onClose={() => setShowSidebar(false)}
-        currentGroup={currentGroup}
-        groups={groups}
-        onGroupChange={handleGroupChange}
-        onCreateGroup={handleCreateGroup}
-        onJoinGroup={handleJoinGroup}
-        onLeaveGroup={handleLeaveGroup}
-        isLoading={groupsLoading || createGroupMutation.isPending || joinGroupMutation.isPending}
-      />
-
       {/* Group Modal */}
       {showGroupModal && (
         <GroupSelector
@@ -2053,6 +2176,9 @@ export const ListApp: React.FC = () => {
             handleGroupChange(group);
             setShowGroupModal(false);
           }}
+          initialMode={groupModalMode}
+          initialShowModal={true}
+          onModalClose={() => setShowGroupModal(false)}
         />
       )}
 
@@ -2109,6 +2235,7 @@ export const ListApp: React.FC = () => {
         <TMDbSearchModal
           isVisible={showTMDbModal}
           selectedContent={selectedContentForTMDb}
+          searchQuery={tmdbSearchQuery}
           onClose={handleCloseTMDbModal}
           onResultsAdded={handleTMDbResultsAdded}
         />
@@ -2118,6 +2245,8 @@ export const ListApp: React.FC = () => {
       <LibgenSearchModal
         isVisible={showLibgenModal}
         selectedContent={selectedContentForLibgen}
+        searchResults={libgenSearchResults}
+        isSearching={isLibgenSearching}
         onClose={handleCloseLibgenModal}
         onSearch={handleLibgenSearchExecute}
       />

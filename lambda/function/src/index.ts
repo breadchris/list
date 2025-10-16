@@ -12,7 +12,9 @@ import {
 	handleYouTubePlaylistExtract,
 	handleTMDbSearch,
 	handleLibgenSearch,
-	handleScreenshotQueue
+	handleScreenshotQueue,
+	handleTSXTranspile,
+	handleTranscribeAudio
 } from './content-handlers.js';
 import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
 import { writeFileSync } from 'fs';
@@ -60,6 +62,57 @@ function generateJobId(): string {
 	const timestamp = Date.now().toString(36);
 	const randomPart = Math.random().toString(36).substring(2, 15);
 	return `job-${timestamp}-${randomPart}`;
+}
+
+/**
+ * Map file extension to content type for child content items
+ */
+function getContentTypeFromExtension(extension: string): string {
+	const typeMap: Record<string, string> = {
+		// JavaScript/TypeScript
+		'js': 'js',
+		'jsx': 'jsx',
+		'ts': 'ts',
+		'tsx': 'tsx',
+		'mjs': 'js',
+		'cjs': 'js',
+		// Web
+		'html': 'html',
+		'css': 'css',
+		'scss': 'scss',
+		'sass': 'sass',
+		'less': 'less',
+		// Data formats
+		'json': 'json',
+		'yaml': 'yaml',
+		'yml': 'yaml',
+		'xml': 'xml',
+		'toml': 'toml',
+		// Markdown/Docs
+		'md': 'markdown',
+		'mdx': 'markdown',
+		'txt': 'text',
+		// Config
+		'env': 'text',
+		'gitignore': 'text',
+		'dockerignore': 'text',
+		// Other languages
+		'py': 'python',
+		'rb': 'ruby',
+		'go': 'go',
+		'rs': 'rust',
+		'java': 'java',
+		'c': 'c',
+		'cpp': 'cpp',
+		'h': 'c',
+		'hpp': 'cpp',
+		'sh': 'shell',
+		'bash': 'shell',
+		'zsh': 'shell',
+		'sql': 'sql'
+	};
+
+	return typeMap[extension] || 'text';
 }
 
 /**
@@ -170,6 +223,20 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 						}
 						break;
 
+					case 'tsx-transpile':
+						result = await handleTSXTranspile(supabase, payload);
+						break;
+
+					case 'transcribe-audio':
+						result = await handleTranscribeAudio(supabase, payload);
+						if (result.data) {
+							content_ids = result.data
+								.filter((item: any) => item.success)
+								.map((item: any) => item.transcript_content_id)
+								.filter((id: string) => id);
+						}
+						break;
+
 					case 'claude-code': {
 						const bucketName = process.env.S3_BUCKET_NAME;
 						if (!bucketName) {
@@ -200,6 +267,63 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 							s3_url = await sessionManager.uploadSession(claudeResult.session_id, claudeResult.outputFiles);
 						}
 
+						// Create child content items for generated files (v2)
+						const createdContentIds: string[] = [];
+						if (claudeResult.status === 'completed' && payload.parent_content_id) {
+							// Filter out .session/ files (internal Claude CLI data)
+							const workspaceFiles = claudeResult.outputFiles?.filter(
+								file => !file.path.startsWith('.session/')
+							) || [];
+
+							console.log(`[Child Content] Creating ${workspaceFiles.length} items from generated files`);
+
+							for (const file of workspaceFiles) {
+								try {
+									// Determine content type from file extension
+									const fileExtension = file.path.split('.').pop()?.toLowerCase() || 'text';
+									const contentType = getContentTypeFromExtension(fileExtension);
+
+									// Convert Uint8Array to string
+									const fileContent = new TextDecoder().decode(file.content);
+
+									// Create child content item
+									const { data: childContent, error: createError } = await supabase
+										.from('content')
+										.insert({
+											type: contentType,
+											data: fileContent,
+											group_id: payload.group_id,
+											user_id: payload.user_id,
+											parent_content_id: payload.parent_content_id,
+											metadata: {
+												filename: file.path,
+												generated_by_claude_code: true,
+												session_id: claudeResult.session_id
+											}
+										})
+										.select()
+										.single();
+
+									if (createError) {
+										console.error(`Error creating child content for ${file.path}:`, createError);
+										continue;
+									}
+
+									if (childContent) {
+										createdContentIds.push(childContent.id);
+										console.log(`Created child content ${childContent.id} for file: ${file.path}`);
+									}
+								} catch (fileError) {
+									console.error(`Error processing file ${file.path}:`, fileError);
+								}
+							}
+
+							console.log(`Successfully created ${createdContentIds.length} child content items`);
+						}
+
+						// Include created content IDs in result for cache invalidation
+						content_ids = createdContentIds;
+
 						result = {
 							success: claudeResult.status === 'completed',
 							session_id: claudeResult.session_id,
@@ -208,7 +332,8 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 							stdout: claudeResult.stdout,
 							stderr: claudeResult.stderr,
 							exitCode: claudeResult.exitCode,
-							file_count: claudeResult.outputFiles?.length || 0
+							file_count: claudeResult.outputFiles?.length || 0,
+							child_content_count: createdContentIds.length
 						};
 						break;
 					}
@@ -758,10 +883,97 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 			'tmdb-search',
 			'libgen-search',
 			'screenshot-queue',
+			'tsx-transpile',
+			'transcribe-audio',
 			'claude-code'
 		];
 
 		if (queueableActions.includes(action)) {
+			// Check if synchronous execution is requested
+			if (request.sync === true) {
+				// Execute handler immediately and return results
+				console.log(`Executing ${action} synchronously (immediate mode)`);
+
+				let result;
+				switch (action) {
+					case 'seo-extract':
+						result = await handleSEOExtract(supabase, payload);
+						break;
+
+					case 'llm-generate':
+						result = await handleLLMGenerate(supabase, payload);
+						break;
+
+					case 'markdown-extract':
+						result = await handleMarkdownExtract(supabase, payload);
+						break;
+
+					case 'youtube-playlist-extract':
+						result = await handleYouTubePlaylistExtract(supabase, payload);
+						break;
+
+					case 'tmdb-search':
+						result = await handleTMDbSearch(supabase, payload);
+						break;
+
+					case 'libgen-search':
+						result = await handleLibgenSearch(supabase, payload);
+						break;
+
+					case 'screenshot-queue':
+						result = await handleScreenshotQueue(supabase, payload);
+						break;
+
+					case 'tsx-transpile':
+						result = await handleTSXTranspile(supabase, payload);
+						break;
+
+					case 'transcribe-audio':
+						result = await handleTranscribeAudio(supabase, payload);
+						break;
+
+					case 'claude-code':
+						// Claude Code execution requires special handling
+						return {
+							statusCode: 400,
+							headers: {
+								'Content-Type': 'application/json',
+								...corsHeaders
+							},
+							body: JSON.stringify({
+								success: false,
+								error: 'Claude Code execution cannot be run synchronously - it requires job queue'
+							})
+						};
+
+					default:
+						return {
+							statusCode: 400,
+							headers: {
+								'Content-Type': 'application/json',
+								...corsHeaders
+							},
+							body: JSON.stringify({
+								success: false,
+								error: `Unknown action: ${action}`
+							})
+						};
+				}
+
+				// Return results immediately
+				return {
+					statusCode: 200,
+					headers: {
+						'Content-Type': 'application/json',
+						...corsHeaders
+					},
+					body: JSON.stringify(result)
+				};
+			}
+
+			// Asynchronous mode (default) - create job and enqueue
+			console.log(`Executing ${action} asynchronously (queued mode)`);
+
 			// Extract user_id and group_id from payload
 			let user_id: string;
 			let group_id: string;

@@ -4,15 +4,21 @@ import { Group, contentRepository } from './ContentRepository';
 interface GroupSelectorProps {
   currentGroup: Group | null;
   onGroupChange: (group: Group) => void;
+  initialMode?: 'create' | 'join';
+  initialShowModal?: boolean;
+  onModalClose?: () => void;
 }
 
-export const GroupSelector: React.FC<GroupSelectorProps> = ({ 
-  currentGroup, 
-  onGroupChange 
+export const GroupSelector: React.FC<GroupSelectorProps> = ({
+  currentGroup,
+  onGroupChange,
+  initialMode = 'create',
+  initialShowModal = false,
+  onModalClose
 }) => {
   const [groups, setGroups] = useState<Group[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [modalMode, setModalMode] = useState<'create' | 'join'>('create');
+  const [showModal, setShowModal] = useState(initialShowModal);
+  const [modalMode, setModalMode] = useState<'create' | 'join'>(initialMode);
   const [groupName, setGroupName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,6 +54,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
       setGroups(prev => [newGroup, ...prev]);
       onGroupChange(newGroup);
       setShowModal(false);
+      onModalClose?.();
       setGroupName('');
     } catch (error: any) {
       setError(error.message);
@@ -65,25 +72,27 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
 
     try {
       const group = await contentRepository.joinGroupWithUserCode(joinCode.trim());
-      
+
       // Check if user was already a member
       if ((group as any).alreadyMember) {
         setError(`You're already a member of "${group.name}"`);
         // Still switch to the group
         onGroupChange(group);
         setShowModal(false);
+        onModalClose?.();
         setJoinCode('');
         return;
       }
-      
+
       // Check if group is already in our list
       const existingGroup = groups.find(g => g.id === group.id);
       if (!existingGroup) {
         setGroups(prev => [group, ...prev]);
       }
-      
+
       onGroupChange(group);
       setShowModal(false);
+      onModalClose?.();
       setJoinCode('');
     } catch (error: any) {
       setError(error.message);
@@ -170,8 +179,11 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
       {showModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
-                 onClick={() => setShowModal(false)} />
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                 onClick={() => {
+                   setShowModal(false);
+                   onModalClose?.();
+                 }} />
 
             <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
 
@@ -208,7 +220,10 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
                     <div className="flex justify-end space-x-3">
                       <button
                         type="button"
-                        onClick={() => setShowModal(false)}
+                        onClick={() => {
+                          setShowModal(false);
+                          onModalClose?.();
+                        }}
                         className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
                         disabled={loading}
                       >
@@ -241,11 +256,14 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
                         autoFocus
                       />
                     </div>
-                    
+
                     <div className="flex justify-end space-x-3">
                       <button
                         type="button"
-                        onClick={() => setShowModal(false)}
+                        onClick={() => {
+                          setShowModal(false);
+                          onModalClose?.();
+                        }}
                         className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
                         disabled={loading}
                       >

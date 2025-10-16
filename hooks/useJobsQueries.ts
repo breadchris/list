@@ -37,7 +37,7 @@ export const useActiveJobs = (groupId: string) => {
       return await contentRepository.getActiveJobsForGroup(groupId, ['pending', 'processing']);
     },
     enabled: !!groupId,
-    staleTime: 10000, // Consider data fresh for 10 seconds
+    staleTime: 1000, // Consider data fresh for 1 second - faster UI updates
     refetchInterval: 30000, // Auto-refetch every 30 seconds
     refetchOnWindowFocus: true,
   });

@@ -26,10 +26,11 @@ export interface TMDbSearchResult {
 interface TMDbSearchOptions {
   contentId: string;
   searchType?: 'movie' | 'tv' | 'multi';
+  searchQuery?: string;
 }
 
 interface TMDbAddOptions {
-  contentId: string;
+  groupId: string;
   tmdbIds: number[];
   searchType?: 'movie' | 'tv' | 'multi';
 }
@@ -40,10 +41,10 @@ interface TMDbAddOptions {
 export const useTMDbSearch = () => {
   return useMutation({
     mutationFn: async (options: TMDbSearchOptions): Promise<TMDbSearchResult> => {
-      const { contentId, searchType = 'multi' } = options;
+      const { contentId, searchType = 'multi', searchQuery } = options;
 
-      console.log(`Starting TMDb search for content ${contentId}`);
-      const result = await contentRepository.searchTMDb(contentId, searchType);
+      console.log(`Starting TMDb search for content ${contentId}${searchQuery ? ` with query: "${searchQuery}"` : ''}`);
+      const result = await contentRepository.searchTMDb(contentId, searchType, searchQuery);
       console.log(`TMDb search completed for content ${contentId}:`, result);
 
       return result;
@@ -62,11 +63,11 @@ export const useTMDbAddResults = () => {
 
   return useMutation({
     mutationFn: async (options: TMDbAddOptions) => {
-      const { contentId, tmdbIds, searchType = 'multi' } = options;
+      const { groupId, tmdbIds, searchType = 'multi' } = options;
 
-      console.log(`Adding ${tmdbIds.length} TMDb results to content ${contentId}`);
-      const result = await contentRepository.addTMDbResults(contentId, tmdbIds, searchType);
-      console.log(`TMDb results added for content ${contentId}:`, result);
+      console.log(`Adding ${tmdbIds.length} TMDb results to group ${groupId}`);
+      const result = await contentRepository.addTMDbResults(groupId, tmdbIds, searchType);
+      console.log(`TMDb results added to group ${groupId}:`, result);
 
       return result;
     },

@@ -4,6 +4,7 @@ import { QueryProvider } from '../providers/QueryProvider';
 import { ToastProvider } from './ToastProvider';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ListApp } from './ListApp';
+import { GroupSettingsPage } from './GroupSettingsPage';
 import { PublicContentView } from './PublicContentView';
 import { TermsOfService } from './TermsOfService';
 import { PrivacyPolicy } from './PrivacyPolicy';
@@ -25,8 +26,9 @@ export const App: React.FC = () => {
               <Route path="/" element={<ListApp />} />
               <Route path="/group/:groupId" element={<ListApp />} />
               <Route path="/group/:groupId/content/:contentId" element={<ListApp />} />
+              <Route path="/group/:groupId/settings" element={<GroupSettingsPage />} />
               <Route path="/invite/:joinCode" element={<ListApp />} />
-              
+
               {/* Public content route */}
               <Route path="/public/content/:contentId" element={<PublicContentView />} />
               

@@ -8,7 +8,9 @@ export function VideoPlayer({
   onTimeUpdate,
   onDurationChange,
   onPlayStateChange,
-  seekTo
+  seekTo,
+  isLooping = false,
+  loopRange = null
 }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -68,6 +70,24 @@ export function VideoPlayer({
       }
     }
   }, [seekTo, isReady]);
+
+  // Handle loop playback
+  useEffect(() => {
+    if (!isLooping || !loopRange || !playerRef.current || !isReady) return;
+
+    const checkInterval = setInterval(() => {
+      if (playerRef.current && isReady) {
+        const current = playerRef.current.getCurrentTime();
+
+        // If we're beyond the end of the loop range, seek back to start
+        if (current >= loopRange.end) {
+          playerRef.current.seekTo(loopRange.start, 'seconds');
+        }
+      }
+    }, 50); // Check every 50ms for responsive looping
+
+    return () => clearInterval(checkInterval);
+  }, [isLooping, loopRange, isReady]);
 
   // Cleanup
   useEffect(() => {

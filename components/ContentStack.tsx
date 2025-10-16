@@ -29,6 +29,9 @@ interface ContentStackProps {
   contentType?: 'text' | 'ai-chat' | 'search';
   searchWorkflows?: WorkflowAction[];
   onSearchQueryChange?: (query: string) => void;
+  activeExternalSearch?: string | null;
+  onActivateExternalSearch?: (workflowId: string) => void;
+  onExecuteExternalSearch?: () => void;
 }
 
 export const ContentStack: React.FC<ContentStackProps> = ({
@@ -45,7 +48,10 @@ export const ContentStack: React.FC<ContentStackProps> = ({
   viewMode = 'chronological',
   contentType = 'text',
   searchWorkflows = [],
-  onSearchQueryChange
+  onSearchQueryChange,
+  activeExternalSearch = null,
+  onActivateExternalSearch = () => {},
+  onExecuteExternalSearch = () => {}
 }) => {
   const deleteContentMutation = useDeleteContentMutation();
   const toast = useToast();
@@ -203,6 +209,9 @@ export const ContentStack: React.FC<ContentStackProps> = ({
               searchQuery={searchQuery}
               onSearchChange={onSearchQueryChange || (() => {})}
               isSearching={isSearching}
+              activeSearch={activeExternalSearch}
+              onActivateSearch={onActivateExternalSearch}
+              onExecuteSearch={onExecuteExternalSearch}
             />
           ) : (
             <ContentInput
@@ -265,7 +274,7 @@ export const ContentStack: React.FC<ContentStackProps> = ({
                   <YouTubeVideoCard metadata={currentItem.metadata as any} />
                 )}
 
-                {currentItem.type === 'js' ? (
+                {['js', 'jsx', 'ts', 'tsx'].includes(currentItem.type) ? (
                   <JsContentDisplay content={currentItem} />
                 ) : (
                   <div className="prose max-w-none">

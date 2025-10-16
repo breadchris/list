@@ -13,9 +13,9 @@ export interface ContentQueueJob {
 }
 
 export interface ContentRequest {
-	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job';
+	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio';
 	payload: any;
-	useQueue?: boolean;
+	sync?: boolean; // When true, execute immediately and return results. When false/omitted, queue job (default)
 }
 
 export interface ContentResponse {
@@ -100,9 +100,11 @@ export interface ChatMessagePayload {
 
 // Claude Code Types
 export interface ClaudeCodeExecutePayload {
-	selected_content: ContentItem[];
+	prompt: string;
+	user_id: string;
 	group_id: string;
-	parent_content_id?: string | null;
+	parent_content_id: string;
+	session_id?: string;
 }
 
 // Claude Code Job Status Types
@@ -284,4 +286,96 @@ export interface SQSMessageBody {
 	action: string;
 	payload: any;
 	created_at: string;
+}
+
+// TSX Transpilation Types
+export interface TSXTranspilePayload {
+	tsx_code: string;
+	filename?: string;
+}
+
+export interface TSXTranspileResponse {
+	success: boolean;
+	compiled_js?: string;
+	error?: string;
+	errors?: Array<{
+		message: string;
+		location?: {
+			file: string;
+			line: number;
+			column: number;
+			lineText?: string;
+		};
+	}>;
+	warnings?: Array<{
+		message: string;
+		location?: {
+			file: string;
+			line: number;
+			column: number;
+			lineText?: string;
+		};
+	}>;
+}
+
+// Deepgram Transcription Types
+export interface TranscribeAudioPayload {
+	selectedContent: ContentItem[];
+	onProgress?: (item: any) => void;
+}
+
+export interface DeepgramWord {
+	word: string;
+	start: number;
+	end: number;
+	confidence: number;
+	speaker?: number;
+	punctuated_word?: string;
+}
+
+export interface DeepgramUtterance {
+	start: number;
+	end: number;
+	transcript: string;
+	words: DeepgramWord[];
+	speaker: number;
+	confidence: number;
+	channel: number;
+	id: string;
+}
+
+export interface DeepgramChannel {
+	alternatives: Array<{
+		transcript: string;
+		confidence: number;
+		words: DeepgramWord[];
+	}>;
+}
+
+export interface DeepgramResults {
+	channels: DeepgramChannel[];
+	utterances?: DeepgramUtterance[];
+}
+
+export interface DeepgramMetadata {
+	transaction_key: string;
+	request_id: string;
+	sha256: string;
+	created: string;
+	duration: number;
+	channels: number;
+	models: string[];
+	model_info: Record<string, any>;
+}
+
+export interface DeepgramResponse {
+	metadata: DeepgramMetadata;
+	results: DeepgramResults;
+}
+
+export interface TranscribeAudioResult {
+	content_id: string;
+	success: boolean;
+	transcript_content_id?: string;
+	error?: string;
 }

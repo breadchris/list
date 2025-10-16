@@ -16,7 +16,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o youtube-handler .
 FROM public.ecr.aws/lambda/nodejs:20
 
 # Force rebuild with timestamp
-LABEL build_timestamp="2025-10-07T05:30:00Z"
+LABEL build_timestamp="2025-10-16T00:00:00Z"
 
 # Set IS_SANDBOX to enable bypassPermissions mode
 ENV IS_SANDBOX=1
@@ -34,14 +34,8 @@ COPY package.json ./
 # Install production dependencies
 RUN npm install --omit=dev
 
-# Copy source code
-COPY src/ ./src/
-COPY tsconfig.json ./
-
-# Install build dependencies and compile TypeScript
-RUN npm install typescript @types/node @types/aws-lambda && \
-    npx tsc --skipLibCheck && \
-    npm uninstall typescript @types/node @types/aws-lambda
+# Copy pre-built bundled Lambda function
+COPY dist/index.bundled.js ./dist/index.js
 
 # Set the CMD to your handler
 CMD [ "dist/index.handler" ]

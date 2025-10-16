@@ -8,6 +8,9 @@ interface SearchWorkflowSelectorProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   isSearching: boolean;
+  activeSearch: string | null;
+  onActivateSearch: (workflowId: string) => void;
+  onExecuteSearch: () => void;
 }
 
 export const SearchWorkflowSelector: React.FC<SearchWorkflowSelectorProps> = ({
@@ -16,7 +19,10 @@ export const SearchWorkflowSelector: React.FC<SearchWorkflowSelectorProps> = ({
   onClose,
   searchQuery,
   onSearchChange,
-  isSearching
+  isSearching,
+  activeSearch,
+  onActivateSearch,
+  onExecuteSearch
 }) => {
   if (!isVisible) return null;
 
@@ -37,23 +43,47 @@ export const SearchWorkflowSelector: React.FC<SearchWorkflowSelectorProps> = ({
 
         {/* Content Search Section */}
         <div className="mb-4">
-          <h4 className="text-xs font-medium text-gray-700 mb-2">Search Your Content</h4>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search your content..."
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-colors"
-            />
-            {searchQuery && (
+          <h4 className="text-xs font-medium text-gray-700 mb-2">
+            {activeSearch ? (
+              <span>
+                Search with {workflows.find(w => w.id === activeSearch)?.name || 'External Source'}
+              </span>
+            ) : (
+              'Search Your Content'
+            )}
+          </h4>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder={activeSearch ? `Enter search query...` : 'Search your content...'}
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && activeSearch && searchQuery.trim()) {
+                    onExecuteSearch();
+                  }
+                }}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-colors"
+              />
+              {searchQuery && !activeSearch && (
+                <button
+                  onClick={() => onSearchChange('')}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            {activeSearch && (
               <button
-                onClick={() => onSearchChange('')}
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                onClick={onExecuteSearch}
+                disabled={!searchQuery.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                Search
               </button>
             )}
           </div>
@@ -66,23 +96,31 @@ export const SearchWorkflowSelector: React.FC<SearchWorkflowSelectorProps> = ({
         <div>
           <h4 className="text-xs font-medium text-gray-700 mb-2">Search External Sources</h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {workflows.map((workflow) => (
-              <button
-                key={workflow.id}
-                onClick={workflow.onClick}
-                className="flex flex-col items-center p-4 border-2 border-gray-200 rounded-lg hover:border-teal-300 hover:bg-teal-50 transition-all group"
-              >
-                <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">
-                  {workflow.icon}
-                </span>
-                <h5 className="text-xs font-medium text-gray-900 mb-0.5">
-                  {workflow.name}
-                </h5>
-                <p className="text-[10px] text-gray-500 text-center leading-tight">
-                  {workflow.description}
-                </p>
-              </button>
-            ))}
+            {workflows.map((workflow) => {
+              const isActive = activeSearch === workflow.id;
+              return (
+                <button
+                  key={workflow.id}
+                  onClick={() => onActivateSearch(workflow.id)}
+                  className={`flex flex-col items-center p-4 border-2 rounded-lg transition-all group ${
+                    isActive
+                      ? 'border-teal-500 bg-teal-50'
+                      : 'border-gray-200 hover:border-teal-300 hover:bg-teal-50'
+                  }`}
+                >
+                  <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">
+                    {workflow.icon}
+                    {isActive && ' ✓'}
+                  </span>
+                  <h5 className="text-xs font-medium text-gray-900 mb-0.5">
+                    {workflow.name}
+                  </h5>
+                  <p className="text-[10px] text-gray-500 text-center leading-tight">
+                    {workflow.description}
+                  </p>
+                </button>
+              );
+            })}
           </div>
 
           {workflows.length === 0 && (

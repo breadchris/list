@@ -37,11 +37,10 @@ export async function generateScreenshot(url: string): Promise<ArrayBuffer> {
     apiToken: cloudflareApiKey,
   });
 
-  // Type cast to any to bypass SDK type checking - runtime API supports full_page
-  const screenshot = await (client.browserRendering.screenshot.create as any)({
+  // Generate screenshot - Cloudflare API no longer accepts full_page parameter
+  const screenshot = await client.browserRendering.screenshot.create({
     account_id: accountId,
-    url: url,
-    full_page: true
+    url: url
   });
 
   return screenshot as unknown as ArrayBuffer;

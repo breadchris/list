@@ -68,9 +68,24 @@ export async function executeClaudeCode(
 	let exitCode: number | null = null;
 	const workDir = '/tmp/claude-workspace';
 
+	// Add coding conventions to prompt
+	const codingConventions = `
+CODING CONVENTIONS:
+- When creating React/TSX components, ALWAYS use default exports with named functions
+- Example: export default function ComponentName() { ... }
+- Do NOT use: export const ComponentName = () => { ... }
+- This ensures components work correctly with dynamic imports
+
+USER REQUEST:
+`;
+
+	const enhancedPrompt = resumeSessionId
+		? prompt // Don't add conventions when resuming - they were already added to the initial prompt
+		: codingConventions + prompt;
+
 	try {
 		process.stderr.write('=== executeClaudeCode called ===\n');
-		process.stderr.write(`Prompt: ${prompt.substring(0, 100)}\n`);
+		process.stderr.write(`Prompt: ${enhancedPrompt.substring(0, 100)}\n`);
 		process.stderr.write(`CLI path: /var/lang/bin/claude\n`);
 		process.stderr.write(`Work Dir: ${workDir}\n`);
 		process.stderr.write(`ANTHROPIC_API_KEY set: ${!!process.env.ANTHROPIC_API_KEY}\n`);
@@ -119,7 +134,7 @@ export async function executeClaudeCode(
 
 		// Execute Claude Code SDK with bypass permissions for automated execution
 		const resultStream = query({
-			prompt,
+			prompt: enhancedPrompt,
 			options: {
 				model: 'claude-sonnet-4-5-20250929',
 				permissionMode: 'bypassPermissions', // Allow automated file operations

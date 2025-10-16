@@ -1041,7 +1041,7 @@ export class ContentRepository {
   }
 
   // TMDb search functionality (search-only mode)
-  async searchTMDb(contentId: string, searchType: 'movie' | 'tv' | 'multi' = 'multi'): Promise<{
+  async searchTMDb(contentId: string, searchType: 'movie' | 'tv' | 'multi' = 'multi', searchQuery?: string): Promise<{
     content_id: string,
     success: boolean,
     results: Array<{
@@ -1060,9 +1060,28 @@ export class ContentRepository {
     errors?: string[]
   }> {
     try {
-      const contentItem = await this.getContentById(contentId);
-      if (!contentItem) {
-        throw new Error('Content not found');
+      let contentItem: Content;
+
+      if (searchQuery) {
+        // Create temp content object with search query
+        contentItem = {
+          id: contentId,
+          data: searchQuery,
+          type: 'text',
+          group_id: '', // Not needed for search-only mode
+          user_id: '', // Not needed for search-only mode
+          parent_content_id: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          has_children: false,
+          is_public: false
+        };
+      } else {
+        // Fetch from database as before
+        contentItem = await this.getContentById(contentId);
+        if (!contentItem) {
+          throw new Error('Content not found');
+        }
       }
 
       const result = await LambdaClient.invoke({
@@ -1071,7 +1090,8 @@ export class ContentRepository {
           selectedContent: [contentItem],
           searchType,
           mode: 'search-only'
-        }
+        },
+        sync: true  // Execute immediately and return search results
       });
 
       if (!result.success) {
@@ -1103,7 +1123,7 @@ export class ContentRepository {
   }
 
   // TMDb add selected results functionality (add-selected mode)
-  async addTMDbResults(contentId: string, tmdbIds: number[], searchType: 'movie' | 'tv' | 'multi' = 'multi'): Promise<{
+  async addTMDbResults(groupId: string, tmdbIds: number[], searchType: 'movie' | 'tv' | 'multi' = 'multi'): Promise<{
     content_id: string,
     success: boolean,
     results_created: number,
@@ -1111,10 +1131,26 @@ export class ContentRepository {
     errors?: string[]
   }> {
     try {
-      const contentItem = await this.getContentById(contentId);
-      if (!contentItem) {
-        throw new Error('Content not found');
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
       }
+
+      // Create a minimal content object representing the group context
+      // The Lambda will create new content items in this group
+      const contentItem: Content = {
+        id: '', // Not used - Lambda will create new UUIDs
+        data: '', // Not used for add-selected mode
+        type: 'text',
+        group_id: groupId,
+        user_id: user.id,
+        parent_content_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        has_children: false,
+        is_public: false
+      };
 
       const result = await LambdaClient.invoke({
         action: 'tmdb-search',
@@ -1123,7 +1159,8 @@ export class ContentRepository {
           searchType,
           mode: 'add-selected',
           selectedResults: tmdbIds
-        }
+        },
+        sync: true  // Execute immediately for user feedback
       });
 
       if (!result.success) {
@@ -1133,7 +1170,7 @@ export class ContentRepository {
       const data = result.data?.[0];
       if (data) {
         return {
-          content_id: data.content_id || contentId,
+          content_id: data.content_id || '',
           success: data.success || false,
           results_created: data.results_created || 0,
           tmdb_children: data.tmdb_children || [],
@@ -1142,7 +1179,7 @@ export class ContentRepository {
       }
 
       return {
-        content_id: contentId,
+        content_id: '',
         success: true,
         results_created: 0,
         tmdb_children: [],
@@ -1181,7 +1218,8 @@ export class ContentRepository {
           topics: topics || ['libgen'],
           filters,
           maxResults: maxResults || 10
-        }
+        },
+        sync: true  // Execute immediately for user feedback
       });
 
       if (!response.success) {
@@ -1790,6 +1828,101 @@ export class ContentRepository {
       console.log(`Image deleted successfully: ${filePath}`);
     } catch (error) {
       console.error('Failed to delete image:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload an epub file to Supabase storage
+   * Path pattern: <content-uuid>/book.epub
+   * Returns the public URL of the uploaded epub
+   */
+  async uploadEpub(file: File, contentId: string): Promise<string> {
+    try {
+      // Path pattern: <content-uuid>/book.epub
+      const filePath = `${contentId}/book.epub`;
+
+      console.log(`Uploading epub to: ${filePath}`);
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase
+        .storage
+        .from('content')
+        .upload(filePath, file, {
+          contentType: 'application/epub+zip',
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(`Failed to upload epub: ${uploadError.message}`);
+      }
+
+      console.log('Upload successful:', uploadData);
+
+      // Get public URL
+      const { data: publicUrlData } = supabase
+        .storage
+        .from('content')
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicUrlData.publicUrl;
+      console.log(`Epub uploaded successfully: ${publicUrl}`);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Failed to upload epub:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload an audio file to Supabase storage
+   * Path pattern: <content-uuid>/<timestamp>.<ext>
+   * Returns the public URL of the uploaded audio
+   */
+  async uploadAudio(file: File, contentId: string): Promise<string> {
+    try {
+      // Generate filename with timestamp to avoid conflicts
+      const timestamp = Date.now();
+      const fileExtension = file.name.split('.').pop() || 'mp3';
+      const fileName = `${timestamp}.${fileExtension}`;
+
+      // Path pattern: <content-uuid>/<filename>
+      const filePath = `${contentId}/${fileName}`;
+
+      console.log(`Uploading audio to: ${filePath}`);
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase
+        .storage
+        .from('content')
+        .upload(filePath, file, {
+          contentType: file.type,
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(`Failed to upload audio: ${uploadError.message}`);
+      }
+
+      console.log('Upload successful:', uploadData);
+
+      // Get public URL
+      const { data: publicUrlData } = supabase
+        .storage
+        .from('content')
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicUrlData.publicUrl;
+      console.log(`Audio uploaded successfully: ${publicUrl}`);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Failed to upload audio:', error);
       throw error;
     }
   }

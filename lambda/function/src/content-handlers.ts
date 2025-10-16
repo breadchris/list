@@ -8,6 +8,10 @@ import type {
   TMDbSearchPayload,
   LibgenSearchPayload,
   ScreenshotQueuePayload,
+  TSXTranspilePayload,
+  TSXTranspileResponse,
+  TranscribeAudioPayload,
+  TranscribeAudioResult,
   ContentItem,
   OpenAIMessage
 } from './types.js';
@@ -16,6 +20,7 @@ import { callOpenAI, callOpenAIChat, formatContentForContext } from './openai-cl
 import { fetchMarkdownFromCloudflare, generateScreenshot } from './cloudflare-client.js';
 import { processTMDbSearchForContent } from './tmdb-client.js';
 import { searchLibgen, type BookInfo } from './libgen-client.js';
+import { createClient } from '@deepgram/sdk';
 
 // =============================================================================
 // SEO EXTRACTION
@@ -841,4 +846,179 @@ async function processScreenshotForContent(supabase: any, contentId: string, url
     console.error(`Error processing screenshot for ${url}:`, error);
     throw error;
   }
+}
+
+// =============================================================================
+// TSX TRANSPILATION
+// =============================================================================
+
+import { transpileTSX, validateTSXSource } from './tsx-transpiler.js';
+
+/**
+ * Handle TSX transpilation
+ * Transpiles TSX source code to JavaScript ES module
+ */
+export async function handleTSXTranspile(supabase: any, payload: TSXTranspilePayload): Promise<TSXTranspileResponse> {
+  try {
+    // Validate input
+    if (!payload.tsx_code) {
+      return {
+        success: false,
+        error: 'tsx_code is required'
+      };
+    }
+
+    // Validate source code
+    const validation = validateTSXSource(payload.tsx_code);
+    if (!validation.valid) {
+      return {
+        success: false,
+        error: validation.error
+      };
+    }
+
+    const filename = payload.filename || 'component.tsx';
+
+    console.log(`Transpiling TSX: ${filename} (${payload.tsx_code.length} bytes)`);
+
+    // Transpile using esbuild
+    const result = await transpileTSX(payload.tsx_code, filename);
+
+    if (!result.success) {
+      console.error(`TSX transpilation failed for ${filename}:`, result.error);
+      return {
+        success: false,
+        error: result.error,
+        errors: result.errors,
+        warnings: result.warnings
+      };
+    }
+
+    console.log(`TSX transpilation completed for ${filename} (${result.compiledJS?.length || 0} bytes)`);
+
+    return {
+      success: true,
+      compiled_js: result.compiledJS,
+      warnings: result.warnings
+    };
+
+  } catch (error: any) {
+    console.error('TSX transpilation handler error:', error);
+    return {
+      success: false,
+      error: error.message || 'Unknown transpilation error'
+    };
+  }
+}
+
+// =============================================================================
+// AUDIO TRANSCRIPTION
+// =============================================================================
+
+/**
+ * Handle audio transcription using Deepgram API
+ * Creates a child content item with type='transcript' containing the Deepgram response
+ */
+export async function handleTranscribeAudio(supabase: any, payload: TranscribeAudioPayload): Promise<ContentResponse> {
+  const results: TranscribeAudioResult[] = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processTranscribeAudioForContent(supabase, contentItem);
+      results.push(result);
+
+      // Call progress callback if provided
+      if (payload.onProgress) {
+        payload.onProgress(result);
+      }
+    } catch (error: any) {
+      console.error(`Error transcribing audio for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+async function processTranscribeAudioForContent(supabase: any, contentItem: ContentItem): Promise<TranscribeAudioResult> {
+  // Validate content type
+  if (contentItem.type !== 'audio') {
+    throw new Error('Content item must be of type "audio"');
+  }
+
+  // Extract audio URL from metadata
+  const audioUrl = contentItem.metadata?.audio_url;
+  if (!audioUrl) {
+    throw new Error('No audio_url found in content metadata');
+  }
+
+  console.log(`Transcribing audio for content ${contentItem.id}: ${audioUrl}`);
+
+  // Get Deepgram API key from environment
+  const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+  if (!deepgramApiKey) {
+    throw new Error('DEEPGRAM_API_KEY environment variable not set');
+  }
+
+  // Initialize Deepgram client
+  const deepgram = createClient(deepgramApiKey);
+
+  // Transcribe audio using Deepgram
+  const { result, error } = await deepgram.listen.prerecorded.transcribeUrl(
+    {
+      url: audioUrl
+    },
+    {
+      model: 'nova-2',
+      smart_format: true,
+      punctuate: true,
+      paragraphs: true,
+      utterances: true,
+      diarize: true
+    }
+  );
+
+  if (error) {
+    throw new Error(`Deepgram API error: ${error.message}`);
+  }
+
+  console.log(`Transcription completed for content ${contentItem.id}`);
+
+  // Create transcript content as child
+  const { data: transcriptContent, error: insertError } = await supabase
+    .from('content')
+    .insert({
+      type: 'transcript',
+      data: result.results.channels[0]?.alternatives[0]?.transcript || '',
+      metadata: {
+        deepgram_response: result,
+        source_audio_url: audioUrl,
+        source_content_id: contentItem.id,
+        transcribed_at: new Date().toISOString()
+      },
+      group_id: contentItem.group_id,
+      user_id: contentItem.user_id,
+      parent_content_id: contentItem.id
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    throw new Error(`Failed to create transcript content: ${insertError.message}`);
+  }
+
+  console.log(`Created transcript content ${transcriptContent.id} for audio ${contentItem.id}`);
+
+  return {
+    content_id: contentItem.id,
+    success: true,
+    transcript_content_id: transcriptContent.id
+  };
 }

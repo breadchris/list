@@ -9,6 +9,24 @@ export interface VideoAnnotation {
   type: 'marker' | 'range';
 }
 
+// Alternative annotation type used by advanced timeline components
+export interface TimestampAnnotation {
+  id: string;
+  timestamp: number;
+  comment: string;
+  transcriptBefore?: string;
+  transcriptAfter?: string;
+}
+
+// Video section type for grouping annotations
+export interface VideoSection {
+  id: string;
+  title: string;
+  startTime: number;
+  endTime: number;
+  timestampIds: string[];
+}
+
 export interface AnnotationManagerProps {
   annotations: VideoAnnotation[];
   currentTime: number;
@@ -26,6 +44,8 @@ export interface VideoPlayerProps {
   onDurationChange: (duration: number) => void;
   onPlayStateChange: (playing: boolean) => void;
   seekTo?: number;
+  isLooping?: boolean;
+  loopRange?: { start: number; end: number } | null;
 }
 
 // Helper to format time in MM:SS or HH:MM:SS format
@@ -40,3 +60,25 @@ export const formatTime = (seconds: number): string => {
 
   return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
+
+// Adapter functions to convert between annotation formats
+export function videoAnnotationToTimestamp(annotation: VideoAnnotation): TimestampAnnotation {
+  return {
+    id: annotation.id,
+    timestamp: annotation.startTime,
+    comment: `${annotation.title}${annotation.description ? ': ' + annotation.description : ''}`,
+    transcriptBefore: '',
+    transcriptAfter: ''
+  };
+}
+
+export function timestampToVideoAnnotation(timestamp: TimestampAnnotation): VideoAnnotation {
+  return {
+    id: timestamp.id,
+    title: timestamp.comment.split(':')[0] || timestamp.comment,
+    description: timestamp.comment.split(':').slice(1).join(':').trim() || '',
+    startTime: timestamp.timestamp,
+    endTime: timestamp.timestamp,
+    type: 'marker'
+  };
+}

@@ -5,6 +5,11 @@ import { SEOCard } from './SEOCard';
 import { JsContentDisplay } from './JsContentDisplay';
 import { UrlPreviewCard } from './UrlPreviewCard';
 import { YouTubeVideoCard } from './YouTubeVideoCard';
+import { ImageDisplay } from './ImageDisplay';
+import { AudioDisplay } from './AudioDisplay';
+import { EpubViewer } from './EpubViewer';
+import { TranscriptViewer } from './TranscriptViewer';
+import { TsxRenderer } from './TsxRenderer';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -18,9 +23,11 @@ import { SearchWorkflowSelector } from './SearchWorkflowSelector';
 import { WorkflowAction } from './WorkflowFAB';
 import { ContentJobsIndicator } from './ContentJobsIndicator';
 import { useActiveJobs } from '../hooks/useJobsQueries';
+import { UserAvatar } from './UserAvatar';
 
 interface ContentListProps {
   groupId: string;
+  userId?: string;
   newContent?: Content;
   parentContentId?: string | null;
   onNavigate?: (parentId: string | null) => void;
@@ -34,6 +41,9 @@ interface ContentListProps {
   contentType?: 'text' | 'ai-chat' | 'search';
   searchWorkflows?: WorkflowAction[];
   onSearchQueryChange?: (query: string) => void;
+  activeExternalSearch?: string | null;
+  onActivateExternalSearch?: (workflowId: string) => void;
+  onExecuteExternalSearch?: () => void;
 }
 
 interface TagDisplayProps {
@@ -108,6 +118,7 @@ const DateDivider: React.FC<DateDividerProps> = ({ date }) => {
 
 export const ContentList: React.FC<ContentListProps> = ({
   groupId,
+  userId,
   newContent,
   parentContentId = null,
   onNavigate,
@@ -120,7 +131,10 @@ export const ContentList: React.FC<ContentListProps> = ({
   viewMode = 'chronological',
   contentType = 'text',
   searchWorkflows = [],
-  onSearchQueryChange
+  onSearchQueryChange,
+  activeExternalSearch = null,
+  onActivateExternalSearch = () => {},
+  onExecuteExternalSearch = () => {}
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -285,9 +299,9 @@ export const ContentList: React.FC<ContentListProps> = ({
 
   // Set up real-time subscription for job status changes
   useEffect(() => {
-    if (!groupId) return;
+    if (!userId) return;
 
-    const jobsSubscription = contentRepository.subscribeToJobs(groupId, (payload) => {
+    const jobsSubscription = contentRepository.subscribeToJobs(userId, (payload) => {
       // When job status changes, invalidate jobs query to refetch
       queryClient.invalidateQueries({ queryKey: QueryKeys.activeJobsByGroup(groupId) });
     });
@@ -295,7 +309,7 @@ export const ContentList: React.FC<ContentListProps> = ({
     return () => {
       jobsSubscription.unsubscribe();
     };
-  }, [groupId, queryClient]);
+  }, [userId, groupId, queryClient]);
 
   // Auto-retry mechanism for stuck queries - must be before early return
   useEffect(() => {
@@ -589,12 +603,49 @@ export const ContentList: React.FC<ContentListProps> = ({
                       <TagDisplay tags={parentContent.tags || []} />
                     </div>
                   </div>
+                ) : parentContent.type === 'epub' ? (
+                  <div>
+                    <div className="mb-2">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        <span className="text-xs font-medium text-orange-600 uppercase tracking-wide">Book</span>
+                        {parentContent.metadata?.filename && (
+                          <span className="text-xs text-gray-500 truncate">
+                            {parentContent.metadata.filename}
+                          </span>
+                        )}
+                      </div>
+                      <div className="border border-gray-200 rounded-lg overflow-hidden" style={{ height: '500px' }}>
+                        <EpubViewer
+                          epubUrl={parentContent.data}
+                          contentId={parentContent.id}
+                          groupId={groupId}
+                          onChildContentCreated={() => {
+                            // Invalidate queries to refresh the list
+                            queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContent.id) });
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-gray-500">
+                        {formatRelativeTime(parentContent.created_at)}
+                      </p>
+                      <TagDisplay tags={parentContent.tags || []} />
+                    </div>
+                  </div>
                 ) : (
                   <div>
                     <LinkifiedText
                       text={parentContent.data}
                       className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
                     />
+                    {/* URL Preview Image */}
+                    {parentContent.metadata?.url_preview && (
+                      <UrlPreviewCard previewUrl={parentContent.metadata.url_preview} />
+                    )}
                     <div className="flex items-center justify-between mt-2">
                       <p className="text-xs text-gray-500">
                         {formatRelativeTime(parentContent.created_at)}
@@ -628,7 +679,7 @@ export const ContentList: React.FC<ContentListProps> = ({
           />
         )}
 
-        {displayItems.length === 0 && !currentLoading && currentStatus === 'success' && (!parentContent || isSearching) ? (
+        {displayItems.length === 0 && !currentLoading && currentStatus === 'success' && (!parentContent || isSearching) && !showInput ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               {isSearching ? (
@@ -657,6 +708,9 @@ export const ContentList: React.FC<ContentListProps> = ({
                     searchQuery={searchQuery}
                     onSearchChange={onSearchQueryChange || (() => {})}
                     isSearching={isSearching}
+                    activeSearch={activeExternalSearch}
+                    onActivateSearch={onActivateExternalSearch}
+                    onExecuteSearch={onExecuteExternalSearch}
                   />
                 ) : (
                   <ContentInput
@@ -762,6 +816,48 @@ export const ContentList: React.FC<ContentListProps> = ({
                           )}
                         </div>
                       </div>
+                    ) : item.type === 'tsx' ? (
+                      <div>
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                          </svg>
+                          <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">TSX Component</span>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                          <TsxRenderer
+                            tsxSource={item.data}
+                            filename={item.metadata?.filename || `component-${item.id}.tsx`}
+                            minHeight={100}
+                            maxHeight={800}
+                            fallback={
+                              <div className="flex items-center gap-2 text-gray-500 p-4">
+                                <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                                <span>Loading component...</span>
+                              </div>
+                            }
+                            errorFallback={(error) => (
+                              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-red-600 text-sm">{error.message}</p>
+                              </div>
+                            )}
+                          />
+                        </div>
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ) : item.type === 'prompt' ? (
                       <div>
                         <div className="flex items-center space-x-2 mb-2">
@@ -782,6 +878,113 @@ export const ContentList: React.FC<ContentListProps> = ({
                             </p>
                           </div>
                         </TruncatedContent>
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : item.type === 'image' ? (
+                      <div>
+                        <ImageDisplay imageUrl={item.data} alt="Uploaded image" />
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : item.type === 'epub' ? (
+                      <div>
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                          </svg>
+                          <span className="text-xs font-medium text-orange-600 uppercase tracking-wide">Book</span>
+                          {item.metadata?.filename && (
+                            <span className="text-xs text-gray-500 truncate">
+                              {item.metadata.filename}
+                            </span>
+                          )}
+                        </div>
+                        <div className="border border-gray-200 rounded-lg overflow-hidden" style={{ height: '500px' }}>
+                          <EpubViewer
+                            epubUrl={item.data}
+                            contentId={item.id}
+                            groupId={groupId}
+                            onChildContentCreated={() => {
+                              // Invalidate queries to refresh the list
+                              queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, item.id) });
+                            }}
+                          />
+                        </div>
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : item.type === 'audio' ? (
+                      <div>
+                        <AudioDisplay
+                          audioUrl={item.data}
+                          filename={item.metadata?.filename}
+                        />
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : item.type === 'transcript' ? (
+                      <div>
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="text-xs font-medium text-purple-600 uppercase tracking-wide">Transcript</span>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg overflow-hidden" style={{ height: '600px' }}>
+                          <TranscriptViewer
+                            content={item}
+                            audioUrl={item.metadata?.source_audio_url || ''}
+                          />
+                        </div>
                         <TagDisplay tags={item.tags || []} isVisible={true} />
                         <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                         <div className="flex items-center gap-2 mt-2">

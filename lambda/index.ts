@@ -11,6 +11,7 @@ const openaiApiKey = config.requireSecret('openai_api_key');
 const cloudflareApiKey = config.requireSecret('cloudflare_api_key');
 const cloudflareAccountId = config.require('cloudflare_account_id');
 const tmdbApiKey = config.requireSecret('tmdb_api_key');
+const deepgramApiKey = config.requireSecret('deepgram_api_key');
 
 // Create S3 bucket for Claude Code sessions
 const sessionBucket = new aws.s3.Bucket('claude-code-sessions', {
@@ -179,6 +180,7 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			CLOUDFLARE_API_KEY: cloudflareApiKey,
 			CLOUDFLARE_ACCOUNT_ID: cloudflareAccountId,
 			TMDB_API_KEY: tmdbApiKey,
+			DEEPGRAM_API_KEY: deepgramApiKey,
 			HOME: '/tmp', // Claude CLI needs a HOME directory for config
 			IS_SANDBOX: '1' // Enable bypassPermissions mode for Claude CLI
 		}

@@ -7,6 +7,7 @@ interface TMDbSearchModalProps {
   isVisible: boolean;
   selectedContent: Content;
   searchType?: 'movie' | 'tv' | 'multi';
+  searchQuery?: string;
   onClose: () => void;
   onResultsAdded: () => void;
 }
@@ -15,6 +16,7 @@ export const TMDbSearchModal: React.FC<TMDbSearchModalProps> = ({
   isVisible,
   selectedContent,
   searchType = 'multi',
+  searchQuery,
   onClose,
   onResultsAdded
 }) => {
@@ -33,7 +35,8 @@ export const TMDbSearchModal: React.FC<TMDbSearchModalProps> = ({
 
       searchMutation.mutate({
         contentId: selectedContent.id,
-        searchType
+        searchType,
+        searchQuery: searchQuery || undefined
       }, {
         onSuccess: (data) => {
           setSearchResults(data.results);
@@ -46,7 +49,7 @@ export const TMDbSearchModal: React.FC<TMDbSearchModalProps> = ({
         }
       });
     }
-  }, [isVisible, selectedContent?.id]);
+  }, [isVisible, selectedContent?.id, searchQuery]);
 
   const toggleResult = (tmdbId: number) => {
     setSelectedResults(prev => {
@@ -67,7 +70,7 @@ export const TMDbSearchModal: React.FC<TMDbSearchModalProps> = ({
     }
 
     addResultsMutation.mutate({
-      contentId: selectedContent.id,
+      groupId: selectedContent.group_id,
       tmdbIds: Array.from(selectedResults),
       searchType
     }, {
