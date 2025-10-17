@@ -15,4 +15,6 @@ config:
   claude-code-lambda:cloudflare_account_id: b61180b9a24b012aa20ab5a105c606f5
   claude-code-lambda:tmdb_api_key:
     secure: v1:weP0WXzJOGRXoFPJ:Uf7GcEoaD3ukAz7wL2t4+DCoGMeW3SoamMn5a+zjygME3LletUnwcqybQOgu9dVH8lIrPhQTIBU3UcjHPz/F5Nr4kEYNTmsnHOyzptp2ZJMYV4Ovi/y1Q0B+QGWpO773FbZ1vHNdbUjhEkWK/dLvnmzHXsDR7Dp1YS8J6k/4Lyw5QVrcSBaSXBIWOdW8/fs1BuHgLTwufMXN+kj6uACPbLvSVo+pwWttlzVJxqyT7+gzMSQMVdkesOPhrj0uUbK2KFGlZwjqN0a4DLfa9P4JhijCJSUSLEXEDAOeobj86qq4zXJo7E0jgbNbQev79Djvm+awAqcCpe7E9RBEESRcy6d6irE=
+  claude-code-lambda:deepgram_api_key:
+    secure: v1:SRwnlYlfI9zdC/0d:t2Edr7wZzFeJ/EctJoGvuQDRVS9JjQIjwUignwx8fPs8FM5L9GWErmfn836zPsyL0b2b3SA+P6s=
 encryptionsalt: v1:BDBeDquw+SU=:v1:E2836vpdsU9kkoVj:5SyzAHanv5FShfO8Jjyrcvm7Byd63g==

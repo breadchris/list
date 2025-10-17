@@ -1,7 +1,4 @@
-import React, { useEffect, useRef } from 'react';
-import Prism from 'prismjs';
-import 'prismjs/components/prism-javascript';
-// import 'prismjs/themes/prism.css';
+import React from 'react';
 
 interface JsContentDisplayProps {
   code: string;
@@ -9,19 +6,11 @@ interface JsContentDisplayProps {
   maxLines?: number;
 }
 
-export const JsContentDisplay: React.FC<JsContentDisplayProps> = ({ 
-  code, 
-  className = '', 
-  maxLines = 10 
+export const JsContentDisplay: React.FC<JsContentDisplayProps> = ({
+  code,
+  className = '',
+  maxLines = 10
 }) => {
-  const codeRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    if (codeRef.current) {
-      Prism.highlightElement(codeRef.current);
-    }
-  }, [code]);
-
   // Truncate code if it exceeds maxLines
   const lines = code.split('\n');
   const truncated = lines.length > maxLines;
@@ -30,7 +19,7 @@ export const JsContentDisplay: React.FC<JsContentDisplayProps> = ({
   return (
     <div className={`relative ${className}`}>
       <pre className="text-sm bg-gray-50 border rounded-md p-3 overflow-x-auto">
-        <code ref={codeRef} className="language-javascript">
+        <code>
           {displayCode}
         </code>
       </pre>

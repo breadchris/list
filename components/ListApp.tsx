@@ -19,13 +19,14 @@ import { TMDbSearchModal } from './TMDbSearchModal';
 import { SharingSettingsModal } from './SharingSettingsModal';
 import { LibgenSearchModal, LibgenSearchConfig } from './LibgenSearchModal';
 import { GroupDropdown } from './GroupDropdown';
+import { TagFilterSelector } from './TagFilterSelector';
 import SendToGroupModal from './SendToGroupModal';
 import { AppSkeleton, HeaderSkeleton, ContentListSkeleton } from './SkeletonComponents';
 import { Footer } from './Footer';
 import { LLMPromptModal } from './LLMPromptModal';
 import { ClaudeCodePromptModal } from './ClaudeCodePromptModal';
 import { ClaudeCodeService } from './ClaudeCodeService';
-import { Group, Content, contentRepository } from './ContentRepository';
+import { Group, Content, Tag, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
 import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
@@ -33,6 +34,7 @@ import { useSEOExtraction } from '../hooks/useSEOExtraction';
 import { useMarkdownExtraction, MarkdownProgressItem } from '../hooks/useMarkdownExtraction';
 import { useYouTubePlaylistExtraction, YouTubeProgressItem } from '../hooks/useYouTubePlaylistExtraction';
 import { useLibgenSearch } from '../hooks/useLibgenSearch';
+import { useAudioTranscription } from '../hooks/useAudioTranscription';
 import { useToast } from './ToastProvider';
 import { extractUrls, getFirstUrl } from '../utils/urlDetection';
 import { Clock, SkipBack, ArrowDownAZ, Shuffle } from 'lucide-react';
@@ -87,6 +89,7 @@ export const ListApp: React.FC = () => {
   const markdownExtractionMutation = useMarkdownExtraction();
   const youTubeExtractionMutation = useYouTubePlaylistExtraction();
   const libgenSearchMutation = useLibgenSearch();
+  const audioTranscriptionMutation = useAudioTranscription();
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -95,6 +98,27 @@ export const ListApp: React.FC = () => {
 
   // View mode state
   const [viewMode, setViewMode] = useState<ViewMode>('chronological');
+
+  // Tag filter state - supports multiple tags
+  const [selectedTagFilter, setSelectedTagFilter] = useState<Tag[]>([]);
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+
+  // Tag filter helper functions
+  const addTagToFilter = (tag: Tag) => {
+    setSelectedTagFilter(prev => {
+      // Don't add if already exists
+      if (prev.some(t => t.id === tag.id)) return prev;
+      return [...prev, tag];
+    });
+  };
+
+  const removeTagFromFilter = (tagId: string) => {
+    setSelectedTagFilter(prev => prev.filter(t => t.id !== tagId));
+  };
+
+  const clearTagFilter = () => {
+    setSelectedTagFilter([]);
+  };
 
   // Display mode state (list vs stack)
   const [displayMode, setDisplayMode] = useState<DisplayMode>('list');
@@ -974,9 +998,12 @@ export const ListApp: React.FC = () => {
         `Generated component from ${selectedContent.length} item${selectedContent.length !== 1 ? 's' : ''}`
       );
 
-      // Clear selection and refresh
+      // Clear selection and navigate to the created content
       contentSelection.clearSelection();
       setNewContent(undefined);
+
+      // Navigate to the claude-code content to see progress and results
+      handleNavigate(newContent.id);
 
     } catch (error) {
       console.error('Error executing Claude Code:', error);
@@ -1123,6 +1150,98 @@ export const ListApp: React.FC = () => {
     } catch (error) {
       console.error('Error in screenshot generation:', error);
       toast.error('Error', 'Failed to process selected content for screenshot generation');
+    }
+  };
+
+  const handleTranscribeAudio = async () => {
+    console.log('🎙️ Audio Transcription button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    try {
+      // Fetch selected content items
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          const content = await contentRepository.getContentById(id);
+          return content;
+        })
+      );
+
+      // Filter valid content and check for audio types
+      const validContent = selectedContent.filter(Boolean) as Content[];
+      const audioContent = validContent.filter(c => c.type === 'audio');
+
+      console.log('Valid content items:', validContent.length);
+      console.log('Audio content items:', audioContent.length);
+
+      if (audioContent.length === 0) {
+        toast.info('No Audio Files', 'Selected content items do not contain any audio files to transcribe.');
+        return;
+      }
+
+      // Show initial progress notification
+      toast.info('Transcribing Audio', `Starting transcription for ${audioContent.length} audio file${audioContent.length > 1 ? 's' : ''}...`);
+
+      // Call the transcription mutation
+      const results = await audioTranscriptionMutation.mutateAsync({
+        selectedContent: audioContent,
+        useQueue: true,
+        onProgress: (item) => {
+          console.log('Transcription progress:', item);
+
+          if (item.status === 'completed') {
+            toast.success(
+              'Transcription Complete',
+              `Finished transcribing audio file`
+            );
+          } else if (item.status === 'failed') {
+            toast.error(
+              'Transcription Failed',
+              item.error || 'Failed to transcribe audio file'
+            );
+          }
+        }
+      });
+
+      // Show final notification
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.length - successCount;
+
+      if (successCount > 0 && failureCount === 0) {
+        toast.success(
+          'Transcription Complete',
+          `Successfully transcribed ${successCount} audio file${successCount > 1 ? 's' : ''}!`
+        );
+      } else if (successCount > 0) {
+        toast.warning(
+          'Transcription Partially Complete',
+          `Transcribed ${successCount} file${successCount > 1 ? 's' : ''}, ${failureCount} failed`
+        );
+      } else if (results.length === 0) {
+        // Jobs were queued
+        toast.info('Jobs Queued', `${audioContent.length} transcription job${audioContent.length > 1 ? 's' : ''} queued for processing`);
+      } else {
+        toast.error('Transcription Failed', 'Failed to transcribe any audio files. Please try again later.');
+      }
+
+      // Exit selection mode and refresh content list
+      contentSelection.clearSelection();
+      setNewContent(undefined);
+
+    } catch (error) {
+      console.error('Error in audio transcription:', error);
+      toast.error('Error', 'Failed to process selected content for transcription');
     }
   };
 
@@ -1517,6 +1636,55 @@ export const ListApp: React.FC = () => {
     }
   }, [currentGroup?.id, viewMode]);
 
+  // Load tag filter from localStorage when group changes
+  useEffect(() => {
+    if (currentGroup?.id) {
+      const savedTagFilter = localStorage.getItem(`tagFilter_${currentGroup.id}`);
+      if (savedTagFilter) {
+        try {
+          const parsedTags = JSON.parse(savedTagFilter);
+          // Support both old single tag format and new array format
+          setSelectedTagFilter(Array.isArray(parsedTags) ? parsedTags : []);
+        } catch (e) {
+          setSelectedTagFilter([]);
+        }
+      } else {
+        setSelectedTagFilter([]);
+      }
+    }
+  }, [currentGroup?.id]);
+
+  // Save tag filter to localStorage when it changes
+  useEffect(() => {
+    if (currentGroup?.id) {
+      if (selectedTagFilter.length > 0) {
+        localStorage.setItem(`tagFilter_${currentGroup.id}`, JSON.stringify(selectedTagFilter));
+      } else {
+        localStorage.removeItem(`tagFilter_${currentGroup.id}`);
+      }
+    }
+  }, [currentGroup?.id, selectedTagFilter]);
+
+  // Fetch available tags when group changes
+  useEffect(() => {
+    const fetchTags = async () => {
+      if (currentGroup?.id) {
+        try {
+          // Fetch all tags by searching with empty string
+          const tags = await contentRepository.searchTags('', currentGroup.id);
+          setAvailableTags(tags);
+        } catch (error) {
+          console.error('Failed to fetch tags:', error);
+          setAvailableTags([]);
+        }
+      } else {
+        setAvailableTags([]);
+      }
+    };
+
+    fetchTags();
+  }, [currentGroup?.id]);
+
   // Load display mode from localStorage when group changes
   useEffect(() => {
     if (currentGroup?.id) {
@@ -1637,10 +1805,13 @@ export const ListApp: React.FC = () => {
 
   const handleNavigate = async (parentId: string | null) => {
     if (parentId === currentParentId && !currentJsContent) return;
-    
+
     // Close input when navigating
     setShowInput(false);
-    
+
+    // Clear tag filters when navigating to different content
+    clearTagFilter();
+
     if (parentId === null) {
       // Navigate to root
       setCurrentParentId(null);
@@ -1920,9 +2091,9 @@ export const ListApp: React.FC = () => {
                   />
                 </div>
 
-            {/* View Mode Selector */}
+            {/* View Mode Selector and Tag Filter */}
             {currentGroup && (
-              <div className="flex items-center mx-2 sm:mx-4">
+              <div className="flex items-center mx-2 sm:mx-4 space-x-2">
                 <select
                   value={viewMode}
                   onChange={(e) => setViewMode(e.target.value as ViewMode)}
@@ -1934,6 +2105,40 @@ export const ListApp: React.FC = () => {
                   <option value="alphabetical">A-Z</option>
                   <option value="random">Random</option>
                 </select>
+
+                {/* Tag Filter Selector */}
+                <TagFilterSelector
+                  selectedTags={selectedTagFilter}
+                  groupId={currentGroup.id}
+                  onTagAdd={addTagToFilter}
+                  onTagRemove={removeTagFromFilter}
+                  onClearAll={clearTagFilter}
+                />
+
+                {/* Selected Tags Display - Horizontal Scrolling */}
+                {selectedTagFilter.length > 0 && (
+                  <div className="flex items-center gap-1 overflow-x-auto max-w-xs scrollbar-hide">
+                    {selectedTagFilter.map((tag) => (
+                      <button
+                        key={tag.id}
+                        onClick={() => removeTagFromFilter(tag.id)}
+                        className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium rounded-full transition-colors flex-shrink-0 hover:opacity-80"
+                        style={{
+                          backgroundColor: tag.color ? `${tag.color}20` : '#e5e7eb',
+                          borderColor: tag.color || '#d1d5db',
+                          borderWidth: '1px',
+                          color: tag.color || '#374151'
+                        }}
+                        title={`Remove ${tag.name} filter`}
+                      >
+                        <span>{tag.name}</span>
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             
@@ -2157,6 +2362,7 @@ export const ListApp: React.FC = () => {
             activeExternalSearch={activeExternalSearch}
             onActivateExternalSearch={setActiveExternalSearch}
             onExecuteExternalSearch={handleExecuteExternalSearch}
+            selectedTagFilter={selectedTagFilter}
           />
         )}
       </div>

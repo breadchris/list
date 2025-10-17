@@ -193,6 +193,61 @@ export const useInfiniteSearchContent = (
 };
 
 /**
+ * Hook for infinite scrolling content filtered by tags
+ * Supports filtering by multiple tags (AND logic - content must have ALL tags)
+ */
+export const useInfiniteContentByTag = (
+  groupId: string,
+  parentId: string | null,
+  tagIds: string[],
+  options?: {
+    enabled?: boolean;
+    viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
+  }
+) => {
+  const viewMode = options?.viewMode || 'chronological';
+
+  return useInfiniteQuery({
+    queryKey: [...QueryKeys.contentByTag(groupId, parentId, tagIds), viewMode],
+    queryFn: async ({ pageParam = 0 }) => {
+      if (!groupId || tagIds.length === 0) return { items: [], hasMore: false };
+
+      const items = await contentRepository.getContentByParentAndTag(
+        groupId,
+        parentId,
+        tagIds,
+        pageParam as number,
+        20,
+        viewMode
+      );
+
+      return {
+        items,
+        hasMore: items.length === 20,
+        nextOffset: (pageParam as number) + items.length,
+      };
+    },
+    getNextPageParam: (lastPage) => {
+      return lastPage.hasMore ? lastPage.nextOffset : undefined;
+    },
+    initialPageParam: 0,
+    enabled: !!groupId && tagIds.length > 0 && options?.enabled !== false,
+    staleTime: 180000, // 3 minutes
+    gcTime: 600000, // 10 minutes
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    retry: (failureCount, error) => {
+      // Don't retry during auth transitions
+      if (error?.message?.includes('JWT') || error?.message?.includes('auth')) {
+        return false;
+      }
+      return failureCount < 2;
+    }
+  });
+};
+
+/**
  * Mutation for creating content - no optimistic updates per CLAUDE.md guidelines
  * Automatically generates URL previews for content containing URLs
  */

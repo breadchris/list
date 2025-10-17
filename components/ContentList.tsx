@@ -11,7 +11,7 @@ import { EpubViewer } from './EpubViewer';
 import { TranscriptViewer } from './TranscriptViewer';
 import { TsxRenderer } from './TsxRenderer';
 import { useToast } from './ToastProvider';
-import { useInfiniteContentByParent, useInfiniteSearchContent, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
+import { useInfiniteContentByParent, useInfiniteSearchContent, useInfiniteContentByTag, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from '../hooks/queryKeys';
 import { ContentSelectionState } from '../hooks/useContentSelection';
@@ -44,6 +44,7 @@ interface ContentListProps {
   activeExternalSearch?: string | null;
   onActivateExternalSearch?: (workflowId: string) => void;
   onExecuteExternalSearch?: () => void;
+  selectedTagFilter?: Tag[];
 }
 
 interface TagDisplayProps {
@@ -134,7 +135,8 @@ export const ContentList: React.FC<ContentListProps> = ({
   onSearchQueryChange,
   activeExternalSearch = null,
   onActivateExternalSearch = () => {},
-  onExecuteExternalSearch = () => {}
+  onExecuteExternalSearch = () => {},
+  selectedTagFilter = []
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -150,7 +152,10 @@ export const ContentList: React.FC<ContentListProps> = ({
   // Hover state for tag button visibility
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
 
-  // Regular content query for non-search mode
+  // Determine which query to use based on search state and tag filter
+  const isTagFilterActive = selectedTagFilter.length > 0 && !isSearching;
+
+  // Regular content query for non-search mode (when no tag filter is active)
   const {
     data: contentData,
     isLoading: contentLoading,
@@ -160,7 +165,19 @@ export const ContentList: React.FC<ContentListProps> = ({
     fetchNextPage: fetchMoreContent,
     error: contentError,
     status: contentStatus
-  } = useInfiniteContentByParent(groupId, parentContentId, { enabled: !isSearching, viewMode });
+  } = useInfiniteContentByParent(groupId, parentContentId, { enabled: !isSearching && !isTagFilterActive, viewMode });
+
+  // Tag-filtered query (when tag filter is active and not searching)
+  const {
+    data: tagData,
+    isLoading: tagLoading,
+    isFetching: tagFetching,
+    isFetchingNextPage: tagFetchingNext,
+    hasNextPage: tagHasMore,
+    fetchNextPage: fetchMoreTag,
+    error: tagError,
+    status: tagStatus
+  } = useInfiniteContentByTag(groupId, parentContentId, selectedTagFilter.map(tag => tag.id), { enabled: isTagFilterActive, viewMode });
 
   // Search query for search mode
   const {
@@ -342,12 +359,14 @@ export const ContentList: React.FC<ContentListProps> = ({
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    
+
     // Load more when scrolled to bottom (but not if already fetching next page)
     if (scrollHeight - scrollTop <= clientHeight + 100) {
       if (isSearching && searchHasMore && !searchFetchingNext && !searchFetching) {
         fetchMoreSearch();
-      } else if (!isSearching && contentHasMore && !contentFetchingNext && !contentFetching) {
+      } else if (isTagFilterActive && tagHasMore && !tagFetchingNext && !tagFetching) {
+        fetchMoreTag();
+      } else if (!isSearching && !isTagFilterActive && contentHasMore && !contentFetchingNext && !contentFetching) {
         fetchMoreContent();
       }
     }
@@ -475,17 +494,19 @@ export const ContentList: React.FC<ContentListProps> = ({
 
   // Flatten the paginated data
   const contentItems = contentData?.pages.flatMap(page => page.items) ?? [];
+  const tagItems = tagData?.pages.flatMap(page => page.items) ?? [];
   const searchItems = searchData?.pages.flatMap(page => page.items) ?? [];
 
-  const currentItems = isSearching ? searchItems : contentItems;
-  const currentLoading = isSearching ? searchLoading : contentLoading;
+  // Determine which data to use based on active mode
+  const currentItems = isSearching ? searchItems : (isTagFilterActive ? tagItems : contentItems);
+  const currentLoading = isSearching ? searchLoading : (isTagFilterActive ? tagLoading : contentLoading);
   // Use persistent items during loading to avoid clearing content immediately
   const displayItems = currentLoading && persistentItems.length > 0 ? persistentItems : currentItems;
-  const currentFetching = isSearching ? searchFetching : contentFetching;
-  const currentFetchingNext = isSearching ? searchFetchingNext : contentFetchingNext;
-  const currentHasMore = isSearching ? searchHasMore : contentHasMore;
-  const currentError = isSearching ? searchError : contentError;
-  const currentStatus = isSearching ? searchStatus : contentStatus;
+  const currentFetching = isSearching ? searchFetching : (isTagFilterActive ? tagFetching : contentFetching);
+  const currentFetchingNext = isSearching ? searchFetchingNext : (isTagFilterActive ? tagFetchingNext : contentFetchingNext);
+  const currentHasMore = isSearching ? searchHasMore : (isTagFilterActive ? tagHasMore : contentHasMore);
+  const currentError = isSearching ? searchError : (isTagFilterActive ? tagError : contentError);
+  const currentStatus = isSearching ? searchStatus : (isTagFilterActive ? tagStatus : contentStatus);
 
   // Group content by date
   const groupedContent = useMemo(() => {
@@ -622,6 +643,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                           epubUrl={parentContent.data}
                           contentId={parentContent.id}
                           groupId={groupId}
+                          filename={parentContent.metadata?.filename}
                           onChildContentCreated={() => {
                             // Invalidate queries to refresh the list
                             queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContent.id) });
@@ -893,6 +915,65 @@ export const ContentList: React.FC<ContentListProps> = ({
                           )}
                         </div>
                       </div>
+                    ) : item.type === 'claude-code' ? (
+                      <div>
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                          </svg>
+                          <span className="text-xs font-medium text-indigo-600 uppercase tracking-wide">Claude Code</span>
+                          {item.metadata?.selected_content_count && (
+                            <span className="text-xs text-gray-500">
+                              ({item.metadata.selected_content_count} item{item.metadata.selected_content_count !== 1 ? 's' : ''} as context)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Prompt */}
+                        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-2">
+                          <p className="text-sm text-indigo-900 font-medium mb-1">Prompt:</p>
+                          <p className="text-sm text-indigo-800 whitespace-pre-wrap break-words">
+                            {item.data}
+                          </p>
+                        </div>
+
+                        {/* Context Used - Collapsible */}
+                        {item.metadata?.selected_content && item.metadata.selected_content.length > 0 && (
+                          <details className="mb-2">
+                            <summary className="cursor-pointer text-xs text-indigo-600 hover:text-indigo-800 font-medium py-1">
+                              View Context ({item.metadata.selected_content.length} item{item.metadata.selected_content.length !== 1 ? 's' : ''})
+                            </summary>
+                            <div className="mt-2 space-y-2 pl-4 border-l-2 border-indigo-200">
+                              {item.metadata.selected_content.map((contextItem: any, idx: number) => (
+                                <div key={idx} className="bg-gray-50 border border-gray-200 rounded p-2">
+                                  <div className="flex items-center gap-1 mb-1">
+                                    <span className="text-xs font-medium text-gray-600">{contextItem.type}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-700 line-clamp-3">
+                                    {contextItem.data}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-indigo-600" title={`${item.child_count} generated component${item.child_count === 1 ? '' : 's'}`}>
+                              <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                              </svg>
+                              <span>{item.child_count} component{item.child_count === 1 ? '' : 's'}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ) : item.type === 'image' ? (
                       <div>
                         <ImageDisplay imageUrl={item.data} alt="Uploaded image" />
@@ -929,6 +1010,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                             epubUrl={item.data}
                             contentId={item.id}
                             groupId={groupId}
+                            filename={item.metadata?.filename}
                             onChildContentCreated={() => {
                               // Invalidate queries to refresh the list
                               queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, item.id) });
@@ -1000,6 +1082,65 @@ export const ContentList: React.FC<ContentListProps> = ({
                           )}
                         </div>
                       </div>
+                    ) : item.type === 'video_section' ? (
+                      <div>
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+                          </svg>
+                          <span className="text-xs font-medium text-indigo-600 uppercase tracking-wide">
+                            Video Section
+                          </span>
+                          {item.metadata?.timestamp_ids && item.metadata.timestamp_ids.length > 0 && (
+                            <span className="text-xs text-gray-500">
+                              ({item.metadata.timestamp_ids.length} timestamp{item.metadata.timestamp_ids.length !== 1 ? 's' : ''})
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 cursor-pointer hover:bg-indigo-100 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const youtubeUrl = item.metadata?.youtube_url;
+                            const startTime = Math.floor(item.metadata?.start_time || 0);
+                            if (youtubeUrl) {
+                              const urlWithTimestamp = `${youtubeUrl}${youtubeUrl.includes('?') ? '&' : '?'}t=${startTime}`;
+                              window.open(urlWithTimestamp, '_blank');
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-semibold text-indigo-900 mb-1">
+                              {item.data}
+                            </h4>
+                            <svg className="w-4 h-4 text-indigo-600 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-indigo-700 font-medium">
+                              {formatTimestamp(item.metadata?.start_time || 0)} - {formatTimestamp(item.metadata?.end_time || 0)}
+                            </span>
+                            <span className="text-xs text-indigo-600">
+                              ({Math.floor((item.metadata?.end_time || 0) - (item.metadata?.start_time || 0))}s duration)
+                            </span>
+                          </div>
+                        </div>
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ) : item.type === 'timestamp' ? (
                       <div>
                         <div className="flex items-center space-x-2 mb-2">
@@ -1010,12 +1151,28 @@ export const ContentList: React.FC<ContentListProps> = ({
                             {item.metadata?.timestamp_type === 'range' ? 'Time Range' : 'Timestamp'}
                           </span>
                         </div>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <h4 className="text-sm font-medium text-blue-900 mb-1">
-                            {item.data}
-                          </h4>
+                        <div
+                          className="bg-blue-50 border border-blue-200 rounded-lg p-3 cursor-pointer hover:bg-blue-100 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const youtubeUrl = item.metadata?.youtube_url;
+                            const startTime = Math.floor(item.metadata?.start_time || 0);
+                            if (youtubeUrl) {
+                              const urlWithTimestamp = `${youtubeUrl}${youtubeUrl.includes('?') ? '&' : '?'}t=${startTime}`;
+                              window.open(urlWithTimestamp, '_blank');
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-blue-900 mb-1">
+                              {item.data}
+                            </h4>
+                            <svg className="w-4 h-4 text-blue-600 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </div>
                           <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs font-mono text-blue-700">
+                            <span className="text-xs font-mono text-blue-700 font-medium">
                               {formatTimestamp(item.metadata?.start_time || 0)}
                               {item.metadata?.timestamp_type === 'range' && item.metadata?.end_time &&
                                 ` - ${formatTimestamp(item.metadata.end_time)}`
@@ -1168,7 +1325,15 @@ export const ContentList: React.FC<ContentListProps> = ({
                   </div>
                 ) : (
                   <button
-                    onClick={() => isSearching ? fetchMoreSearch() : fetchMoreContent()}
+                    onClick={() => {
+                      if (isSearching) {
+                        fetchMoreSearch();
+                      } else if (isTagFilterActive) {
+                        fetchMoreTag();
+                      } else {
+                        fetchMoreContent();
+                      }
+                    }}
                     className="px-4 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={currentFetching}
                   >

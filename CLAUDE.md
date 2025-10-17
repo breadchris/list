@@ -50,6 +50,7 @@
 - `CLOUDFLARE_ACCOUNT_ID` - Cloudflare account ID for browser rendering
 - `CLOUDFLARE_API_KEY` - Cloudflare API token for browser rendering
 - `TMDB_API_KEY` - The Movie Database (TMDb) API key for movie/TV search
+- `DEEPGRAM_API_KEY` - Deepgram API key for audio transcription with word-level timing
 
 ### Examples
 

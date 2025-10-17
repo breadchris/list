@@ -266,6 +266,165 @@ export class ContentRepository {
     };
   }
 
+  async getContentByParentAndTag(
+    groupId: string,
+    parentId: string | null,
+    tagIds: string | string[],
+    offset = 0,
+    limit = 20,
+    viewMode: 'chronological' | 'random' | 'alphabetical' | 'oldest' = 'chronological'
+  ): Promise<Content[]> {
+    // Normalize tagIds to always be an array
+    const tagIdArray = Array.isArray(tagIds) ? tagIds : [tagIds];
+
+    if (tagIdArray.length === 0) {
+      return [];
+    }
+
+    // Step 1: Get content IDs that have ALL specified tags
+    // Use aggregation to find content that has all tags (AND logic, not OR)
+    let contentIds: string[] = [];
+
+    if (tagIdArray.length === 1) {
+      // Single tag - simple query
+      const { data: taggedContentIds, error: tagError } = await supabase
+        .from('content_tags')
+        .select('content_id')
+        .eq('tag_id', tagIdArray[0]);
+
+      if (tagError) {
+        console.error('Error fetching tagged content:', tagError);
+        throw new Error(tagError.message);
+      }
+
+      contentIds = taggedContentIds?.map(item => item.content_id) || [];
+    } else {
+      // Multiple tags - find intersection (content with ALL tags)
+      // Query all content_tags for the specified tags
+      const { data: allTaggedContent, error: tagError } = await supabase
+        .from('content_tags')
+        .select('content_id, tag_id')
+        .in('tag_id', tagIdArray);
+
+      if (tagError) {
+        console.error('Error fetching tagged content:', tagError);
+        throw new Error(tagError.message);
+      }
+
+      // Group by content_id and count how many tags each content has
+      const contentTagCount = new Map<string, Set<string>>();
+      allTaggedContent?.forEach(item => {
+        if (!contentTagCount.has(item.content_id)) {
+          contentTagCount.set(item.content_id, new Set());
+        }
+        contentTagCount.get(item.content_id)!.add(item.tag_id);
+      });
+
+      // Filter to only content that has ALL specified tags
+      contentIds = Array.from(contentTagCount.entries())
+        .filter(([, tags]) => tags.size === tagIdArray.length)
+        .map(([contentId]) => contentId);
+    }
+
+    if (contentIds.length === 0) {
+      return []; // No content with all specified tags
+    }
+
+    // Step 2: Get the content with all tags (not just the filtered tag)
+    let query = supabase
+      .from('content')
+      .select(`
+        *,
+        content_tags!left (
+          tags (
+            id,
+            created_at,
+            name,
+            color,
+            user_id
+          )
+        )
+      `)
+      .eq('group_id', groupId)
+      .in('id', contentIds);
+
+    // Filter by parent
+    if (parentId === null) {
+      query.is('parent_content_id', null);
+    } else {
+      query.eq('parent_content_id', parentId);
+    }
+
+    // Apply ordering based on view mode
+    switch (viewMode) {
+      case 'chronological':
+        query = query.order('created_at', { ascending: false });
+        break;
+      case 'oldest':
+        query = query.order('created_at', { ascending: true });
+        break;
+      case 'alphabetical':
+        query = query.order('data', { ascending: true });
+        break;
+      case 'random':
+        // Will shuffle client-side below
+        break;
+      default:
+        query = query.order('created_at', { ascending: false });
+    }
+
+    query = query.range(offset, offset + limit - 1);
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching content:', error);
+      throw new Error(error.message);
+    }
+
+    // Transform the data to include tags properly
+    let contentWithTags = data?.map(item => ({
+      ...item,
+      tags: (item as any).content_tags?.map((ct: any) => ct.tags).filter(Boolean) || []
+    })) || [];
+
+    // Fetch child counts for all content items in a single query
+    if (contentWithTags.length > 0) {
+      const contentIds = contentWithTags.map(item => item.id);
+      const { data: childCounts, error: countError } = await supabase
+        .from('content')
+        .select('parent_content_id')
+        .in('parent_content_id', contentIds);
+
+      if (!countError && childCounts) {
+        // Create a map of parent_id -> child_count
+        const countMap = new Map<string, number>();
+        childCounts.forEach(child => {
+          const parentId = child.parent_content_id;
+          if (parentId) {
+            countMap.set(parentId, (countMap.get(parentId) || 0) + 1);
+          }
+        });
+
+        // Add child_count to each content item
+        contentWithTags = contentWithTags.map(item => ({
+          ...item,
+          child_count: countMap.get(item.id) || 0
+        }));
+      }
+    }
+
+    // Apply random shuffle if in random mode
+    if (viewMode === 'random' && contentWithTags.length > 0) {
+      // Use seeded random based on group ID for consistent randomization within session
+      const seed = groupId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const random = this.seededRandom(seed + offset);
+      contentWithTags = contentWithTags.sort(() => random() - 0.5);
+    }
+
+    return contentWithTags;
+  }
+
   async getContentById(id: string): Promise<Content | null> {
     const { data, error } = await supabase
       .from('content')
@@ -2033,6 +2192,57 @@ export class ContentRepository {
         callback
       )
       .subscribe();
+  }
+
+  // Audio Transcription Methods
+
+  /**
+   * Transcribe audio files using Deepgram API
+   * Creates transcript content items as children of the audio content
+   */
+  async transcribeAudio(
+    selectedContent: Content[],
+    useQueue: boolean = true
+  ): Promise<{
+    success: boolean;
+    data: Array<{
+      content_id: string;
+      success: boolean;
+      transcript_content_id?: string;
+      error?: string;
+    }>;
+    error?: string;
+    queued?: boolean;
+  }> {
+    try {
+      const result = await LambdaClient.invoke({
+        action: 'transcribe-audio',
+        payload: {
+          selectedContent
+        },
+        useQueue
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Audio transcription failed');
+      }
+
+      if (result.queued) {
+        return {
+          success: true,
+          data: [],
+          queued: true
+        };
+      }
+
+      return {
+        success: true,
+        data: result.data || []
+      };
+    } catch (error) {
+      console.error('Failed to transcribe audio:', error);
+      throw error;
+    }
   }
 }
 
