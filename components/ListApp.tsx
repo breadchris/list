@@ -8,16 +8,18 @@ import { ContentList } from './ContentList';
 import { ContentStack } from './ContentStack';
 import { ContentInput } from './ContentInput';
 import { JsEditorView } from './JsEditorView';
-import { ContentTypeSelector, ContentType } from './ContentTypeSelector';
-import { WorkflowFAB } from './WorkflowFAB';
+import { ChatView } from './ChatView';
+import { SavedTagFilterButton } from './SavedTagFilterButton';
 import { MicroGameOverlay } from './MicroGameOverlay';
 import { SEOProgressOverlay, SEOProgressItem } from './SEOProgressOverlay';
 import { MarkdownProgressOverlay } from './MarkdownProgressOverlay';
 import { YouTubeProgressOverlay } from './YouTubeProgressOverlay';
-import { YouTubeVideoAnnotatorModal } from './YouTubeVideoAnnotatorModal';
+import { YouTubeVideoAnnotatorPage } from './YouTubeVideoAnnotatorPage';
 import { TMDbSearchModal } from './TMDbSearchModal';
 import { SharingSettingsModal } from './SharingSettingsModal';
 import { LibgenSearchModal, LibgenSearchConfig } from './LibgenSearchModal';
+import { SpotifyImportSelector } from './SpotifyImportSelector';
+import { SpotifyPlaylistModal } from './SpotifyPlaylistModal';
 import { GroupDropdown } from './GroupDropdown';
 import { TagFilterSelector } from './TagFilterSelector';
 import SendToGroupModal from './SendToGroupModal';
@@ -26,7 +28,7 @@ import { Footer } from './Footer';
 import { LLMPromptModal } from './LLMPromptModal';
 import { ClaudeCodePromptModal } from './ClaudeCodePromptModal';
 import { ClaudeCodeService } from './ClaudeCodeService';
-import { Group, Content, Tag, contentRepository } from './ContentRepository';
+import { Group, Content, Tag, TagFilter, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
 import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
@@ -35,8 +37,10 @@ import { useMarkdownExtraction, MarkdownProgressItem } from '../hooks/useMarkdow
 import { useYouTubePlaylistExtraction, YouTubeProgressItem } from '../hooks/useYouTubePlaylistExtraction';
 import { useLibgenSearch } from '../hooks/useLibgenSearch';
 import { useAudioTranscription } from '../hooks/useAudioTranscription';
+import { useTagsForGroup } from '../hooks/useTagQueries';
 import { useToast } from './ToastProvider';
 import { extractUrls, getFirstUrl } from '../utils/urlDetection';
+import { getYouTubeVideoFromContent } from '../utils/youtubeHelpers';
 import { Clock, SkipBack, ArrowDownAZ, Shuffle } from 'lucide-react';
 import { ViewDisplayToggle, DisplayMode } from './ViewDisplayToggle';
 
@@ -65,9 +69,9 @@ export const ListApp: React.FC = () => {
   const [newContent, setNewContent] = useState<Content | undefined>();
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
   const [currentJsContent, setCurrentJsContent] = useState<Content | null>(null);
+  const [currentChatContent, setCurrentChatContent] = useState<Content | null>(null);
   const [navigationStack, setNavigationStack] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'Root'}]);
   const [showInput, setShowInput] = useState(true);
-  const [selectedContentType, setSelectedContentType] = useState<ContentType>('text');
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupModalMode, setGroupModalMode] = useState<'create' | 'join'>('create');
   const [activeExternalSearch, setActiveExternalSearch] = useState<string | null>(null);
@@ -91,6 +95,9 @@ export const ListApp: React.FC = () => {
   const libgenSearchMutation = useLibgenSearch();
   const audioTranscriptionMutation = useAudioTranscription();
 
+  // Load tags for current group
+  const { data: availableTags = [] } = useTagsForGroup(currentGroup?.id || '');
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -99,25 +106,64 @@ export const ListApp: React.FC = () => {
   // View mode state
   const [viewMode, setViewMode] = useState<ViewMode>('chronological');
 
-  // Tag filter state - supports multiple tags
-  const [selectedTagFilter, setSelectedTagFilter] = useState<Tag[]>([]);
-  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+  // Tag filter state - supports multiple tags with include/exclude mode
+  const [selectedTagFilter, setSelectedTagFilter] = useState<TagFilter[]>([]);
+  const [isTagFilterExpanded, setIsTagFilterExpanded] = useState(false);
+  const tagFilterExpandTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const tagFilterCollapseTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Tag filter helper functions
-  const addTagToFilter = (tag: Tag) => {
+  const addTagToFilter = (tag: Tag, mode: 'include' | 'exclude' = 'include') => {
     setSelectedTagFilter(prev => {
-      // Don't add if already exists
-      if (prev.some(t => t.id === tag.id)) return prev;
-      return [...prev, tag];
+      // Don't add if already exists (same tag, regardless of mode)
+      if (prev.some(tf => tf.tag.id === tag.id)) return prev;
+      return [...prev, { tag, mode }];
     });
   };
 
   const removeTagFromFilter = (tagId: string) => {
-    setSelectedTagFilter(prev => prev.filter(t => t.id !== tagId));
+    setSelectedTagFilter(prev => prev.filter(tf => tf.tag.id !== tagId));
+  };
+
+  const toggleTagFilterMode = (tagId: string) => {
+    setSelectedTagFilter(prev =>
+      prev.map(tf =>
+        tf.tag.id === tagId
+          ? { ...tf, mode: tf.mode === 'include' ? 'exclude' : 'include' }
+          : tf
+      )
+    );
   };
 
   const clearTagFilter = () => {
     setSelectedTagFilter([]);
+  };
+
+  // Tag filter hover handlers for expand/collapse
+  const handleTagFilterMouseEnter = () => {
+    // Clear any pending collapse timer
+    if (tagFilterCollapseTimerRef.current) {
+      clearTimeout(tagFilterCollapseTimerRef.current);
+      tagFilterCollapseTimerRef.current = null;
+    }
+
+    // Set expand timer (300ms delay)
+    tagFilterExpandTimerRef.current = setTimeout(() => {
+      setIsTagFilterExpanded(true);
+    }, 300);
+  };
+
+  const handleTagFilterMouseLeave = () => {
+    // Clear any pending expand timer
+    if (tagFilterExpandTimerRef.current) {
+      clearTimeout(tagFilterExpandTimerRef.current);
+      tagFilterExpandTimerRef.current = null;
+    }
+
+    // Set collapse timer (200ms delay)
+    tagFilterCollapseTimerRef.current = setTimeout(() => {
+      setIsTagFilterExpanded(false);
+    }, 200);
   };
 
   // Display mode state (list vs stack)
@@ -125,7 +171,7 @@ export const ListApp: React.FC = () => {
 
   // Content selection state for workflow operations
   const contentSelection = useContentSelection();
-  
+
   // Toast notifications
   const toast = useToast();
   
@@ -178,6 +224,9 @@ export const ListApp: React.FC = () => {
   // Send to Group modal state
   const [showSendToGroupModal, setShowSendToGroupModal] = useState(false);
   const [isSendingToGroup, setIsSendingToGroup] = useState(false);
+
+  // Spotify Import modal state
+  const [showSpotifyModal, setShowSpotifyModal] = useState(false);
 
   // Track signup completion to prevent false toast notifications
   const hasShownWelcomeRef = useRef(false);
@@ -784,6 +833,42 @@ export const ListApp: React.FC = () => {
     setIsLibgenSearching(false);
   };
 
+  const handleAddSelectedLibgenBooks = async (books: Content[]) => {
+    console.log('Adding selected Libgen books:', books);
+
+    try {
+      // Create Content items for each selected book
+      // The books have temporary IDs (temp-{md5}), so we need to create new items
+      const createdBooks = [];
+
+      for (const book of books) {
+        // Extract the data and metadata from the mock Content object
+        const { data, metadata, group_id, user_id, parent_content_id } = book;
+
+        // Create the Content item
+        const createdBook = await contentRepository.createContent({
+          type: 'text',
+          data,
+          metadata,
+          group_id,
+          user_id,
+          parent_content_id
+        });
+
+        createdBooks.push(createdBook);
+      }
+
+      console.log(`Successfully created ${createdBooks.length} book content items`);
+
+      // Refresh the content list to show the new books
+      // The query invalidation in useLibgenSearch.onSuccess will handle this
+      return;
+    } catch (error) {
+      console.error('Failed to add selected books:', error);
+      throw error; // Re-throw to let the modal handle the error
+    }
+  };
+
   const handleLibgenSearchExecute = async (config: LibgenSearchConfig) => {
     console.log('Executing Libgen search with config:', config);
 
@@ -791,7 +876,10 @@ export const ListApp: React.FC = () => {
       setIsLibgenSearching(true);
       const results = await libgenSearchMutation.mutateAsync({
         selectedContent: selectedContentForLibgen,
-        config
+        config: {
+          ...config,
+          autoCreate: false // Don't auto-create books - let user select which ones to add
+        }
       });
 
       // Store results to display in modal
@@ -799,11 +887,10 @@ export const ListApp: React.FC = () => {
       setIsLibgenSearching(false);
 
       const totalBooksFound = results.reduce((sum, r) => sum + r.books_found, 0);
-      const totalBooksCreated = results.reduce((sum, r) => sum + r.books_created, 0);
 
       toast.success(
         'Books Found!',
-        `Added ${totalBooksCreated} out of ${totalBooksFound} books found`
+        `Found ${totalBooksFound} book${totalBooksFound !== 1 ? 's' : ''}. Select which ones to add.`
       );
 
       // Clear selection but keep modal open for user to see results
@@ -1276,10 +1363,19 @@ export const ListApp: React.FC = () => {
         return;
       }
 
-      // Check if this is YouTube video content (has youtube_video_id in metadata)
-      if (!content.metadata?.youtube_video_id) {
-        toast.warning('Not a YouTube video', 'Please select a YouTube video to annotate');
+      // Check if content contains a YouTube video URL or has video metadata
+      const videoId = getYouTubeVideoFromContent(content);
+      if (!videoId) {
+        toast.warning('Not a YouTube video', 'Please select content containing a YouTube video URL');
         return;
+      }
+
+      // Enrich content with video ID if not already present in metadata
+      if (!content.metadata?.youtube_video_id) {
+        content.metadata = {
+          ...content.metadata,
+          youtube_video_id: videoId
+        };
       }
 
       // Open YouTube annotator modal
@@ -1311,8 +1407,70 @@ export const ListApp: React.FC = () => {
     setNewContent(undefined);
   };
 
+  // Spotify Import handlers
+  const handleSpotifyImportSelect = () => {
+    console.log('🎵 Spotify import selected');
+    setShowSpotifyModal(true);
+  };
+
+  const handleCloseSpotifyModal = () => {
+    setShowSpotifyModal(false);
+  };
+
+  const handleSpotifyPlaylistImported = () => {
+    // Refresh content list after importing playlist
+    setShowSpotifyModal(false);
+    setNewContent(undefined);
+    toast.success('Playlist Imported!', 'Successfully imported Spotify playlist');
+  };
+
+  // Quick AI Chat handler - creates chat instantly without modal
+  const handleQuickAIChat = async () => {
+    console.log('💬 Quick AI Chat clicked!');
+
+    if (!currentGroup || !user) {
+      toast.error('Cannot create chat', 'Please select a group first');
+      return;
+    }
+
+    try {
+      // Create a new chat content item
+      const chatContent = await contentRepository.createContent({
+        type: 'chat',
+        data: '🤖 AI Assistant',
+        group_id: currentGroup.id,
+        user_id: user.id,
+        parent_content_id: currentParentId,
+        metadata: {
+          created_via: 'quick_chat',
+          model: 'gpt-4'
+        }
+      });
+
+      console.log('Created chat content:', chatContent);
+
+      // Navigate to the new chat
+      await handleNavigate(chatContent.id);
+
+      toast.success('AI Chat Started!', 'You can now start chatting');
+    } catch (error) {
+      console.error('Failed to create quick AI chat:', error);
+      toast.error('Failed to create chat', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
   // Define available workflow actions
   const workflowActions = [
+    {
+      id: 'ai-chat',
+      name: 'AI Chat',
+      description: 'Start an AI conversation instantly',
+      icon: '💬',
+      onClick: () => {
+        console.log('💬 WorkflowAction onClick triggered for Quick AI Chat');
+        handleQuickAIChat();
+      }
+    },
     {
       id: 'claude-code',
       name: 'Claude Code',
@@ -1665,26 +1823,6 @@ export const ListApp: React.FC = () => {
     }
   }, [currentGroup?.id, selectedTagFilter]);
 
-  // Fetch available tags when group changes
-  useEffect(() => {
-    const fetchTags = async () => {
-      if (currentGroup?.id) {
-        try {
-          // Fetch all tags by searching with empty string
-          const tags = await contentRepository.searchTags('', currentGroup.id);
-          setAvailableTags(tags);
-        } catch (error) {
-          console.error('Failed to fetch tags:', error);
-          setAvailableTags([]);
-        }
-      } else {
-        setAvailableTags([]);
-      }
-    };
-
-    fetchTags();
-  }, [currentGroup?.id]);
-
   // Load display mode from localStorage when group changes
   useEffect(() => {
     if (currentGroup?.id) {
@@ -1716,11 +1854,6 @@ export const ListApp: React.FC = () => {
     setNewContent(content);
     // Clear newContent after a brief delay to allow ContentList to process it
     setTimeout(() => setNewContent(undefined), 100);
-  };
-
-  const handleContentTypeSelect = (type: ContentType) => {
-    setSelectedContentType(type);
-    setShowInput(true);
   };
 
   const handleInputClose = () => {
@@ -1804,7 +1937,7 @@ export const ListApp: React.FC = () => {
   };
 
   const handleNavigate = async (parentId: string | null) => {
-    if (parentId === currentParentId && !currentJsContent) return;
+    if (parentId === currentParentId && !currentJsContent && !currentChatContent) return;
 
     // Close input when navigating
     setShowInput(false);
@@ -1816,8 +1949,9 @@ export const ListApp: React.FC = () => {
       // Navigate to root
       setCurrentParentId(null);
       setCurrentJsContent(null);
+      setCurrentChatContent(null);
       setNavigationStack([{id: null, name: 'Root'}]);
-      
+
       // Use React Router to navigate to group root
       if (currentGroup) {
         navigate(`/group/${currentGroup.id}`);
@@ -1827,23 +1961,31 @@ export const ListApp: React.FC = () => {
         // Get the content item to navigate to
         const parentContent = await contentRepository.getContentById(parentId);
         if (parentContent) {
-          // Check if this is JS content - if so, show the JS editor view
+          // Check content type and set appropriate state
           if (parentContent.type === 'js') {
             setCurrentJsContent(parentContent);
+            setCurrentChatContent(null);
+            setCurrentParentId(parentId);
+          } else if (parentContent.type === 'chat') {
+            setCurrentChatContent(parentContent);
+            setCurrentJsContent(null);
             setCurrentParentId(parentId);
           } else {
             // Regular content navigation
             setCurrentJsContent(null);
+            setCurrentChatContent(null);
             setCurrentParentId(parentId);
           }
-          
+
           // Add to navigation stack
-          const displayName = parentContent.type === 'js' 
+          const displayName = parentContent.type === 'js'
             ? `JS: ${parentContent.data.substring(0, 20)}...`
+            : parentContent.type === 'chat'
+            ? `💬 ${parentContent.data || 'AI Chat'}`
             : parentContent.data.substring(0, 30);
           const newStack = [...navigationStack, {id: parentId, name: displayName}];
           setNavigationStack(newStack);
-          
+
           // Use React Router to navigate to content
           if (currentGroup) {
             navigate(`/group/${currentGroup.id}/content/${parentId}`);
@@ -2077,6 +2219,16 @@ export const ListApp: React.FC = () => {
       {/* Main App Content */}
       {appState === 'ready' && user && (currentGroup || (!groupsLoading && groups.length === 0)) && (
         <>
+          {showYouTubeAnnotator ? (
+            // Full-page YouTube Video Annotator
+            <YouTubeVideoAnnotatorPage
+              videoContent={selectedVideoForAnnotation}
+              onClose={handleCloseYouTubeAnnotator}
+              onTimestampsCreated={handleTimestampsCreated}
+              availableTags={availableTags}
+            />
+          ) : (
+            <>
           {/* Header */}
           <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-200 w-full">
             <div className="w-full px-4 py-3">
@@ -2109,34 +2261,113 @@ export const ListApp: React.FC = () => {
                 {/* Tag Filter Selector */}
                 <TagFilterSelector
                   selectedTags={selectedTagFilter}
+                  availableTags={availableTags}
                   groupId={currentGroup.id}
                   onTagAdd={addTagToFilter}
                   onTagRemove={removeTagFromFilter}
                   onClearAll={clearTagFilter}
                 />
 
-                {/* Selected Tags Display - Horizontal Scrolling */}
+                {/* Saved Tag Filters */}
+                <SavedTagFilterButton
+                  groupId={currentGroup.id}
+                  currentFilter={selectedTagFilter}
+                  onFilterApply={(tags) => setSelectedTagFilter(tags)}
+                />
+
+                {/* Selected Tags Display - Collapsible with Hover Expand */}
                 {selectedTagFilter.length > 0 && (
-                  <div className="flex items-center gap-1 overflow-x-auto max-w-xs scrollbar-hide">
-                    {selectedTagFilter.map((tag) => (
-                      <button
-                        key={tag.id}
-                        onClick={() => removeTagFromFilter(tag.id)}
-                        className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium rounded-full transition-colors flex-shrink-0 hover:opacity-80"
-                        style={{
-                          backgroundColor: tag.color ? `${tag.color}20` : '#e5e7eb',
-                          borderColor: tag.color || '#d1d5db',
-                          borderWidth: '1px',
-                          color: tag.color || '#374151'
-                        }}
-                        title={`Remove ${tag.name} filter`}
-                      >
-                        <span>{tag.name}</span>
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    ))}
+                  <div
+                    className="relative transition-all duration-200 hidden md:block"
+                    onMouseEnter={handleTagFilterMouseEnter}
+                    onMouseLeave={handleTagFilterMouseLeave}
+                  >
+                    {isTagFilterExpanded ? (
+                      /* Expanded: Show all tags horizontally scrollable */
+                      <div className="flex items-center gap-1 overflow-x-auto max-w-md scrollbar-hide">
+                        {selectedTagFilter.map((tagFilter) => (
+                          <div key={tagFilter.tag.id} className="flex items-center gap-0.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleTagFilterMode(tagFilter.tag.id);
+                              }}
+                              className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-l-full transition-colors flex-shrink-0 ${
+                                tagFilter.mode === 'include'
+                                  ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                                  : 'bg-red-100 text-red-800 hover:bg-red-200'
+                              }`}
+                              title={tagFilter.mode === 'include' ? 'Click to exclude' : 'Click to include'}
+                            >
+                              <span className="text-[10px] font-bold">{tagFilter.mode === 'include' ? '+' : '−'}</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeTagFromFilter(tagFilter.tag.id);
+                              }}
+                              className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium rounded-r-full transition-colors flex-shrink-0 hover:opacity-80"
+                              style={{
+                                backgroundColor: tagFilter.tag.color ? `${tagFilter.tag.color}20` : '#e5e7eb',
+                                borderColor: tagFilter.tag.color || '#d1d5db',
+                                borderWidth: '1px',
+                                color: tagFilter.tag.color || '#374151'
+                              }}
+                              title={`Remove ${tagFilter.tag.name} filter`}
+                            >
+                              <span>{tagFilter.tag.name}</span>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      /* Collapsed: Show only last tag + count badge */
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleTagFilterMode(selectedTagFilter[selectedTagFilter.length - 1].tag.id);
+                            }}
+                            className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-l-full transition-colors flex-shrink-0 ${
+                              selectedTagFilter[selectedTagFilter.length - 1].mode === 'include'
+                                ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                                : 'bg-red-100 text-red-800 hover:bg-red-200'
+                            }`}
+                            title={selectedTagFilter[selectedTagFilter.length - 1].mode === 'include' ? 'Click to exclude' : 'Click to include'}
+                          >
+                            <span className="text-[10px] font-bold">{selectedTagFilter[selectedTagFilter.length - 1].mode === 'include' ? '+' : '−'}</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeTagFromFilter(selectedTagFilter[selectedTagFilter.length - 1].tag.id);
+                            }}
+                            className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium rounded-r-full transition-colors flex-shrink-0 hover:opacity-80"
+                            style={{
+                              backgroundColor: selectedTagFilter[selectedTagFilter.length - 1].tag.color ? `${selectedTagFilter[selectedTagFilter.length - 1].tag.color}20` : '#e5e7eb',
+                              borderColor: selectedTagFilter[selectedTagFilter.length - 1].tag.color || '#d1d5db',
+                              borderWidth: '1px',
+                              color: selectedTagFilter[selectedTagFilter.length - 1].tag.color || '#374151'
+                            }}
+                            title={`Remove ${selectedTagFilter[selectedTagFilter.length - 1].tag.name} filter`}
+                          >
+                            <span>{selectedTagFilter[selectedTagFilter.length - 1].tag.name}</span>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        {selectedTagFilter.length > 1 && (
+                          <span className="text-xs text-gray-500 font-medium px-1">
+                            +{selectedTagFilter.length - 1} more
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2221,7 +2452,7 @@ export const ListApp: React.FC = () => {
           <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full shadow-sm transition-all duration-200 ease-in-out">
             {/* Back Button Navigation */}
             {currentGroup && navigationStack.length > 1 && (
-              <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2">
+              <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2 flex items-center justify-between">
                 <button
                   onClick={() => handleNavigate(navigationStack[navigationStack.length - 2]?.id || null)}
                   className="flex items-center space-x-2 text-sm text-gray-600 hover:text-blue-600 transition-colors"
@@ -2231,6 +2462,24 @@ export const ListApp: React.FC = () => {
                   </svg>
                   <span>Back</span>
                 </button>
+
+                {/* Content Actions Button */}
+                {currentParentId && (
+                  <button
+                    onClick={() => {
+                      // Select the current content item to enable workflows
+                      contentSelection.toggleItem(currentParentId);
+                      // Workflows will appear in the input bar at the bottom
+                    }}
+                    className="flex items-center space-x-1 px-2 py-1 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                    title="Run workflows on this content"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span className="hidden sm:inline">Actions</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -2299,15 +2548,22 @@ export const ListApp: React.FC = () => {
           </div>
         )}
 
-        {/* Content Type Selector */}
-        <ContentTypeSelector
-          selectedType={selectedContentType}
-          onSelectType={handleContentTypeSelect}
-          isVisible={!!currentGroup && !currentJsContent}
-        />
-
-        {/* Content List or JS Editor View */}
-        {currentJsContent ? (
+        {/* Content List, Chat View, or JS Editor View */}
+        {currentChatContent ? (
+          <ChatView
+            chatContent={currentChatContent}
+            groupId={currentGroup?.id || ''}
+            onClose={() => handleNavigate(null)}
+            onNavigate={handleNavigate}
+            searchQuery={searchQuery}
+            isSearching={isSearching}
+            selection={contentSelection}
+            newContent={newContent}
+            onContentAdded={handleContentAdded}
+            viewMode={viewMode}
+            availableTags={availableTags}
+          />
+        ) : currentJsContent ? (
           <JsEditorView
             jsContent={currentJsContent}
             groupId={currentGroup?.id || ''}
@@ -2321,6 +2577,7 @@ export const ListApp: React.FC = () => {
             showInput={showInput}
             onInputClose={handleInputClose}
             viewMode={viewMode}
+            availableTags={availableTags}
           />
         ) : displayMode === 'stack' ? (
           <ContentStack
@@ -2335,7 +2592,6 @@ export const ListApp: React.FC = () => {
             onInputClose={handleInputClose}
             onContentAdded={handleContentAdded}
             viewMode={viewMode}
-            contentType={selectedContentType}
             searchWorkflows={searchWorkflows}
             onSearchQueryChange={handleContentSearchChange}
             activeExternalSearch={activeExternalSearch}
@@ -2356,7 +2612,6 @@ export const ListApp: React.FC = () => {
             onInputClose={handleInputClose}
             onContentAdded={handleContentAdded}
             viewMode={viewMode}
-            contentType={selectedContentType}
             searchWorkflows={searchWorkflows}
             onSearchQueryChange={handleContentSearchChange}
             activeExternalSearch={activeExternalSearch}
@@ -2367,12 +2622,25 @@ export const ListApp: React.FC = () => {
         )}
       </div>
 
-      {/* Workflow FAB for selected items */}
-      <WorkflowFAB
-        isVisible={contentSelection.isSelectionMode && contentSelection.selectedCount > 0}
-        actions={workflowActions}
-        selectedCount={contentSelection.selectedCount}
-      />
+      {/* Content Input - Always visible when group is selected and not in JS/Chat view */}
+      {currentGroup && !currentJsContent && !currentChatContent && (
+        <div className="fixed bottom-0 left-0 right-0 z-40">
+          <ContentInput
+            groupId={currentGroup.id}
+            parentContentId={currentParentId}
+            onContentAdded={handleContentAdded}
+            onActionSelect={(action) => {
+              if (action === 'import') {
+                setShowSpotifyModal(true);
+              }
+            }}
+            workflowActions={workflowActions}
+            selectedCount={contentSelection.selectedCount}
+            isSelectionMode={contentSelection.isSelectionMode}
+            availableTags={availableTags}
+          />
+        </div>
+      )}
 
       {/* Group Modal */}
       {showGroupModal && (
@@ -2455,6 +2723,7 @@ export const ListApp: React.FC = () => {
         isSearching={isLibgenSearching}
         onClose={handleCloseLibgenModal}
         onSearch={handleLibgenSearchExecute}
+        onAddSelected={handleAddSelectedLibgenBooks}
       />
 
       {/* Send to Group Modal */}
@@ -2495,16 +2764,20 @@ export const ListApp: React.FC = () => {
         onContentGenerated={handleClaudeCodeContentGenerated}
       />
 
-      {/* YouTube Video Annotator Modal */}
-      <YouTubeVideoAnnotatorModal
-        isVisible={showYouTubeAnnotator}
-        videoContent={selectedVideoForAnnotation}
-        onClose={handleCloseYouTubeAnnotator}
-        onTimestampsCreated={handleTimestampsCreated}
-      />
+      {/* Spotify Playlist Import Modal */}
+      {currentGroup && (
+        <SpotifyPlaylistModal
+          isVisible={showSpotifyModal}
+          groupId={currentGroup.id}
+          onClose={handleCloseSpotifyModal}
+          onPlaylistImported={handleSpotifyPlaylistImported}
+        />
+      )}
 
           {/* Footer */}
           <Footer />
+            </>
+          )}
         </>
       )}
     </div>

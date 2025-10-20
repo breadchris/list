@@ -7,6 +7,7 @@ import { SectionEditor } from './video-annotator/SectionEditor';
 import { VideoAnnotation, videoAnnotationToTimestamp } from './video-annotator/types';
 import { useToast } from './ToastProvider';
 import { Card } from './ui/card';
+import { getYouTubeUrlFromContent } from '../utils/youtubeHelpers';
 
 interface YouTubeVideoAnnotatorModalProps {
   isVisible: boolean;
@@ -193,6 +194,25 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
     }
   }, [isLooping]);
 
+  const handleQuickClip = useCallback((duration: 10 | 30) => {
+    const endTime = currentTime;
+    const startTime = Math.max(0, currentTime - duration);
+
+    const sectionId = crypto.randomUUID();
+    const newSection: VideoSection = {
+      id: sectionId,
+      title: `Quick Clip (${duration}s)`,
+      startTime,
+      endTime,
+      timestampIds: []
+    };
+
+    setSections(prev => [...prev, newSection]);
+    setActiveSection(sectionId);
+
+    toast.success('Quick Clip Created', `Captured ${duration}s ending at ${Math.floor(endTime)}s`);
+  }, [currentTime, toast]);
+
   const handleClose = useCallback(() => {
     // Reset state
     setAnnotations([]);
@@ -215,19 +235,8 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
       return;
     }
 
-    // Extract YouTube URL from video content
-    const getYouTubeUrl = (): string => {
-      if (videoContent.metadata?.youtube_url) {
-        return videoContent.metadata.youtube_url;
-      }
-      if (videoContent.metadata?.youtube_video_id) {
-        return `https://www.youtube.com/watch?v=${videoContent.metadata.youtube_video_id}`;
-      }
-      const lines = videoContent.data.split('\n');
-      const urlLine = lines.find(line => line.includes('youtube.com') || line.includes('youtu.be'));
-      return urlLine || '';
-    };
-    const videoUrl = getYouTubeUrl();
+    // Extract YouTube URL from video content using helper function
+    const videoUrl = getYouTubeUrlFromContent(videoContent) || '';
 
     setIsSaving(true);
 
@@ -288,19 +297,8 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
   // Early return after all hooks are defined
   if (!isVisible || !videoContent) return null;
 
-  // Extract YouTube URL from video content
-  const getYouTubeUrl = (): string => {
-    if (videoContent.metadata?.youtube_url) {
-      return videoContent.metadata.youtube_url;
-    }
-    if (videoContent.metadata?.youtube_video_id) {
-      return `https://www.youtube.com/watch?v=${videoContent.metadata.youtube_video_id}`;
-    }
-    const lines = videoContent.data.split('\n');
-    const urlLine = lines.find(line => line.includes('youtube.com') || line.includes('youtu.be'));
-    return urlLine || '';
-  };
-  const videoUrl = getYouTubeUrl();
+  // Extract YouTube URL from video content using helper function
+  const videoUrl = getYouTubeUrlFromContent(videoContent) || '';
 
   const videoTitle = videoContent.metadata?.youtube_title || videoContent.data.split('\n')[0] || 'YouTube Video';
 
@@ -311,17 +309,18 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
   const activeSectionObject = activeSection ? sections.find(s => s.id === activeSection) || null : null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-[1600px] w-full max-h-[95vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg max-w-full sm:max-w-[1600px] w-full max-h-[95vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-red-50 to-orange-50">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gradient-to-r from-red-50 to-orange-50">
           <div className="flex justify-between items-center">
             <div className="flex-1">
-              <h2 className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center space-x-2">
                 <span>🎞️</span>
-                <span>Annotate Video</span>
+                <span className="hidden sm:inline">Annotate Video</span>
+                <span className="sm:hidden">Annotate</span>
               </h2>
-              <p className="text-sm text-gray-600 mt-1 truncate max-w-md">
+              <p className="text-xs sm:text-sm text-gray-600 mt-1 truncate max-w-[200px] sm:max-w-md">
                 {videoTitle}
               </p>
             </div>
@@ -343,7 +342,7 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
           <div className="space-y-0">
             <Card className="border shadow-sm overflow-hidden">
               {/* Video Player */}
-              <div className="aspect-video bg-black relative">
+              <div className="bg-black relative aspect-video flex items-center justify-center overflow-hidden">
                 <VideoPlayer
                   videoUrl={videoUrl}
                   annotations={annotations}
@@ -364,6 +363,36 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
                     <span>Looping</span>
                   </div>
                 )}
+              </div>
+
+              {/* Quick Clip Toolbar */}
+              <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-700">Quick Clip:</span>
+                  <button
+                    onClick={() => handleQuickClip(10)}
+                    className="px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm font-medium flex items-center gap-1.5"
+                    title="Create section from last 10 seconds"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    </svg>
+                    Last 10s
+                  </button>
+                  <button
+                    onClick={() => handleQuickClip(30)}
+                    className="px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm font-medium flex items-center gap-1.5"
+                    title="Create section from last 30 seconds"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    </svg>
+                    Last 30s
+                  </button>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Current: {Math.floor(currentTime)}s / {Math.floor(videoDuration)}s
+                </div>
               </div>
 
               {/* Section Editor (conditional) */}
@@ -402,41 +431,47 @@ export const YouTubeVideoAnnotatorModal: React.FC<YouTubeVideoAnnotatorModalProp
             <div className="px-6 py-4">
               <AnnotationManager
                 annotations={annotations}
+                sections={sections}
                 currentTime={currentTime}
                 videoDuration={videoDuration}
                 onAnnotationsChange={handleAnnotationsChange}
                 onSeekTo={handleSeekTo}
                 isPlaying={isPlaying}
                 onPlayPause={handlePlayPause}
+                onSectionClick={setActiveSection}
+                onSectionDelete={handleDeleteSection}
+                onSectionUpdate={handleUpdateSectionTitle}
+                onQuickClip={handleQuickClip}
+                onCreateSection={handleCreateSection}
               />
             </div>
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-gray-600">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 bg-gray-50">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-2 sm:gap-0">
+            <div className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">
               {annotations.length} timestamp{annotations.length !== 1 ? 's' : ''}, {sections.length} section{sections.length !== 1 ? 's' : ''}
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
               <button
                 onClick={handleClose}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 disabled={isSaving}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
-                className={`px-4 py-2 rounded-lg transition-colors ${
+                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 text-sm rounded-lg transition-colors ${
                   isSaving || annotations.length === 0
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}
                 disabled={isSaving || annotations.length === 0}
               >
-                {isSaving ? 'Saving...' : 'Save Timestamps'}
+                {isSaving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

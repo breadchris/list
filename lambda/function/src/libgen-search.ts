@@ -159,11 +159,15 @@ function extractBooks($: cheerio.Root, request: LibgenSearchRequest): BookInfo[]
 
 
 	// Iterate through table rows (skip header rows with th)
+	let rowIndex = 0;
+	let skippedRows = 0;
 	table.find('tr').each((_, row) => {
 		const cells = $(row).find('td');
 		if (cells.length < 4) {
 			return; // Skip header rows and malformed rows
 		}
+
+		rowIndex++;
 
 		// Extract title and ID from first column
 		const firstCell = cells.eq(0);
@@ -211,6 +215,15 @@ function extractBooks($: cheerio.Root, request: LibgenSearchRequest): BookInfo[]
 		if (!title) {
 			const cellText = firstCell.text().trim();
 			title = cellText.split('\n')[0].trim();
+		}
+
+		// Skip books with empty titles (critical field missing)
+		if (!title || title.trim() === '') {
+			skippedRows++;
+			if (process.env.DEBUG_LIBGEN) {
+				console.log(`Skipping row ${rowIndex}: empty title. Cells: ${cells.length}, First cell HTML:`, firstCell.html()?.substring(0, 200));
+			}
+			return; // Skip this row
 		}
 
 		// Extract book data from cells (structure varies by cell count)
@@ -267,6 +280,10 @@ function extractBooks($: cheerio.Root, request: LibgenSearchRequest): BookInfo[]
 			books.push(book);
 		}
 	});
+
+	if (skippedRows > 0) {
+		console.log(`⚠️  Skipped ${skippedRows} rows with empty titles out of ${rowIndex} total rows`);
+	}
 
 	return books;
 }

@@ -18,13 +18,18 @@ export function VideoPlayer({
   const [bufferedTime, setBufferedTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
+  const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isReady, setIsReady] = useState(false);
+  const [showControls, setShowControls] = useState(true);
 
   const playerRef = useRef<ReactPlayer>(null);
   const timeUpdateInterval = useRef<number | null>(null);
   const lastSeekTo = useRef<number | null>(null);
+  const controlsTimeoutRef = useRef<number | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
 
   // Validate YouTube URL
   const isValidYouTubeUrl = ReactPlayer.canPlay(videoUrl);
@@ -166,6 +171,51 @@ export function VideoPlayer({
     }
   }, [onTimeUpdate]);
 
+  // Handle playback speed change
+  const handlePlaybackRateChange = useCallback((rate: number) => {
+    setPlaybackRate(rate);
+    setShowSpeedMenu(false);
+  }, []);
+
+  // Handle controls visibility
+  const handleShowControls = useCallback(() => {
+    setShowControls(true);
+
+    // Clear existing timeout
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+
+    // Hide controls after 3 seconds of inactivity (only when playing)
+    if (isPlaying) {
+      controlsTimeoutRef.current = window.setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+  }, [isPlaying]);
+
+  // Show controls when paused, hide when playing
+  useEffect(() => {
+    if (!isPlaying) {
+      setShowControls(true);
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    } else {
+      // Start hide timer when playing
+      handleShowControls();
+    }
+  }, [isPlaying, handleShowControls]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, []);
+
   if (!isValidYouTubeUrl) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -216,10 +266,15 @@ export function VideoPlayer({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-      <div className="relative">
+    <>
+      <div
+        ref={videoContainerRef}
+        className="relative w-full h-full cursor-pointer"
+        onMouseMove={handleShowControls}
+        onTouchStart={handleShowControls}
+      >
         {/* ReactPlayer Container */}
-        <div className="aspect-video bg-black relative">
+        <div className="aspect-video bg-black relative w-full h-full">
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
               <div className="text-center">
@@ -241,6 +296,7 @@ export function VideoPlayer({
             playing={isPlaying}
             volume={volume}
             muted={isMuted}
+            playbackRate={playbackRate}
             controls={false}
             onReady={handleReady}
             onPlay={handlePlay}
@@ -266,7 +322,11 @@ export function VideoPlayer({
 
           {/* Custom Controls Overlay */}
           {!isLoading && !error && isReady && (
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 z-10">
+            <div
+              className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 z-10 transition-opacity duration-300 ${
+                showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              }`}
+            >
             <div className="flex items-center gap-4">
               <button
                 onClick={handlePlayPause}
@@ -295,6 +355,33 @@ export function VideoPlayer({
 
               <div className="flex-1 text-white text-sm">
                 {formatTime(currentTime)} / {formatTime(duration)}
+              </div>
+
+              {/* Playback Speed Control */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                  className="text-white hover:bg-white/20 px-3 py-2 rounded-lg transition-colors text-sm font-medium"
+                  title="Playback speed"
+                >
+                  {playbackRate}x
+                </button>
+
+                {showSpeedMenu && (
+                  <div className="absolute bottom-full mb-2 right-0 bg-black/90 rounded-lg shadow-lg overflow-hidden backdrop-blur-sm">
+                    {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((rate) => (
+                      <button
+                        key={rate}
+                        onClick={() => handlePlaybackRateChange(rate)}
+                        className={`block w-full px-4 py-2 text-left text-white hover:bg-white/20 transition-colors text-sm ${
+                          playbackRate === rate ? 'bg-white/10' : ''
+                        }`}
+                      >
+                        {rate}x {playbackRate === rate && '✓'}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <button
@@ -367,6 +454,6 @@ export function VideoPlayer({
         )}
         </div>
       </div>
-    </div>
+    </>
   );
 }

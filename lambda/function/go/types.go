@@ -47,3 +47,23 @@ type VideoInfo struct {
 	Thumbnails    []Thumbnail `json:"thumbnails"`     // Video thumbnails
 }
 
+// SubtitleRequest contains a YouTube video ID for subtitle extraction
+type SubtitleRequest struct {
+	VideoID string `json:"video_id"`
+}
+
+// SubtitleTrack represents a single subtitle/caption track
+type SubtitleTrack struct {
+	LanguageCode string `json:"language_code"` // Language code (e.g., "en", "es")
+	Name         string `json:"name"`          // Display name (e.g., "English", "English (auto-generated)")
+	BaseURL      string `json:"base_url"`      // URL to fetch subtitle content
+	Content      string `json:"content"`       // Parsed subtitle text with timestamps
+	IsAutomatic  bool   `json:"is_automatic"`  // Whether captions are auto-generated
+}
+
+// SubtitleResponse contains all available subtitle tracks for a video
+type SubtitleResponse struct {
+	VideoID string          `json:"video_id"`
+	Tracks  []SubtitleTrack `json:"tracks"`
+}
+

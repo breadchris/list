@@ -33,6 +33,13 @@ export interface ClaudeCodeSessionMetadata {
   initial_prompt: string;
   created_at: string;
   last_updated_at?: string;
+  github_repo?: {
+    owner: string;
+    name: string;
+    branch: string;
+  };
+  git_commit_sha?: string;
+  git_commit_url?: string;
 }
 
 const CLAUDE_CODE_BASE_PROMPT = `You will only create tsx components that have no backend. They will only use react and no other external dependencies.
@@ -89,7 +96,12 @@ ${formattedItems}
     sessionId?: string,
     selectedContent?: Content[],
     parentContentId?: string,
-    onProgress?: (status: string) => void
+    onProgress?: (status: string) => void,
+    githubRepo?: {
+      owner: string;
+      name: string;
+      branch: string;
+    }
   ): Promise<ClaudeCodeResponse> {
     try {
       // Validate input
@@ -126,6 +138,30 @@ ${formattedItems}
       // Add session_id if continuing an existing session
       if (sessionId) {
         requestPayload.session_id = sessionId;
+      }
+
+      // Add GitHub repo integration if provided
+      if (githubRepo) {
+        // Get GitHub token from user identities
+        const githubIdentity = user.identities?.find(identity => identity.provider === 'github');
+
+        if (githubIdentity) {
+          // Access token is stored in identity_data
+          const githubToken = (githubIdentity.identity_data as any)?.provider_token;
+
+          if (githubToken) {
+            requestPayload.github_repo = {
+              owner: githubRepo.owner,
+              name: githubRepo.name,
+              branch: githubRepo.branch,
+              token: githubToken
+            };
+          } else {
+            console.warn('GitHub token not found in identity, proceeding without git integration');
+          }
+        } else {
+          console.warn('GitHub not linked, proceeding without git integration');
+        }
       }
 
       console.log('Submitting Claude Code job via /content endpoint:', requestPayload);

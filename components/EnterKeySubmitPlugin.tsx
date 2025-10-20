@@ -1,15 +1,19 @@
 import { useEffect } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { KEY_ENTER_COMMAND, COMMAND_PRIORITY_LOW, $getRoot, CLEAR_EDITOR_COMMAND } from 'lexical';
+import { KEY_ENTER_COMMAND, COMMAND_PRIORITY_LOW, $getRoot, CLEAR_EDITOR_COMMAND, LexicalNode } from 'lexical';
+import { BeautifulMentionNode } from 'lexical-beautiful-mentions';
+import { Tag } from './ContentRepository';
 
 interface EnterKeySubmitPluginProps {
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, mentions: string[]) => void;
   disabled?: boolean;
+  availableTags?: Tag[];
 }
 
 export const EnterKeySubmitPlugin: React.FC<EnterKeySubmitPluginProps> = ({
   onSubmit,
-  disabled = false
+  disabled = false,
+  availableTags = []
 }) => {
   const [editor] = useLexicalComposerContext();
 
@@ -27,8 +31,23 @@ export const EnterKeySubmitPlugin: React.FC<EnterKeySubmitPluginProps> = ({
           editor.getEditorState().read(() => {
             const plainText = $getRoot().getTextContent().trim();
 
+            // Extract mentions
+            const mentions: string[] = [];
+            const allNodes = $getRoot().getAllTextNodes();
+
+            // Find all BeautifulMentionNode instances
+            for (const node of allNodes) {
+              const parent = node.getParent();
+              if (parent && parent instanceof BeautifulMentionNode) {
+                const mentionValue = parent.getValue();
+                if (mentionValue && !mentions.includes(mentionValue)) {
+                  mentions.push(mentionValue);
+                }
+              }
+            }
+
             if (plainText) {
-              onSubmit(plainText);
+              onSubmit(plainText, mentions);
               editor.dispatchCommand(CLEAR_EDITOR_COMMAND, undefined);
             }
           });
@@ -40,7 +59,7 @@ export const EnterKeySubmitPlugin: React.FC<EnterKeySubmitPluginProps> = ({
       },
       COMMAND_PRIORITY_LOW
     );
-  }, [editor, onSubmit, disabled]);
+  }, [editor, onSubmit, disabled, availableTags]);
 
   return null;
 };

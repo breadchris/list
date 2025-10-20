@@ -7,6 +7,7 @@ export interface LibgenSearchConfig {
   topics?: string[];
   filters?: Record<string, string>;
   maxResults?: number;
+  autoCreate?: boolean; // If false, return book metadata without creating Content items
 }
 
 export interface LibgenBook {
@@ -26,7 +27,7 @@ export interface LibgenSearchResult {
   success: boolean;
   books_found: number;
   books_created: number;
-  book_children?: LibgenBook[];
+  book_children?: Content[]; // Content items with metadata.libgen containing book data
   error?: string;
 }
 
@@ -52,7 +53,8 @@ export const useLibgenSearch = () => {
         config.searchType,
         config.topics,
         config.filters,
-        config.maxResults
+        config.maxResults,
+        config.autoCreate
       );
 
       console.log(`Libgen search completed:`, result);

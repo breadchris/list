@@ -1,0 +1,9 @@
+{
+  "action": "claude-code",
+  "payload": {
+    "prompt": "What is 2 + 2?",
+    "user_id": "test-user",
+    "group_id": "test-group",
+    "parent_content_id": "test-parent"
+  }
+}

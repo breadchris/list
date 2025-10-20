@@ -27,6 +27,8 @@ export const QueryKeys = {
   tags: ['tags'] as const,
   tagsByContent: (contentId: string) =>
     ['tags', 'by-content', contentId] as const,
+  tagsByGroup: (groupId: string) =>
+    ['tags', 'by-group', groupId] as const,
   tagsSearch: (query: string) =>
     ['tags', 'search', query] as const,
   

@@ -194,12 +194,15 @@ export const useInfiniteSearchContent = (
 
 /**
  * Hook for infinite scrolling content filtered by tags
- * Supports filtering by multiple tags (AND logic - content must have ALL tags)
+ * Supports:
+ * - Include tags (AND logic - content must have ALL include tags)
+ * - Exclude tags (NOT logic - content must NOT have ANY exclude tags)
  */
 export const useInfiniteContentByTag = (
   groupId: string,
   parentId: string | null,
-  tagIds: string[],
+  includeTagIds: string[],
+  excludeTagIds: string[] = [],
   options?: {
     enabled?: boolean;
     viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
@@ -208,14 +211,17 @@ export const useInfiniteContentByTag = (
   const viewMode = options?.viewMode || 'chronological';
 
   return useInfiniteQuery({
-    queryKey: [...QueryKeys.contentByTag(groupId, parentId, tagIds), viewMode],
+    queryKey: [...QueryKeys.contentByTag(groupId, parentId, [...includeTagIds, ...excludeTagIds.map(id => `!${id}`)]), viewMode],
     queryFn: async ({ pageParam = 0 }) => {
-      if (!groupId || tagIds.length === 0) return { items: [], hasMore: false };
+      if (!groupId || (includeTagIds.length === 0 && excludeTagIds.length === 0)) {
+        return { items: [], hasMore: false };
+      }
 
       const items = await contentRepository.getContentByParentAndTag(
         groupId,
         parentId,
-        tagIds,
+        includeTagIds,
+        excludeTagIds,
         pageParam as number,
         20,
         viewMode
@@ -231,7 +237,7 @@ export const useInfiniteContentByTag = (
       return lastPage.hasMore ? lastPage.nextOffset : undefined;
     },
     initialPageParam: 0,
-    enabled: !!groupId && tagIds.length > 0 && options?.enabled !== false,
+    enabled: !!groupId && (includeTagIds.length > 0 || excludeTagIds.length > 0) && options?.enabled !== false,
     staleTime: 180000, // 3 minutes
     gcTime: 600000, // 10 minutes
     refetchOnMount: false,

@@ -10,6 +10,7 @@ import {
 	handleChatMessage,
 	handleMarkdownExtract,
 	handleYouTubePlaylistExtract,
+	handleYouTubeSubtitleExtract,
 	handleTMDbSearch,
 	handleLibgenSearch,
 	handleScreenshotQueue,
@@ -196,6 +197,15 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 						}
 						break;
 
+					case 'youtube-subtitle-extract':
+						result = await handleYouTubeSubtitleExtract(supabase, payload);
+						if (result.data) {
+							content_ids = result.data.flatMap((item: any) =>
+								item.transcript_content_ids || []
+							);
+						}
+						break;
+
 					case 'tmdb-search':
 						result = await handleTMDbSearch(supabase, payload);
 						if (result.data) {
@@ -254,11 +264,12 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 							}
 						}
 
-						// Execute Claude Code
+						// Execute Claude Code with optional GitHub integration
 						const claudeResult = await executeClaudeCode({
 							prompt: payload.prompt,
 							sessionFiles,
-							resumeSessionId: payload.session_id
+							resumeSessionId: payload.session_id,
+							githubRepo: payload.github_repo // Pass GitHub repo info if provided
 						});
 
 						// Upload output files to S3
@@ -329,11 +340,14 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 							session_id: claudeResult.session_id,
 							messages: claudeResult.messages,
 							s3_url,
+							error: claudeResult.error,
 							stdout: claudeResult.stdout,
 							stderr: claudeResult.stderr,
 							exitCode: claudeResult.exitCode,
 							file_count: claudeResult.outputFiles?.length || 0,
-							child_content_count: createdContentIds.length
+							child_content_count: createdContentIds.length,
+							git_commit_sha: claudeResult.git_commit_sha,
+							git_commit_url: claudeResult.git_commit_url
 						};
 						break;
 					}
@@ -880,6 +894,7 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 			'llm-generate',
 			'markdown-extract',
 			'youtube-playlist-extract',
+			'youtube-subtitle-extract',
 			'tmdb-search',
 			'libgen-search',
 			'screenshot-queue',
@@ -910,6 +925,10 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 
 					case 'youtube-playlist-extract':
 						result = await handleYouTubePlaylistExtract(supabase, payload);
+						break;
+
+					case 'youtube-subtitle-extract':
+						result = await handleYouTubeSubtitleExtract(supabase, payload);
 						break;
 
 					case 'tmdb-search':

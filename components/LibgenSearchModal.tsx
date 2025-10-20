@@ -10,6 +10,7 @@ interface LibgenSearchModalProps {
   isSearching?: boolean;
   onClose: () => void;
   onSearch: (config: LibgenSearchConfig) => void;
+  onAddSelected?: (books: Content[]) => Promise<void>; // Callback to create selected books as Content items
 }
 
 export interface LibgenSearchConfig {
@@ -33,20 +34,43 @@ export const LibgenSearchModal: React.FC<LibgenSearchModalProps> = ({
   searchResults = [],
   isSearching = false,
   onClose,
-  onSearch
+  onSearch,
+  onAddSelected
 }) => {
   const [searchType, setSearchType] = useState<'default' | 'title' | 'author'>('default');
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set(['libgen']));
   const [maxResults, setMaxResults] = useState(10);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [selectedBooks, setSelectedBooks] = useState<Set<string>>(new Set());
+  const [isAdding, setIsAdding] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [booksPerPage, setBooksPerPage] = useState(10);
   const toast = useToast();
+
+  // Helper function to extract title from book data
+  const extractTitle = (book: Content): string => {
+    // Try to extract title from data field (formatted as "📚 Title\n...")
+    const dataMatch = book.data.match(/📚\s*(.+?)(?:\n|$)/);
+    if (dataMatch) {
+      return dataMatch[1].trim();
+    }
+    // Fallback to metadata
+    return book.metadata?.libgen?.title || 'Untitled';
+  };
 
   // Reset state when modal is closed
   useEffect(() => {
     if (!isVisible) {
       setShowAdvancedOptions(false);
+      setSelectedBooks(new Set());
+      setCurrentPage(1);
     }
   }, [isVisible]);
+
+  // Reset to page 1 when search results change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchResults]);
 
   const toggleTopic = (topic: string) => {
     setSelectedTopics(prev => {
@@ -80,6 +104,58 @@ export const LibgenSearchModal: React.FC<LibgenSearchModalProps> = ({
   const totalBooksFound = searchResults.reduce((sum, result) => sum + result.books_found, 0);
   const totalBooksCreated = searchResults.reduce((sum, result) => sum + result.books_created, 0);
 
+  // Pagination calculations
+  const totalPages = Math.ceil(allBooks.length / booksPerPage);
+  const startIndex = (currentPage - 1) * booksPerPage;
+  const endIndex = startIndex + booksPerPage;
+  const currentBooks = allBooks.slice(startIndex, endIndex);
+
+  // Selection handlers (defined after allBooks)
+  const toggleBookSelection = (bookId: string) => {
+    setSelectedBooks(prev => {
+      const next = new Set(prev);
+      if (next.has(bookId)) {
+        next.delete(bookId);
+      } else {
+        next.add(bookId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllBooks = () => {
+    setSelectedBooks(new Set(allBooks.map(book => book.id)));
+  };
+
+  const deselectAllBooks = () => {
+    setSelectedBooks(new Set());
+  };
+
+  const handleAddSelectedBooks = async () => {
+    if (!onAddSelected || selectedBooks.size === 0) return;
+
+    try {
+      setIsAdding(true);
+      const booksToAdd = allBooks.filter(book => selectedBooks.has(book.id));
+      await onAddSelected(booksToAdd);
+
+      toast.success(
+        'Books Added!',
+        `Added ${booksToAdd.length} book${booksToAdd.length !== 1 ? 's' : ''} to your list`
+      );
+
+      onClose(); // Close modal after successful add
+    } catch (error) {
+      console.error('Failed to add selected books:', error);
+      toast.error(
+        'Failed to Add Books',
+        'An error occurred while adding the selected books'
+      );
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -95,7 +171,7 @@ export const LibgenSearchModal: React.FC<LibgenSearchModalProps> = ({
                 {isSearching
                   ? 'Searching...'
                   : hasResults
-                    ? `${totalBooksCreated} books added from ${totalBooksFound} found`
+                    ? `${selectedBooks.size} of ${totalBooksFound} books selected`
                     : `Searching ${selectedContent.length} item${selectedContent.length !== 1 ? 's' : ''}`
                 }
               </p>
@@ -128,7 +204,7 @@ export const LibgenSearchModal: React.FC<LibgenSearchModalProps> = ({
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">Books Found</h3>
                 <span className="text-sm text-gray-600">
-                  {allBooks.length} book{allBooks.length !== 1 ? 's' : ''} added
+                  {totalBooksFound} book{totalBooksFound !== 1 ? 's' : ''} found
                 </span>
               </div>
 
@@ -139,55 +215,160 @@ export const LibgenSearchModal: React.FC<LibgenSearchModalProps> = ({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {allBooks.map((book, index) => (
-                    <div
-                      key={`${book.id}-${index}`}
-                      className="border-2 border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-all"
-                    >
-                      <div className="space-y-2">
-                        <h4 className="font-semibold text-gray-900">
-                          {book.title || 'Untitled'}
-                        </h4>
-                        {book.author && (
-                          <p className="text-sm text-gray-700">
-                            <span className="font-medium">Author:</span> {book.author}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                          {book.year && (
-                            <span className="px-2 py-1 bg-gray-100 rounded">
-                              {book.year}
-                            </span>
-                          )}
-                          {book.publisher && (
-                            <span className="px-2 py-1 bg-gray-100 rounded">
-                              {book.publisher}
-                            </span>
-                          )}
-                          {book.language && (
-                            <span className="px-2 py-1 bg-gray-100 rounded">
-                              {book.language}
-                            </span>
-                          )}
-                          {book.pages && (
-                            <span className="px-2 py-1 bg-gray-100 rounded">
-                              {book.pages} pages
-                            </span>
-                          )}
-                          {book.extension && (
-                            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                              {book.extension.toUpperCase()}
-                            </span>
-                          )}
-                          {book.size && (
-                            <span className="px-2 py-1 bg-gray-100 rounded">
-                              {book.size}
-                            </span>
-                          )}
-                        </div>
+                  {/* Selection and Pagination Controls */}
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+                    <div className="flex items-center space-x-4">
+                      <span className="text-sm text-gray-600">
+                        {selectedBooks.size} of {allBooks.length} selected
+                      </span>
+                      <div className="space-x-2">
+                        <button
+                          onClick={selectAllBooks}
+                          className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                        >
+                          Select All
+                        </button>
+                        <span className="text-gray-300">|</span>
+                        <button
+                          onClick={deselectAllBooks}
+                          className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                        >
+                          Deselect All
+                        </button>
                       </div>
                     </div>
-                  ))}
+
+                    {/* Per Page Selector */}
+                    <div className="flex items-center space-x-2">
+                      <label className="text-xs text-gray-600">Show:</label>
+                      <select
+                        value={booksPerPage}
+                        onChange={(e) => setBooksPerPage(Number(e.target.value))}
+                        className="text-xs border border-gray-300 rounded px-2 py-1"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={allBooks.length}>All ({allBooks.length})</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {currentBooks.map((book, index) => {
+                    const libgenMeta = book.metadata?.libgen || {};
+                    const isSelected = selectedBooks.has(book.id);
+
+                    return (
+                      <div
+                        key={`${book.id}-${index}`}
+                        className={`border-2 rounded-lg p-4 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        onClick={() => toggleBookSelection(book.id)}
+                      >
+                        <div className="flex items-start space-x-3">
+                          {/* Checkbox */}
+                          <div className="flex-shrink-0 mt-1">
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                              isSelected
+                                ? 'bg-blue-500 border-blue-500'
+                                : 'border-gray-300 bg-white'
+                            }`}>
+                              {isSelected && (
+                                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Book Info */}
+                          <div className="flex-1 space-y-2">
+                            <h4 className="font-semibold text-gray-900">
+                              {extractTitle(book)}
+                            </h4>
+                            {libgenMeta.author && (
+                              <p className="text-sm text-gray-700">
+                                <span className="font-medium">Author:</span> {libgenMeta.author}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                              {libgenMeta.year && (
+                                <span className="px-2 py-1 bg-gray-100 rounded">
+                                  {libgenMeta.year}
+                                </span>
+                              )}
+                              {libgenMeta.publisher && (
+                                <span className="px-2 py-1 bg-gray-100 rounded">
+                                  {libgenMeta.publisher}
+                                </span>
+                              )}
+                              {libgenMeta.language && (
+                                <span className="px-2 py-1 bg-gray-100 rounded">
+                                  {libgenMeta.language}
+                                </span>
+                              )}
+                              {libgenMeta.pages && (
+                                <span className="px-2 py-1 bg-gray-100 rounded">
+                                  {libgenMeta.pages} pages
+                                </span>
+                              )}
+                              {libgenMeta.extension && (
+                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                                  {libgenMeta.extension.toUpperCase()}
+                                </span>
+                              )}
+                              {libgenMeta.size && (
+                                <span className="px-2 py-1 bg-gray-100 rounded">
+                                  {libgenMeta.size}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Pagination Controls */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className={`px-3 py-1 text-sm rounded transition-colors ${
+                          currentPage === 1
+                            ? 'text-gray-400 cursor-not-allowed'
+                            : 'text-blue-600 hover:bg-blue-50'
+                        }`}
+                      >
+                        ← Previous
+                      </button>
+
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-gray-600">
+                          Page {currentPage} of {totalPages}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          ({startIndex + 1}-{Math.min(endIndex, allBooks.length)} of {allBooks.length})
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage === totalPages}
+                        className={`px-3 py-1 text-sm rounded transition-colors ${
+                          currentPage === totalPages
+                            ? 'text-gray-400 cursor-not-allowed'
+                            : 'text-blue-600 hover:bg-blue-50'
+                        }`}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -316,11 +497,11 @@ export const LibgenSearchModal: React.FC<LibgenSearchModalProps> = ({
           <button
             onClick={onClose}
             className="px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors"
-            disabled={isSearching}
+            disabled={isSearching || isAdding}
           >
-            {hasResults ? 'Close' : 'Cancel'}
+            {hasResults ? 'Cancel' : 'Cancel'}
           </button>
-          {!hasResults && (
+          {!hasResults ? (
             <button
               onClick={handleSearch}
               disabled={isSearching}
@@ -330,6 +511,26 @@ export const LibgenSearchModal: React.FC<LibgenSearchModalProps> = ({
             >
               <span>🔍</span>
               <span>Search for Books</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleAddSelectedBooks}
+              disabled={selectedBooks.size === 0 || isAdding}
+              className={`px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 ${
+                (selectedBooks.size === 0 || isAdding) ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {isAdding ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                  <span>Adding...</span>
+                </>
+              ) : (
+                <>
+                  <span>📚</span>
+                  <span>Add {selectedBooks.size} Selected Book{selectedBooks.size !== 1 ? 's' : ''}</span>
+                </>
+              )}
             </button>
           )}
         </div>

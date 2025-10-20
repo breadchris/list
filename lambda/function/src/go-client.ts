@@ -41,6 +41,23 @@ export const PlaylistResponseSchema = z.object({
 	videos: z.array(VideoInfoSchema)
 });
 
+export const SubtitleRequestSchema = z.object({
+	video_id: z.string()
+});
+
+export const SubtitleTrackSchema = z.object({
+	language_code: z.string(),
+	name: z.string(),
+	base_url: z.string(),
+	content: z.string(),
+	is_automatic: z.boolean()
+});
+
+export const SubtitleResponseSchema = z.object({
+	video_id: z.string(),
+	tracks: z.array(SubtitleTrackSchema)
+});
+
 // TypeScript types - mirrors Go structs with snake_case JSON fields
 
 export interface GoRequest {
@@ -82,6 +99,23 @@ export interface PlaylistResponse {
 	videos: VideoInfo[];
 }
 
+export interface SubtitleRequest {
+	video_id: string;
+}
+
+export interface SubtitleTrack {
+	language_code: string;
+	name: string;
+	base_url: string;
+	content: string;
+	is_automatic: boolean;
+}
+
+export interface SubtitleResponse {
+	video_id: string;
+	tracks: SubtitleTrack[];
+}
+
 // Type guards
 
 export function isGoResponse(data: unknown): data is GoResponse {
@@ -91,5 +125,10 @@ export function isGoResponse(data: unknown): data is GoResponse {
 
 export function isPlaylistResponse(data: unknown): data is PlaylistResponse {
 	const result = PlaylistResponseSchema.safeParse(data);
+	return result.success;
+}
+
+export function isSubtitleResponse(data: unknown): data is SubtitleResponse {
+	const result = SubtitleResponseSchema.safeParse(data);
 	return result.success;
 }

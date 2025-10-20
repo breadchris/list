@@ -1,0 +1,16 @@
+{
+  "action": "youtube-subtitle-extract",
+  "payload": {
+    "selectedContent": [{
+      "id": "test-123",
+      "type": "text",
+      "data": "https://www.youtube.com/watch?v=SOUvvDTBdic",
+      "metadata": {
+        "youtube_video_id": "SOUvvDTBdic"
+      },
+      "group_id": "test-group",
+      "user_id": "test-user"
+    }]
+  },
+  "sync": true
+}

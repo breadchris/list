@@ -29,12 +29,19 @@ export interface VideoSection {
 
 export interface AnnotationManagerProps {
   annotations: VideoAnnotation[];
+  sections?: VideoSection[];
   currentTime: number;
   videoDuration: number;
   onAnnotationsChange: (annotations: VideoAnnotation[]) => void;
   onSeekTo: (time: number) => void;
   isPlaying: boolean;
   onPlayPause: () => void;
+  onSectionClick?: (sectionId: string) => void;
+  onSectionDelete?: (sectionId: string) => void;
+  onSectionUpdate?: (sectionId: string, title: string) => void;
+  onDeleteAnnotation?: (annotationId: string) => void;
+  onQuickClip?: (duration: 10 | 30) => void;
+  onCreateSection?: (startTime: number, endTime: number, timestampIds: string[]) => void;
 }
 
 export interface VideoPlayerProps {

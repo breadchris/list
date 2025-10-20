@@ -5,6 +5,8 @@ import type {
   ChatMessagePayload,
   MarkdownExtractPayload,
   YouTubePlaylistPayload,
+  YouTubeSubtitlePayload,
+  YouTubeSubtitleResult,
   TMDbSearchPayload,
   LibgenSearchPayload,
   ScreenshotQueuePayload,
@@ -21,6 +23,9 @@ import { fetchMarkdownFromCloudflare, generateScreenshot } from './cloudflare-cl
 import { processTMDbSearchForContent } from './tmdb-client.js';
 import { searchLibgen, type BookInfo } from './libgen-client.js';
 import { createClient } from '@deepgram/sdk';
+import { executeGo } from './go-executor.js';
+import type { SubtitleRequest } from './go-client.js';
+import { isSubtitleResponse } from './go-client.js';
 
 // =============================================================================
 // SEO EXTRACTION
@@ -299,22 +304,20 @@ export async function handleChatMessage(supabase: any, payload: ChatMessagePaylo
     content: message
   });
 
-  // 4. Call OpenAI chat completion
-  const assistantMessage = await callOpenAIChat(openAIMessages);
-
-  // 5. Create assistant response as child of chat
+  // 4. Create empty assistant message immediately
   const { data: assistantContent, error: assistantError } = await supabase
     .from('content')
     .insert({
       type: 'text',
-      data: assistantMessage,
+      data: '', // Start with empty message
       group_id: group_id,
       user_id: user_id,
       parent_content_id: chat_content_id,
       metadata: {
         role: 'assistant',
         model: 'gpt-4',
-        created_by_chat: true
+        created_by_chat: true,
+        streaming: true
       }
     })
     .select()
@@ -327,13 +330,71 @@ export async function handleChatMessage(supabase: any, payload: ChatMessagePaylo
     };
   }
 
-  return {
-    success: true,
-    data: {
-      assistant_message: assistantMessage,
-      assistant_content_id: assistantContent.id
+  // 5. Stream OpenAI response and update content in real-time
+  try {
+    let fullMessage = '';
+
+    // Import the streaming function
+    const { callOpenAIChatStream } = await import('./openai-client.js');
+
+    for await (const chunk of callOpenAIChatStream(openAIMessages)) {
+      fullMessage += chunk;
+
+      // Update the assistant message content with accumulated text
+      const { error: updateError } = await supabase
+        .from('content')
+        .update({
+          data: fullMessage,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', assistantContent.id);
+
+      if (updateError) {
+        console.error('Error updating message during stream:', updateError);
+      }
     }
-  };
+
+    // Mark streaming as complete
+    await supabase
+      .from('content')
+      .update({
+        metadata: {
+          role: 'assistant',
+          model: 'gpt-4',
+          created_by_chat: true,
+          streaming: false
+        }
+      })
+      .eq('id', assistantContent.id);
+
+    return {
+      success: true,
+      data: {
+        assistant_message: fullMessage,
+        assistant_content_id: assistantContent.id
+      }
+    };
+  } catch (error: any) {
+    // If streaming fails, update the message with error
+    await supabase
+      .from('content')
+      .update({
+        data: `Error generating response: ${error.message}`,
+        metadata: {
+          role: 'assistant',
+          model: 'gpt-4',
+          created_by_chat: true,
+          streaming: false,
+          error: true
+        }
+      })
+      .eq('id', assistantContent.id);
+
+    return {
+      success: false,
+      error: `Streaming failed: ${error.message}`
+    };
+  }
 }
 
 // =============================================================================
@@ -592,6 +653,7 @@ export async function handleTMDbSearch(supabase: any, payload: TMDbSearchPayload
 
 export async function handleLibgenSearch(supabase: any, payload: LibgenSearchPayload): Promise<ContentResponse> {
   const results = [];
+  const autoCreate = payload.autoCreate !== false; // Default to true for backward compatibility
 
   for (const contentItem of payload.selectedContent) {
     try {
@@ -601,7 +663,8 @@ export async function handleLibgenSearch(supabase: any, payload: LibgenSearchPay
         payload.searchType || 'default',
         payload.topics || ['libgen'],
         payload.filters,
-        payload.maxResults || 10
+        payload.maxResults || 10,
+        autoCreate
       );
       results.push(result);
     } catch (error: any) {
@@ -628,7 +691,8 @@ async function processLibgenSearchForContent(
   searchType: 'default' | 'title' | 'author',
   topics: string[],
   filters?: Record<string, string>,
-  maxResults: number = 10
+  maxResults: number = 10,
+  autoCreate: boolean = true
 ) {
   // Use content data as search query
   const query = contentItem.data.trim();
@@ -654,10 +718,11 @@ async function processLibgenSearchForContent(
   const bookChildren: any[] = [];
   let booksCreated = 0;
 
-  // Limit results
-  const limitedBooks = books.slice(0, maxResults);
+  // Limit results only when auto-creating (to avoid creating too many items)
+  // When not auto-creating, return all results for user selection
+  const limitedBooks = autoCreate ? books.slice(0, maxResults) : books;
 
-  // Create child content items for each book
+  // Create child content items for each book (or just format metadata if autoCreate is false)
   for (const book of limitedBooks) {
     try {
       // Format book data
@@ -678,29 +743,50 @@ async function processLibgenSearchForContent(
         }
       };
 
-      // Insert book as child content
-      const { data: bookContent, error: insertError } = await supabase
-        .from('content')
-        .insert({
+      if (autoCreate) {
+        // Insert book as child content
+        const { data: bookContent, error: insertError } = await supabase
+          .from('content')
+          .insert({
+            type: 'text',
+            data: bookData,
+            metadata: bookMetadata,
+            group_id: contentItem.group_id,
+            user_id: contentItem.user_id,
+            parent_content_id: contentItem.id
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error('Error inserting book content:', insertError);
+          continue;
+        }
+
+        bookChildren.push(bookContent);
+        booksCreated++;
+      } else {
+        // Just return book metadata without creating Content (for user selection in modal)
+        // Create a mock Content object with a temporary ID
+        const mockContent = {
+          id: `temp-${book.md5 || book.id}`, // Temporary ID for frontend use
           type: 'text',
           data: bookData,
           metadata: bookMetadata,
           group_id: contentItem.group_id,
           user_id: contentItem.user_id,
-          parent_content_id: contentItem.id
-        })
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('Error inserting book content:', insertError);
-        continue;
+          parent_content_id: contentItem.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          search_vector: null,
+          path: null,
+          child_count: 0,
+          tags: []
+        };
+        bookChildren.push(mockContent);
       }
-
-      bookChildren.push(bookContent);
-      booksCreated++;
     } catch (error: any) {
-      console.error(`Error creating content for book ${book.title}:`, error);
+      console.error(`Error processing book ${book.title}:`, error);
     }
   }
 
@@ -1021,4 +1107,160 @@ async function processTranscribeAudioForContent(supabase: any, contentItem: Cont
     success: true,
     transcript_content_id: transcriptContent.id
   };
+}
+
+// =============================================================================
+// YOUTUBE SUBTITLE EXTRACTION
+// =============================================================================
+
+/**
+ * Extract YouTube subtitles/captions for selected content items
+ * Creates child content items with type='transcript' for each subtitle track
+ */
+export async function handleYouTubeSubtitleExtract(supabase: any, payload: YouTubeSubtitlePayload): Promise<ContentResponse> {
+  const results: YouTubeSubtitleResult[] = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      const result = await processYouTubeSubtitlesForContent(supabase, contentItem);
+      results.push(result);
+    } catch (error: any) {
+      console.error(`Error extracting subtitles for content ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  return {
+    success: true,
+    data: results
+  };
+}
+
+async function processYouTubeSubtitlesForContent(supabase: any, contentItem: ContentItem): Promise<YouTubeSubtitleResult> {
+  // Extract YouTube video ID from content
+  let videoId: string | null = null;
+
+  // First check metadata (from playlist extraction)
+  if (contentItem.metadata?.youtube_video_id) {
+    videoId = contentItem.metadata.youtube_video_id;
+  } else {
+    // Extract from content data (URL)
+    videoId = extractYouTubeVideoId(contentItem.data);
+  }
+
+  if (!videoId) {
+    throw new Error('No YouTube video ID found in content');
+  }
+
+  console.log(`Extracting subtitles for video ID: ${videoId}`);
+
+  // Call Go binary to fetch subtitles
+  const request: SubtitleRequest = { video_id: videoId };
+  const response = await executeGo({
+    method: 'youtube.subtitles',
+    params: request
+  });
+
+  if (!response.success) {
+    throw new Error(`Subtitle extraction failed: ${response.error}`);
+  }
+
+  if (!isSubtitleResponse(response.result)) {
+    throw new Error('Invalid subtitle response format');
+  }
+
+  const subtitleResponse = response.result;
+  const tracks = subtitleResponse.tracks;
+
+  if (tracks.length === 0) {
+    return {
+      content_id: contentItem.id,
+      success: true,
+      video_id: videoId,
+      tracks_found: 0,
+      transcript_content_ids: []
+    };
+  }
+
+  console.log(`Found ${tracks.length} subtitle tracks for video ${videoId}`);
+
+  // Create child content items for each subtitle track
+  const transcriptContentIds: string[] = [];
+
+  for (const track of tracks) {
+    try {
+      // Create transcript content as child
+      const { data: transcriptContent, error: insertError } = await supabase
+        .from('content')
+        .insert({
+          type: 'transcript',
+          data: track.content,
+          metadata: {
+            youtube_video_id: videoId,
+            language_code: track.language_code,
+            track_name: track.name,
+            is_automatic: track.is_automatic,
+            source_content_id: contentItem.id,
+            subtitle_extracted_at: new Date().toISOString()
+          },
+          group_id: contentItem.group_id,
+          user_id: contentItem.user_id,
+          parent_content_id: contentItem.id
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error(`Error creating transcript content for ${track.language_code}:`, insertError);
+        continue;
+      }
+
+      if (transcriptContent) {
+        transcriptContentIds.push(transcriptContent.id);
+        console.log(`Created transcript content ${transcriptContent.id} for ${track.language_code} (${track.name})`);
+      }
+    } catch (error: any) {
+      console.error(`Error processing subtitle track ${track.language_code}:`, error);
+    }
+  }
+
+  return {
+    content_id: contentItem.id,
+    success: true,
+    video_id: videoId,
+    tracks_found: tracks.length,
+    transcript_content_ids: transcriptContentIds
+  };
+}
+
+/**
+ * Extract YouTube video ID from various URL formats
+ * Supports:
+ * - https://www.youtube.com/watch?v=VIDEO_ID
+ * - https://youtu.be/VIDEO_ID
+ * - https://m.youtube.com/watch?v=VIDEO_ID
+ * - https://youtube.com/embed/VIDEO_ID
+ */
+function extractYouTubeVideoId(text: string): string | null {
+  const patterns = [
+    // Standard watch URLs: youtube.com/watch?v=VIDEO_ID
+    /(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
+    // Short URLs: youtu.be/VIDEO_ID
+    /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+    // Embed URLs: youtube.com/embed/VIDEO_ID
+    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
 }

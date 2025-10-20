@@ -182,7 +182,7 @@ export const ContentStack: React.FC<ContentStackProps> = ({
     );
   }
 
-  if (allItems.length === 0 && !showInput) {
+  if (allItems.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center text-gray-500">
@@ -198,34 +198,6 @@ export const ContentStack: React.FC<ContentStackProps> = ({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Content Input */}
-      {showInput && onInputClose && (
-        <div className="border-b border-gray-200 bg-white">
-          {contentType === 'search' ? (
-            <SearchWorkflowSelector
-              workflows={searchWorkflows}
-              isVisible={showInput}
-              onClose={onInputClose}
-              searchQuery={searchQuery}
-              onSearchChange={onSearchQueryChange || (() => {})}
-              isSearching={isSearching}
-              activeSearch={activeExternalSearch}
-              onActivateSearch={onActivateExternalSearch}
-              onExecuteSearch={onExecuteExternalSearch}
-            />
-          ) : (
-            <ContentInput
-              groupId={groupId}
-              parentContentId={parentContentId}
-              onContentAdded={handleContentAdded}
-              isVisible={showInput}
-              onClose={onInputClose}
-              contentType={contentType}
-            />
-          )}
-        </div>
-      )}
-
       {/* Stack View */}
       <div className="flex-1 flex flex-col items-center justify-center p-4 bg-gray-50">
         {currentItem ? (

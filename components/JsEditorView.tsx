@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Content } from './ContentRepository';
+import { Content, Tag } from './ContentRepository';
 import { MonacoEditor } from './MonacoEditor';
 import { ContentList } from './ContentList';
 import { ContentInput } from './ContentInput';
@@ -20,6 +20,7 @@ interface JsEditorViewProps {
   showInput: boolean;
   onInputClose: () => void;
   viewMode?: 'chronological' | 'random' | 'alphabetical' | 'oldest';
+  availableTags?: Tag[];
 }
 
 export const JsEditorView: React.FC<JsEditorViewProps> = ({
@@ -34,7 +35,8 @@ export const JsEditorView: React.FC<JsEditorViewProps> = ({
   onContentAdded,
   showInput,
   onInputClose,
-  viewMode = 'chronological'
+  viewMode = 'chronological',
+  availableTags = []
 }) => {
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([]);
   const [executor] = useState(() => new JsExecutor(setConsoleEntries));
@@ -79,6 +81,7 @@ export const JsEditorView: React.FC<JsEditorViewProps> = ({
         }}
         isVisible={showInput}
         onClose={onInputClose}
+        availableTags={availableTags}
       />
       
       {/* Content List - Below Editor */}

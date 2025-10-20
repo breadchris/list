@@ -159,7 +159,7 @@ export async function callOpenAI(systemPrompt: string, userContent: string): Pro
 }
 
 // Call OpenAI Chat Completion (for chat messages)
-export async function callOpenAIChat(messages: OpenAIMessage[]): Promise<string> {
+export async function callOpenAIChat(messages: OpenAIMessage[], stream?: boolean): Promise<string> {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
     throw new Error('OpenAI API key not configured');
@@ -175,7 +175,8 @@ export async function callOpenAIChat(messages: OpenAIMessage[]): Promise<string>
       model: 'gpt-4',
       messages: messages,
       temperature: 0.7,
-      max_tokens: 1000
+      max_tokens: 1000,
+      stream: stream || false
     })
   });
 
@@ -192,4 +193,89 @@ export async function callOpenAIChat(messages: OpenAIMessage[]): Promise<string>
   }
 
   return assistantMessage;
+}
+
+// Call OpenAI Chat Completion with streaming support
+export async function* callOpenAIChatStream(messages: OpenAIMessage[]): AsyncGenerator<string, void, unknown> {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!openaiApiKey) {
+    throw new Error('OpenAI API key not configured');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-4',
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 1000,
+      stream: true
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} - ${errorData}`);
+  }
+
+  if (!response.body) {
+    throw new Error('No response body available for streaming');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      // Decode the chunk and add to buffer
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete lines from buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+
+        // Skip empty lines and comments
+        if (!trimmedLine || trimmedLine.startsWith(':')) {
+          continue;
+        }
+
+        // Parse SSE data
+        if (trimmedLine.startsWith('data: ')) {
+          const data = trimmedLine.slice(6);
+
+          // Check for stream end
+          if (data === '[DONE]') {
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+
+            if (content) {
+              yield content;
+            }
+          } catch (error) {
+            console.error('Error parsing SSE data:', error, 'Data:', data);
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }

@@ -1,4 +1,4 @@
-# Build Go binary
+# Stage 1: Build Go binary
 FROM golang:1.23-alpine AS go-builder
 
 WORKDIR /go-build
@@ -12,11 +12,23 @@ RUN go mod tidy && go mod download
 # Build Go binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o youtube-handler .
 
-# Use AWS Lambda Node.js 20 base image
-FROM public.ecr.aws/lambda/nodejs:20
+# Stage 2: Build TypeScript with esbuild
+FROM node:20-alpine AS ts-builder
 
-# Force rebuild with timestamp
-LABEL build_timestamp="2025-10-16T00:00:00Z"
+WORKDIR /build
+
+# Copy package files and install all dependencies (including dev)
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy source code
+COPY src/ ./src/
+
+# Bundle with esbuild (no tree-shaking to preserve handler)
+RUN npm run build
+
+# Stage 3: Lambda runtime
+FROM public.ecr.aws/lambda/nodejs:20
 
 # Set IS_SANDBOX to enable bypassPermissions mode
 ENV IS_SANDBOX=1
@@ -25,17 +37,15 @@ ENV IS_SANDBOX=1
 COPY --from=go-builder /go-build/youtube-handler /usr/local/bin/youtube-handler
 RUN chmod +x /usr/local/bin/youtube-handler
 
-# Install Claude Code CLI globally as root
+# Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
-# Copy package files
-COPY package.json ./
+# Copy package files and install production dependencies
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-# Install production dependencies
-RUN npm install --omit=dev
-
-# Copy pre-built bundled Lambda function
-COPY dist/index.bundled.js ./dist/index.js
+# Copy compiled TypeScript from builder stage
+COPY --from=ts-builder /build/dist ./dist
 
 # Set the CMD to your handler
 CMD [ "dist/index.handler" ]

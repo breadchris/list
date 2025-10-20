@@ -271,6 +271,137 @@ func TestIMDbImport_Commit(t *testing.T) {
 - **Rollback by default** - Always use `defer tx.Rollback()` in validation tests
 - **Error handling** - Rollback on error in commit tests before returning
 
+## Go Testing Guidelines
+
+**CRITICAL**: Always use Go tests for validation and integration testing
+
+### When to Use Go Tests
+
+Use Go tests (`*_test.go` files) for:
+- **API integration tests** - Testing live external services (Lambda, Libgen, TMDb, etc.)
+- **Data validation** - Testing parsing, transformation, and validation logic
+- **Multi-step workflows** - Testing complex operations that span multiple systems
+- **Regression testing** - Ensuring existing functionality continues to work
+
+Do NOT use TypeScript/JavaScript for integration testing - keep those for unit tests only.
+
+### Test Structure
+
+Follow the established patterns in `imdb_integration_test.go`:
+
+1. **Table-Driven Tests** - Use struct slices for test cases with expected inputs/outputs
+2. **Shared Helper Functions** - Extract HTTP clients, parsers, and common setup into reusable functions
+3. **Integration Tests** - Test against live APIs with real data
+4. **Validation Tests** - Unit tests for parsing and transformation logic using known inputs
+
+### Table-Driven Testing Pattern
+
+Always prefer table-driven tests over individual test functions:
+
+```go
+func TestLibgenURLBuilding(t *testing.T) {
+    testCases := []struct {
+        request       LibgenSearchRequest
+        expectedQuery string
+        expectedCols  []string
+        desc          string
+    }{
+        {
+            request:       LibgenSearchRequest{Query: "python", SearchType: "title"},
+            expectedQuery: "python",
+            expectedCols:  []string{"title"},
+            desc:          "single word title search",
+        },
+        {
+            request:       LibgenSearchRequest{Query: "designing interfaces", SearchType: "default"},
+            expectedQuery: "designing interfaces",
+            expectedCols:  []string{"title", "author"},
+            desc:          "multi-word default search",
+        },
+    }
+
+    for _, tc := range testCases {
+        t.Run(tc.desc, func(t *testing.T) {
+            // Test logic here
+            t.Logf("✓ Validated: %s", tc.desc)
+        })
+    }
+}
+```
+
+### Integration Test Pattern
+
+For testing live external services:
+
+```go
+func TestLibgenIntegration(t *testing.T) {
+    t.Log("🧪 Testing Libgen search integration...")
+
+    testCases := []struct {
+        query          string
+        searchType     string
+        expectedMinMax struct{ min, max int }
+        desc           string
+    }{
+        {
+            query:          "python",
+            searchType:     "title",
+            expectedMinMax: struct{ min, max int }{1, 100},
+            desc:           "single-word search",
+        },
+    }
+
+    for _, tc := range testCases {
+        t.Run(tc.desc, func(t *testing.T) {
+            result := callExternalAPI(t, tc.query)
+            // Validate result
+            t.Logf("✓ Completed: %s", tc.desc)
+        })
+    }
+}
+```
+
+### Test Organization
+
+- **Location**: Place tests in `lambda/function/*_test.go` for Lambda-related code, or in root directory for general utilities
+- **Naming**: Use `TestFunctionName` for individual tests, `TestFeatureIntegration` for integration tests
+- **Grouping**: Group related tests in the same file (e.g., `libgen_test.go` for all Libgen-related tests)
+- **Helpers**: Extract shared logic into helper functions within the same file or in a `testing_helpers.go` file
+
+### Best Practices
+
+- **Clear test names**: Use descriptive `desc` fields in table-driven tests
+- **Logging**: Use `t.Log()` for progress, `t.Logf()` for formatted output
+- **Validation**: Use `t.Error()` for non-fatal failures, `t.Fatal()` for fatal failures
+- **Subtests**: Always use `t.Run()` for table-driven tests to get isolated results
+- **Timeouts**: Set reasonable timeouts for external API calls (e.g., 30 seconds)
+- **Test data**: Use realistic test data that covers edge cases
+
+### Example: Libgen Search Tests
+
+See `lambda/function/libgen_test.go` for a complete example that includes:
+- URL building validation tests
+- Title extraction validation tests
+- Live integration tests with multiple query types
+- Multi-word query handling tests
+- Shared HTTP client and result parsing logic
+
+### Running Tests
+
+```bash
+# Run all tests
+go test -v
+
+# Run specific test file
+go test -v ./lambda/function/libgen_test.go
+
+# Run specific test function
+go test -v -run TestLibgenIntegration
+
+# Run with timeout
+go test -v -timeout 5m
+```
+
 ## Go HTTP Server Guidelines
 
 **CRITICAL**: The Go HTTP server is for serving the React app only
@@ -767,6 +898,194 @@ await signInWithApple();
 - Cannot test in Expo Go app (requires custom build)
 - Web testing requires actual Apple ID login
 
+## Spotify OAuth Configuration
+
+**CRITICAL**: Supports both sign-in and account linking workflows
+
+### Supabase Dashboard Configuration (Required)
+
+**Prerequisites:**
+- Active Spotify Developer Account (free)
+- Access to developer.spotify.com
+
+**Steps:**
+1. **Create Spotify App**
+   - Go to developer.spotify.com/dashboard
+   - Create new app with name and description
+   - Add Redirect URI: `https://zazsrepfnamdmibcyenx.supabase.co/auth/v1/callback`
+   - Save and note the `Client ID` and `Client Secret`
+
+2. **Enable Spotify OAuth Provider in Supabase**
+   - Go to Authentication > Providers > Spotify
+   - Toggle Spotify to enabled
+   - Enter `Client ID` from Spotify Dashboard
+   - Enter `Client Secret` from Spotify Dashboard
+   - Configure scopes: `playlist-read-private playlist-read-collaborative`
+   - Click Save
+
+3. **Enable Identity Linking (Optional but Recommended)**
+   - Go to Authentication > Settings > Identity Linking
+   - Toggle "Enable Manual Linking" to ON
+   - This allows users to link Spotify to existing accounts without creating separate accounts
+
+### Authentication Behavior
+
+**Two Workflows:**
+
+1. **Sign-In Mode** - When user is NOT authenticated
+   - Uses `signInWithSpotify()` from SupabaseClient.ts
+   - Creates new user account if Spotify email not found
+   - User becomes authenticated with Spotify as primary identity
+
+2. **Account Linking Mode** - When user IS already authenticated
+   - Uses `linkSpotifyAccount()` from SupabaseClient.ts
+   - Links Spotify identity to current user account
+   - Preserves existing authentication, adds Spotify as linked identity
+   - User can access Spotify playlists without separate account
+
+**Automatic Detection:**
+The `useSpotifyAuth` hook automatically detects which mode to use:
+
+```typescript
+const login = async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (session?.user) {
+    // User logged in → Link Spotify to existing account
+    await linkSpotifyAccount();
+  } else {
+    // No user → Sign in with Spotify
+    await signInWithSpotify();
+  }
+};
+```
+
+### Implementation Details
+
+**Client-side Usage:**
+
+```typescript
+import { useSpotifyAuth } from '../hooks/useSpotifyAuth';
+
+// In component
+const { isAuthenticated, accessToken, login } = useSpotifyAuth();
+
+// Trigger Spotify OAuth (auto-detects sign-in vs. linking)
+await login();
+```
+
+**Identity Detection:**
+
+The hook checks `user.identities[]` array instead of `app_metadata.provider`:
+
+```typescript
+const spotifyIdentity = session?.user?.identities?.find(
+  identity => identity.provider === 'spotify'
+);
+
+if (spotifyIdentity && session?.provider_token) {
+  // User has Spotify linked
+  setAuthState({ isAuthenticated: true, accessToken: session.provider_token });
+}
+```
+
+**Unlinking Spotify:**
+
+```typescript
+import { unlinkSpotifyAccount } from './SupabaseClient';
+
+// Remove Spotify from linked identities
+await unlinkSpotifyAccount();
+```
+
+**Callback URL Format:**
+- Production: `https://zazsrepfnamdmibcyenx.supabase.co/auth/v1/callback`
+- Local: `http://localhost:3004` (or current origin)
+
+### Key Files
+
+- `/components/SupabaseClient.ts` - OAuth functions (`signInWithSpotify`, `linkSpotifyAccount`, `unlinkSpotifyAccount`)
+- `/hooks/useSpotifyAuth.ts` - Authentication state and auto-detection logic
+- `/hooks/useLinkedAccounts.ts` - Manage all linked identities (Google, Apple, Spotify)
+- `/components/SpotifyPlaylistModal.tsx` - UI for linking and importing playlists
+
+### Testing and Verification
+
+**Web Testing:**
+- Works in all modern browsers
+- Test sign-in flow (no existing session)
+- Test linking flow (with existing email/Google/Apple session)
+- Verify Spotify playlists are accessible after authentication
+
+**Account Linking Testing:**
+1. Sign in with email/Google/Apple
+2. Click "Import" → Select Spotify
+3. Click "Link Spotify Account"
+4. Verify Spotify is added to existing account (no new account created)
+5. Check linked identities in Supabase dashboard
+
+**Unlinking Testing:**
+1. While authenticated with Spotify linked
+2. Click "Unlink Spotify" in playlist modal
+3. Verify Spotify identity removed but user still authenticated with primary identity
+
+### Security Considerations
+
+- **Token Storage**: `provider_token` stored in session, not localStorage
+- **Scope Limitation**: Only request necessary scopes (playlist read access)
+- **Identity Conflicts**: If Spotify email already exists with different identity, linking will fail with clear error message
+- **Manual Linking Required**: Supabase "Enable Manual Linking" must be ON for account linking to work
+
+### Common Issues and Solutions
+
+**"Invalid redirect URI" error:**
+- Verify callback URL in Spotify Dashboard exactly matches: `https://zazsrepfnamdmibcyenx.supabase.co/auth/v1/callback`
+- Ensure no trailing slashes or extra parameters
+
+**"Email already exists" error when linking:**
+- This means a separate account exists with the Spotify email
+- User should sign in with that account first, then link
+- Or delete the separate account and link to current one
+
+**"Spotify account already linked" error:**
+- Spotify is already linked to this account
+- Check linked identities with `useLinkedAccounts()` hook
+- Can unlink and re-link if needed
+
+**Provider token not available:**
+- Ensure Supabase Dashboard has correct Client ID and Secret
+- Check OAuth scopes are configured
+- Verify user completed OAuth flow (didn't cancel)
+
+**User created separate account instead of linking:**
+- Happens if "Enable Manual Linking" is OFF in Supabase
+- Or if user signed out before linking
+- Solution: Use `linkSpotifyAccount()` explicitly when user is authenticated
+
+### Spotify API Integration
+
+**Using the Access Token:**
+
+```typescript
+const { accessToken } = useSpotifyAuth();
+
+// Create Spotify service client
+const spotifyService = new SpotifyService(accessToken);
+
+// Fetch playlists
+const playlists = await spotifyService.getUserPlaylists(50, 0);
+
+// Fetch tracks from playlist
+const tracks = await spotifyService.getAllPlaylistTracks(playlistId);
+```
+
+**Importing Playlists:**
+
+The system automatically imports Spotify playlists as hierarchical content:
+- Playlist becomes parent `content` item with type `text`
+- Each track becomes child `content` item with metadata (artist, album, duration)
+- Uses `ContentRepository.importSpotifyPlaylist()` method
+
 ## JSON Naming Convention
 
 **CRITICAL**: Always use snake_case for JSON keys across all contexts
@@ -1042,51 +1361,68 @@ The Lambda function for Claude Code execution should always be tested locally be
 
 ### Local Docker Testing
 
+**CRITICAL**: All code changes MUST pass local Docker tests before deploying to Lambda
+
 **Prerequisites:**
 - Docker installed and running
-- `ANTHROPIC_API_KEY` environment variable set
-- AWS credentials configured (for S3 access)
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` environment variables set
 
-**Quick Test:**
+**Mandatory Testing Workflow:**
 ```bash
 cd lambda/function
 
-# Build and test in one command
-./test-local.sh
+# Run full test (REQUIRED before deployment)
+npm run test:docker:full
 ```
 
-**Manual Testing:**
+This command:
+1. Kills any existing test containers on port 9000
+2. Builds the Docker image with multi-stage TypeScript bundling
+3. Starts the Lambda Runtime Interface Emulator
+4. Invokes the handler with test payload
+5. Validates handler loaded successfully (200 or 400 response, NOT 502)
+6. Stops the container
+7. **Fails if handler cannot load**
+
+**CommonJS Bundling:**
+The build process creates `dist/index.cjs` (not `.js`) to ensure AWS Lambda Node.js 20 runtime treats the bundle as CommonJS, avoiding "Dynamic require" errors.
+
+**Build Configuration:**
+- Output: `dist/index.cjs` (CommonJS extension)
+- Format: `--format=cjs` (esbuild)
+- Handler: `dist/index.handler` (Lambda CMD)
+
+**Manual Testing (if needed):**
 ```bash
 # 1. Build Docker image
-docker build -t claude-lambda-test .
+npm run test:docker:build
 
 # 2. Run Lambda Runtime Interface Emulator
-docker run --rm -p 9000:8080 \
-  -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
-  -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
-  -e AWS_REGION="us-east-1" \
-  -e S3_BUCKET_NAME="claude-code-sessions" \
-  -e NODE_ENV="development" \
-  claude-lambda-test
+npm run test:docker:run
 
 # 3. Test with curl (in another terminal)
-curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" \
+curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations \
   -H "Content-Type: application/json" \
-  -d @test-payload.json | jq '.'
+  --data-binary @test-payload-simple.json
 ```
 
-**Using test payload file:**
-```bash
-# lambda/function/test-payload.json
+**Test Payload:**
+```json
 {
-  "body": "{\"prompt\": \"What is 2 + 2?\"}",
-  "requestContext": {
-    "http": {
-      "method": "POST"
-    }
+  "action": "youtube-subtitle-extract",
+  "payload": {
+    "selectedContent": [{
+      "id": "test-123",
+      "type": "text",
+      "data": "https://www.youtube.com/watch?v=SOUvvDTBdic",
+      "metadata": {
+        "youtube_video_id": "SOUvvDTBdic"
+      },
+      "group_id": "test-group",
+      "user_id": "test-user"
+    }]
   },
-  "rawPath": "/claude-code"
+  "sync": true
 }
 ```
 
@@ -1115,6 +1451,11 @@ The Lambda function returns detailed debugging information in the HTTP response:
 
 ### Common Issues and Solutions
 
+**Issue: "Dynamic require of 'buffer' is not supported" (502 error)**
+- **Cause**: Lambda loading bundle as ESM instead of CommonJS due to `.js` extension ambiguity
+- **Solution**: Ensure esbuild outputs to `dist/index.cjs` (not `.js`) for unambiguous CommonJS
+- **Prevention**: Always run `npm run test:docker:full` before deploying to catch this locally
+
 **Issue: Console.log not appearing in CloudWatch**
 - **Cause**: Node.js Lambda buffers stdout/stderr
 - **Solution**: Use `process.stderr.write()` for immediate output, or rely on response debugging fields
@@ -1130,6 +1471,10 @@ The Lambda function returns detailed debugging information in the HTTP response:
 **Issue: "Claude Code process exited with code 1"**
 - **Debugging**: Check `stdout` and `stderr` fields in response
 - **Common causes**: Missing ANTHROPIC_API_KEY, CLI not found, invalid API key
+
+**Issue: Port 9000 already in use**
+- **Cause**: Previous Docker container still running from failed test
+- **Solution**: Run `npm run test:docker:cleanup` or use `npm run test:docker:full` (includes cleanup)
 
 ### Deployment After Local Testing
 

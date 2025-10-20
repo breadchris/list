@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { YouTubeVideoMetadata } from './ContentRepository';
 
 interface YouTubeVideoCardProps {
@@ -14,6 +14,8 @@ export const YouTubeVideoCard: React.FC<YouTubeVideoCardProps> = ({
   className = '',
   onClick
 }) => {
+  // Track thumbnail image loading state
+  const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     if (videoUrl) {
@@ -88,17 +90,26 @@ export const YouTubeVideoCard: React.FC<YouTubeVideoCardProps> = ({
       `}
       onClick={handleCardClick}
     >
-      {/* Thumbnail with Duration Overlay */}
-      {thumbnailUrl && (
+      {/* Hidden image preloader - loads thumbnail but doesn't display until successful */}
+      {thumbnailUrl && !thumbnailLoaded && (
+        <img
+          src={thumbnailUrl}
+          alt=""
+          className="hidden"
+          onLoad={() => setThumbnailLoaded(true)}
+          onError={() => {
+            // Thumbnail failed to load - component will not show thumbnail section
+          }}
+        />
+      )}
+
+      {/* Thumbnail with Duration Overlay - only shown if image loaded successfully */}
+      {thumbnailUrl && thumbnailLoaded && (
         <div className="relative aspect-video bg-gray-100 overflow-hidden">
           <img
             src={thumbnailUrl}
             alt={metadata.youtube_title || 'YouTube Video'}
             className="w-full h-full object-cover"
-            onError={(e) => {
-              // Hide image on error
-              e.currentTarget.style.display = 'none';
-            }}
           />
 
           {/* Duration badge */}

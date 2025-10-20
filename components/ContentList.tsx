@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Content, contentRepository, Tag, SEOMetadata, SharingMetadata, YouTubeVideoMetadata } from './ContentRepository';
+import { Content, contentRepository, Tag, TagFilter, SEOMetadata, SharingMetadata, YouTubeVideoMetadata } from './ContentRepository';
 import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
 import { JsContentDisplay } from './JsContentDisplay';
@@ -10,6 +10,7 @@ import { AudioDisplay } from './AudioDisplay';
 import { EpubViewer } from './EpubViewer';
 import { TranscriptViewer } from './TranscriptViewer';
 import { TsxRenderer } from './TsxRenderer';
+import { PluginRenderer } from './PluginRenderer';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useInfiniteContentByTag, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -44,7 +45,7 @@ interface ContentListProps {
   activeExternalSearch?: string | null;
   onActivateExternalSearch?: (workflowId: string) => void;
   onExecuteExternalSearch?: () => void;
-  selectedTagFilter?: Tag[];
+  selectedTagFilter?: TagFilter[];
 }
 
 interface TagDisplayProps {
@@ -152,6 +153,16 @@ export const ContentList: React.FC<ContentListProps> = ({
   // Hover state for tag button visibility
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
 
+  // Split tag filters into include and exclude arrays
+  const includeTagIds = useMemo(() =>
+    selectedTagFilter.filter(tf => tf.mode === 'include').map(tf => tf.tag.id),
+    [selectedTagFilter]
+  );
+  const excludeTagIds = useMemo(() =>
+    selectedTagFilter.filter(tf => tf.mode === 'exclude').map(tf => tf.tag.id),
+    [selectedTagFilter]
+  );
+
   // Determine which query to use based on search state and tag filter
   const isTagFilterActive = selectedTagFilter.length > 0 && !isSearching;
 
@@ -177,7 +188,7 @@ export const ContentList: React.FC<ContentListProps> = ({
     fetchNextPage: fetchMoreTag,
     error: tagError,
     status: tagStatus
-  } = useInfiniteContentByTag(groupId, parentContentId, selectedTagFilter.map(tag => tag.id), { enabled: isTagFilterActive, viewMode });
+  } = useInfiniteContentByTag(groupId, parentContentId, includeTagIds, excludeTagIds, { enabled: isTagFilterActive, viewMode });
 
   // Search query for search mode
   const {
@@ -689,19 +700,7 @@ export const ContentList: React.FC<ContentListProps> = ({
           </div>
         )}
 
-        {/* Sub-item Input - Show below parent content when adding sub-items */}
-        {showInput && parentContentId && onContentAdded && onInputClose && (
-          <ContentInput
-            groupId={groupId}
-            parentContentId={parentContentId}
-            onContentAdded={onContentAdded}
-            isVisible={showInput}
-            onClose={onInputClose}
-            contentType={contentType}
-          />
-        )}
-
-        {displayItems.length === 0 && !currentLoading && currentStatus === 'success' && (!parentContent || isSearching) && !showInput ? (
+        {displayItems.length === 0 && !currentLoading && currentStatus === 'success' && (!parentContent || isSearching) ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               {isSearching ? (
@@ -719,34 +718,6 @@ export const ContentList: React.FC<ContentListProps> = ({
           </div>
         ) : (
           <div className="p-3 sm:p-4">
-            {/* Root-level Input - Show at top when adding root items */}
-            {showInput && !parentContentId && onContentAdded && onInputClose && (
-              <div className="mb-4">
-                {contentType === 'search' ? (
-                  <SearchWorkflowSelector
-                    workflows={searchWorkflows}
-                    isVisible={showInput}
-                    onClose={onInputClose}
-                    searchQuery={searchQuery}
-                    onSearchChange={onSearchQueryChange || (() => {})}
-                    isSearching={isSearching}
-                    activeSearch={activeExternalSearch}
-                    onActivateSearch={onActivateExternalSearch}
-                    onExecuteSearch={onExecuteExternalSearch}
-                  />
-                ) : (
-                  <ContentInput
-                    groupId={groupId}
-                    parentContentId={parentContentId}
-                    onContentAdded={onContentAdded}
-                    isVisible={showInput}
-                    onClose={onInputClose}
-                    contentType={contentType}
-                  />
-                )}
-              </div>
-            )}
-
             {/* Child Content Items */}
             <div className={`space-y-3`}>
               {currentLoading && persistentItems.length > 0 && (
@@ -970,6 +941,39 @@ export const ContentList: React.FC<ContentListProps> = ({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                               </svg>
                               <span>{item.child_count} component{item.child_count === 1 ? '' : 's'}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : item.type === 'plugin' ? (
+                      <div>
+                        <div className="flex items-center space-x-2 mb-2">
+                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                          </svg>
+                          <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">Plugin</span>
+                        </div>
+
+                        {/* Plugin Renderer */}
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
+                          <PluginRenderer
+                            pluginCode={item.data}
+                            contentId={item.id}
+                            groupId={item.group_id}
+                          />
+                        </div>
+
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-blue-600" title={`${item.child_count} child item${item.child_count === 1 ? '' : 's'}`}>
+                              <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                              <span>{item.child_count} item{item.child_count === 1 ? '' : 's'}</span>
                             </div>
                           )}
                         </div>

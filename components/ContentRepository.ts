@@ -126,6 +126,11 @@ export interface Tag {
   user_id: string;
 }
 
+export interface TagFilter {
+  tag: Tag;
+  mode: 'include' | 'exclude';
+}
+
 export interface ContentTag {
   content_id: string;
   tag_id: string;
@@ -269,68 +274,104 @@ export class ContentRepository {
   async getContentByParentAndTag(
     groupId: string,
     parentId: string | null,
-    tagIds: string | string[],
+    includeTagIds: string | string[],
+    excludeTagIds: string | string[] = [],
     offset = 0,
     limit = 20,
     viewMode: 'chronological' | 'random' | 'alphabetical' | 'oldest' = 'chronological'
   ): Promise<Content[]> {
-    // Normalize tagIds to always be an array
-    const tagIdArray = Array.isArray(tagIds) ? tagIds : [tagIds];
+    // Normalize tag IDs to always be arrays
+    const includeTagArray = Array.isArray(includeTagIds) ? includeTagIds : [includeTagIds];
+    const excludeTagArray = Array.isArray(excludeTagIds) ? excludeTagIds : [excludeTagIds];
 
-    if (tagIdArray.length === 0) {
+    if (includeTagArray.length === 0 && excludeTagArray.length === 0) {
       return [];
     }
 
-    // Step 1: Get content IDs that have ALL specified tags
-    // Use aggregation to find content that has all tags (AND logic, not OR)
-    let contentIds: string[] = [];
+    // Step 1: Get content IDs that have ALL included tags (AND logic)
+    let includedContentIds: string[] = [];
 
-    if (tagIdArray.length === 1) {
-      // Single tag - simple query
-      const { data: taggedContentIds, error: tagError } = await supabase
+    if (includeTagArray.length > 0) {
+      if (includeTagArray.length === 1) {
+        // Single include tag - simple query
+        const { data: taggedContentIds, error: tagError } = await supabase
+          .from('content_tags')
+          .select('content_id')
+          .eq('tag_id', includeTagArray[0]);
+
+        if (tagError) {
+          console.error('Error fetching tagged content:', tagError);
+          throw new Error(tagError.message);
+        }
+
+        includedContentIds = taggedContentIds?.map(item => item.content_id) || [];
+      } else {
+        // Multiple include tags - find intersection (content with ALL tags)
+        const { data: allTaggedContent, error: tagError } = await supabase
+          .from('content_tags')
+          .select('content_id, tag_id')
+          .in('tag_id', includeTagArray);
+
+        if (tagError) {
+          console.error('Error fetching tagged content:', tagError);
+          throw new Error(tagError.message);
+        }
+
+        // Group by content_id and count how many tags each content has
+        const contentTagCount = new Map<string, Set<string>>();
+        allTaggedContent?.forEach(item => {
+          if (!contentTagCount.has(item.content_id)) {
+            contentTagCount.set(item.content_id, new Set());
+          }
+          contentTagCount.get(item.content_id)!.add(item.tag_id);
+        });
+
+        // Filter to only content that has ALL specified tags
+        includedContentIds = Array.from(contentTagCount.entries())
+          .filter(([, tags]) => tags.size === includeTagArray.length)
+          .map(([contentId]) => contentId);
+      }
+    }
+
+    // Step 2: Get content IDs that have ANY excluded tags (to filter out)
+    let excludedContentIds: string[] = [];
+
+    if (excludeTagArray.length > 0) {
+      const { data: excludedTaggedContent, error: excludeError } = await supabase
         .from('content_tags')
         .select('content_id')
-        .eq('tag_id', tagIdArray[0]);
+        .in('tag_id', excludeTagArray);
 
-      if (tagError) {
-        console.error('Error fetching tagged content:', tagError);
-        throw new Error(tagError.message);
+      if (excludeError) {
+        console.error('Error fetching excluded tagged content:', excludeError);
+        throw new Error(excludeError.message);
       }
 
-      contentIds = taggedContentIds?.map(item => item.content_id) || [];
+      excludedContentIds = excludedTaggedContent?.map(item => item.content_id) || [];
+    }
+
+    // Step 3: Combine logic - content must have ALL included tags AND NOT have ANY excluded tags
+    let contentIds: string[] = [];
+
+    if (includeTagArray.length > 0 && excludeTagArray.length > 0) {
+      // Both include and exclude: filter included content to remove excluded
+      const excludedSet = new Set(excludedContentIds);
+      contentIds = includedContentIds.filter(id => !excludedSet.has(id));
+    } else if (includeTagArray.length > 0) {
+      // Only include: use included content
+      contentIds = includedContentIds;
     } else {
-      // Multiple tags - find intersection (content with ALL tags)
-      // Query all content_tags for the specified tags
-      const { data: allTaggedContent, error: tagError } = await supabase
-        .from('content_tags')
-        .select('content_id, tag_id')
-        .in('tag_id', tagIdArray);
-
-      if (tagError) {
-        console.error('Error fetching tagged content:', tagError);
-        throw new Error(tagError.message);
-      }
-
-      // Group by content_id and count how many tags each content has
-      const contentTagCount = new Map<string, Set<string>>();
-      allTaggedContent?.forEach(item => {
-        if (!contentTagCount.has(item.content_id)) {
-          contentTagCount.set(item.content_id, new Set());
-        }
-        contentTagCount.get(item.content_id)!.add(item.tag_id);
-      });
-
-      // Filter to only content that has ALL specified tags
-      contentIds = Array.from(contentTagCount.entries())
-        .filter(([, tags]) => tags.size === tagIdArray.length)
-        .map(([contentId]) => contentId);
+      // Only exclude: would need to query all content in group/parent first
+      // For now, return empty if only exclude tags are specified without include tags
+      // This prevents accidentally returning all content
+      return [];
     }
 
     if (contentIds.length === 0) {
-      return []; // No content with all specified tags
+      return []; // No content matching the filter criteria
     }
 
-    // Step 2: Get the content with all tags (not just the filtered tag)
+    // Step 4: Get the full content with all tags (not just the filtered tags)
     let query = supabase
       .from('content')
       .select(`
@@ -915,6 +956,40 @@ export class ContentRepository {
     return data?.map(item => (item as any).tags).filter(Boolean) || [];
   }
 
+  async getTagsForGroup(groupId: string): Promise<Tag[]> {
+    const { data, error } = await supabase
+      .from('content_tags')
+      .select(`
+        tags (
+          id,
+          created_at,
+          name,
+          color,
+          user_id
+        ),
+        content!inner (
+          group_id
+        )
+      `)
+      .eq('content.group_id', groupId);
+
+    if (error) {
+      console.error('Error fetching tags for group:', error);
+      throw new Error(error.message);
+    }
+
+    // Extract unique tags (deduplicate by tag id)
+    const tagMap = new Map<string, Tag>();
+    data?.forEach(item => {
+      const tag = (item as any).tags;
+      if (tag && !tagMap.has(tag.id)) {
+        tagMap.set(tag.id, tag);
+      }
+    });
+
+    return Array.from(tagMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   // User methods
   async createOrUpdateUser(id: string, username?: string): Promise<User> {
     try {
@@ -1081,7 +1156,7 @@ export class ContentRepository {
         payload: {
           selectedContent: [contentItem]
         },
-        useQueue
+        sync: !useQueue
       });
 
       if (!result.success) {
@@ -1195,6 +1270,58 @@ export class ContentRepository {
       };
     } catch (error) {
       console.error('Failed to extract YouTube playlist:', error);
+      throw error;
+    }
+  }
+
+  // YouTube subtitle extraction functionality using consolidated content function
+  async extractYouTubeSubtitles(contentId: string): Promise<{
+    content_id: string,
+    success: boolean,
+    video_id?: string,
+    tracks_found: number,
+    transcript_content_ids?: string[],
+    error?: string
+  }> {
+    try {
+      // Get the content item to extract subtitles from
+      const contentItem = await this.getContentById(contentId);
+      if (!contentItem) {
+        throw new Error('Content not found');
+      }
+
+      const result = await LambdaClient.invoke({
+        action: 'youtube-subtitle-extract',
+        payload: {
+          selectedContent: [contentItem]
+        }
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'YouTube subtitle extraction failed');
+      }
+
+      // Process the response data
+      const data = result.data?.[0];
+      if (data) {
+        return {
+          content_id: data.content_id || contentId,
+          success: data.success || false,
+          video_id: data.video_id,
+          tracks_found: data.tracks_found || 0,
+          transcript_content_ids: data.transcript_content_ids || [],
+          error: data.error
+        };
+      }
+
+      return {
+        content_id: contentId,
+        success: true,
+        tracks_found: 0,
+        transcript_content_ids: []
+      };
+    } catch (error) {
+      console.error('Failed to extract YouTube subtitles:', error);
       throw error;
     }
   }
@@ -1356,7 +1483,8 @@ export class ContentRepository {
     searchType?: 'default' | 'title' | 'author',
     topics?: string[],
     filters?: Record<string, string>,
-    maxResults?: number
+    maxResults?: number,
+    autoCreate?: boolean
   ): Promise<{
     success: boolean;
     data: Array<{
@@ -1376,7 +1504,8 @@ export class ContentRepository {
           searchType: searchType || 'default',
           topics: topics || ['libgen'],
           filters,
-          maxResults: maxResults || 10
+          maxResults: maxResults || 10,
+          autoCreate: autoCreate !== false // Default to true for backward compatibility
         },
         sync: true  // Execute immediately for user feedback
       });
@@ -2220,7 +2349,7 @@ export class ContentRepository {
         payload: {
           selectedContent
         },
-        useQueue
+        sync: !useQueue
       });
 
       if (!result.success) {
@@ -2241,6 +2370,114 @@ export class ContentRepository {
       };
     } catch (error) {
       console.error('Failed to transcribe audio:', error);
+      throw error;
+    }
+  }
+
+  // Spotify Import Methods
+
+  /**
+   * Import a Spotify playlist as content
+   * Creates a parent content item for the playlist and child items for each track
+   */
+  async importSpotifyPlaylist(
+    groupId: string,
+    playlist: {
+      id: string;
+      name: string;
+      description: string | null;
+      images: Array<{ url: string }>;
+      tracks: { total: number };
+      external_urls: { spotify: string };
+    },
+    tracks: Array<{
+      id: string;
+      name: string;
+      artists: Array<{ name: string }>;
+      album: { name: string; images: Array<{ url: string }> };
+      duration_ms: number;
+      external_urls: { spotify: string };
+    }>,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<{
+    playlist_content: Content;
+    tracks_created: number;
+    track_children: Content[];
+  }> {
+    try {
+      console.log(`Importing Spotify playlist: ${playlist.name} with ${tracks.length} tracks`);
+
+      // Create the parent content item for the playlist
+      const playlistMetadata = {
+        title: playlist.name,
+        description: playlist.description,
+        image: playlist.images[0]?.url,
+        spotify_playlist_id: playlist.id,
+        spotify_url: playlist.external_urls.spotify,
+        track_count: playlist.tracks.total,
+        type: 'spotify_playlist'
+      };
+
+      const playlistContent = await this.createContent({
+        type: 'text',
+        data: `Spotify Playlist: ${playlist.name}`,
+        group_id: groupId,
+        parent_content_id: null,
+        metadata: playlistMetadata
+      });
+
+      console.log(`Created playlist content: ${playlistContent.id}`);
+
+      // Create child content items for each track
+      const trackChildren: Content[] = [];
+      let tracksCreated = 0;
+
+      for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+
+        try {
+          const trackMetadata = {
+            title: track.name,
+            artist: track.artists.map(a => a.name).join(', '),
+            album: track.album.name,
+            image: track.album.images[0]?.url,
+            spotify_track_id: track.id,
+            spotify_url: track.external_urls.spotify,
+            duration_ms: track.duration_ms,
+            type: 'spotify_track',
+            track_number: i + 1
+          };
+
+          const trackContent = await this.createContent({
+            type: 'text',
+            data: `${track.name} - ${track.artists.map(a => a.name).join(', ')}`,
+            group_id: groupId,
+            parent_content_id: playlistContent.id,
+            metadata: trackMetadata
+          });
+
+          trackChildren.push(trackContent);
+          tracksCreated++;
+
+          // Report progress
+          if (onProgress) {
+            onProgress(i + 1, tracks.length);
+          }
+        } catch (trackError) {
+          console.error(`Failed to create track content for: ${track.name}`, trackError);
+          // Continue with next track even if one fails
+        }
+      }
+
+      console.log(`Successfully imported playlist ${playlist.name} with ${tracksCreated} tracks`);
+
+      return {
+        playlist_content: playlistContent,
+        tracks_created: tracksCreated,
+        track_children: trackChildren
+      };
+    } catch (error) {
+      console.error('Failed to import Spotify playlist:', error);
       throw error;
     }
   }

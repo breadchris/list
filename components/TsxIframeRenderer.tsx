@@ -93,7 +93,8 @@ export function TsxIframeRenderer({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isFullscreen]);
 
-  const handleToggleFullscreen = () => {
+  const handleToggleFullscreen = (e) => {
+    e.stopPropagation();
     setIsFullscreen(!isFullscreen);
   };
 

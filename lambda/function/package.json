@@ -2,10 +2,14 @@
   "name": "claude-code-lambda",
   "version": "1.0.0",
   "description": "AWS Lambda for Claude Code execution with session management",
-  "main": "dist/index.js",
-  "type": "module",
+  "main": "dist/index.cjs",
   "scripts": {
-    "build": "tsc && node bundle.js"
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs --external:@anthropic-ai/claude-code --tree-shaking=false --keep-names",
+    "test:docker:build": "docker build -t lambda-test .",
+    "test:docker:run": "docker run --rm -p 9000:8080 -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -e SUPABASE_URL=$SUPABASE_URL -e SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY -e OPENAI_API_KEY=$OPENAI_API_KEY -e CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID -e CLOUDFLARE_API_KEY=$CLOUDFLARE_API_KEY -e TMDB_API_KEY=$TMDB_API_KEY -e DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY lambda-test",
+    "test:docker:invoke": "curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json'",
+    "test:docker:cleanup": "docker ps -a -q --filter ancestor=lambda-test | xargs -r docker stop && docker ps -a -q --filter ancestor=lambda-test | xargs -r docker rm",
+    "test:docker:full": "npm run test:docker:cleanup && npm run test:docker:build && docker run --rm -d -p 9000:8080 --name lambda-test-instance -e SUPABASE_URL=$SUPABASE_URL -e SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY lambda-test && sleep 3 && (curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json' --data-binary @test-payload-simple.json -w '\\n%{http_code}' | grep -E '^(200|400)$' || (echo 'Handler failed to load (502 error)' && exit 1)) && docker stop lambda-test-instance"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",

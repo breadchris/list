@@ -5,6 +5,11 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './components/App';
 
+// Expose React globally for plugins and dynamic code execution
+if (typeof window !== 'undefined') {
+  (window as any).React = React;
+}
+
 // Auto-render application when module loads (for production builds)
 if (typeof document !== 'undefined') {
   const rootElement = document.getElementById('root');

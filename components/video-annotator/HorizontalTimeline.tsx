@@ -46,6 +46,7 @@ interface HorizontalTimelineProps {
   onJumpToTimestamp: (timestamp: number) => void;
   onSetLoopSelection?: (startTime: number, endTime: number, sectionId?: string) => void;
   onUpdateSectionBoundary: (id: string, startTime: number, endTime: number) => void;
+  onUpdateAnnotation?: (id: string, newTimestamp: number) => void;
   isLooping?: boolean;
   toggleLooping?: () => void;
 }
@@ -62,6 +63,7 @@ export function HorizontalTimeline({
   onJumpToTimestamp,
   onSetLoopSelection,
   onUpdateSectionBoundary,
+  onUpdateAnnotation,
   isLooping = false,
   toggleLooping
 }: HorizontalTimelineProps) {
@@ -82,6 +84,8 @@ export function HorizontalTimeline({
   const [isResizingSection, setIsResizingSection] = useState(false);
   const [resizingSectionId, setResizingSectionId] = useState<string | null>(null);
   const [resizingSectionBoundary, setResizingSectionBoundary] = useState<'start' | 'end' | null>(null);
+  const [isDraggingTimestamp, setIsDraggingTimestamp] = useState(false);
+  const [draggingTimestampId, setDraggingTimestampId] = useState<string | null>(null);
   
   // Zoom and scroll state
   const [zoomLevel, setZoomLevel] = useState(1); // 1 = normal, >1 = zoomed in
@@ -93,10 +97,14 @@ export function HorizontalTimeline({
   
   // UI state
   const [expanded, setExpanded] = useState(true);
-  
+  const [isSelectionModeActive, setIsSelectionModeActive] = useState(false);
+
   const timelineRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const timelineContentRef = useRef<HTMLDivElement>(null);
+
+  // Detect if device supports touch
+  const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
   // Sort annotations by timestamp (ascending)
   const sortedAnnotations = [...annotations].sort((a, b) => a.timestamp - b.timestamp);
@@ -277,8 +285,8 @@ export function HorizontalTimeline({
 
   // Handle mouse down to start selection
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Only start selection if shift key is pressed
-    if (!e.shiftKey) return;
+    // Only start selection if shift key is pressed OR selection mode is active (mobile)
+    if (!e.shiftKey && !isSelectionModeActive) return;
     
     // Skip if we're interacting with other controls or sections
     if ((e.target as HTMLElement).closest('.section-header, .annotation-card, .zoom-controls, .timestamp-marker, .section-indicator, .timeline-padding, .selection-handle')) {
@@ -367,28 +375,49 @@ export function HorizontalTimeline({
     if (isResizingSection && resizingSectionId && resizingSectionBoundary && timelineContentRef.current) {
       const rect = timelineContentRef.current.getBoundingClientRect();
       const x = Math.max(TIMELINE_PADDING_LEFT, Math.min(e.clientX - rect.left, rect.width - TIMELINE_PADDING_RIGHT));
-      
+
       // Convert x position to time based on visible range
       let time = getTimeFromXPosition(x, rect);
-      
+
       // Snap to nearest timestamp if close enough
       const snappedTime = snapToNearestTimestamp(time);
       if (snappedTime !== time) {
         time = snappedTime;
       }
-      
+
       // Get the current section
       const section = sections.find(s => s.id === resizingSectionId);
       if (section) {
         // Calculate new boundaries
         const newStartTime = resizingSectionBoundary === 'start' ? time : section.startTime;
         const newEndTime = resizingSectionBoundary === 'end' ? time : section.endTime;
-        
+
         // Ensure start is before end (minimum 1 second)
         if (newEndTime - newStartTime >= 1) {
           onUpdateSectionBoundary(resizingSectionId, newStartTime, newEndTime);
         }
       }
+    }
+
+    // Handle timestamp dragging
+    if (isDraggingTimestamp && draggingTimestampId && timelineContentRef.current && onUpdateAnnotation) {
+      const rect = timelineContentRef.current.getBoundingClientRect();
+      const x = Math.max(TIMELINE_PADDING_LEFT, Math.min(e.clientX - rect.left, rect.width - TIMELINE_PADDING_RIGHT));
+
+      // Convert x position to time based on visible range
+      let time = getTimeFromXPosition(x, rect);
+
+      // Snap to nearest timestamp if close enough (excluding the one being dragged)
+      const nearest = findNearestTimestamp(time);
+      if (nearest && nearest.id !== draggingTimestampId) {
+        time = nearest.timestamp;
+      }
+
+      // Clamp to valid range [0, duration]
+      time = Math.max(0, Math.min(duration, time));
+
+      // Update the annotation position temporarily (will be finalized on mouse up)
+      onUpdateAnnotation(draggingTimestampId, time);
     }
   };
 
@@ -399,7 +428,7 @@ export function HorizontalTimeline({
       // Ensure start is before end
       const start = Math.min(selectionStart, selectionEnd);
       const end = Math.max(selectionStart, selectionEnd);
-      
+
       // Only keep a selection if it's at least 1 second
       if (end - start >= 1) {
         // Keep the selection regardless of whether it contains timestamps
@@ -411,7 +440,7 @@ export function HorizontalTimeline({
         setSelectionEnd(null);
       }
     }
-    
+
     // Reset dragging and resizing states
     setIsDragging(false);
     setIsResizingSelection(false);
@@ -419,6 +448,8 @@ export function HorizontalTimeline({
     setIsResizingSection(false);
     setResizingSectionId(null);
     setResizingSectionBoundary(null);
+    setIsDraggingTimestamp(false);
+    setDraggingTimestampId(null);
   };
 
   // Handle selection boundary resize start
@@ -437,11 +468,22 @@ export function HorizontalTimeline({
   // Handle section boundary resize start
   const handleSectionResizeStart = (e: React.MouseEvent, sectionId: string, boundary: 'start' | 'end') => {
     e.stopPropagation(); // Prevent timeline click and section click
-    
+
     setIsResizingSection(true);
     setResizingSectionId(sectionId);
     setResizingSectionBoundary(boundary);
-    
+
+    // Prevent default to avoid any text selection
+    e.preventDefault();
+  };
+
+  // Handle timestamp drag start
+  const handleTimestampDragStart = (e: React.MouseEvent, annotationId: string) => {
+    e.stopPropagation(); // Prevent timeline click
+
+    setIsDraggingTimestamp(true);
+    setDraggingTimestampId(annotationId);
+
     // Prevent default to avoid any text selection
     e.preventDefault();
   };
@@ -617,6 +659,24 @@ export function HorizontalTimeline({
     return time >= visibleStartTime && time <= visibleStartTime + visibleDuration;
   };
 
+  // Calculate responsive marker interval based on screen width and zoom level
+  const getMarkerInterval = () => {
+    const timelineWidth = timelineRef.current?.clientWidth || 1000;
+
+    // On mobile (< 640px), space markers further apart
+    if (timelineWidth < 640) {
+      return zoomLevel >= 2 ? 60 : 120; // 2 min on mobile unless zoomed in
+    }
+
+    // On tablet (640-1024px)
+    if (timelineWidth < 1024) {
+      return zoomLevel >= 1.5 ? 60 : 90; // 1.5 min on tablet
+    }
+
+    // Desktop
+    return 60; // 1 min on desktop
+  };
+
   // Calculate min/max selection times
   const minSelectionTime = selectionStart !== null && selectionEnd !== null 
     ? Math.min(selectionStart, selectionEnd) 
@@ -645,41 +705,54 @@ export function HorizontalTimeline({
   return (
     <div className="w-full border-t relative bg-white" ref={containerRef}>
       {/* Header with controls */}
-      <div className="flex justify-between items-center px-4 py-2 border-b">
-        <div className="flex items-center gap-3">
-          <Button 
-            variant="ghost" 
-            size="sm" 
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-4 py-2 border-b gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => onAddAnnotation(currentTime)}
-            className="flex items-center"
+            className="flex items-center text-xs sm:text-sm"
           >
-            <span className="mr-1">+ Add Timestamp</span>
+            <span className="mr-1">+ Timestamp</span>
             <span className="text-xs text-muted-foreground">({formatTime(currentTime)})</span>
           </Button>
-          
-          <div className="text-xs text-muted-foreground ml-2 px-2 py-1 bg-gray-50 rounded border">
+
+          {/* Selection Mode toggle (mobile only) */}
+          {isTouchDevice && (
+            <Button
+              variant={isSelectionModeActive ? "default" : "outline"}
+              size="sm"
+              onClick={() => setIsSelectionModeActive(!isSelectionModeActive)}
+              className="text-xs"
+            >
+              {isSelectionModeActive ? "✓ Range" : "Range"}
+            </Button>
+          )}
+
+          {/* Shift+drag hint (desktop only) */}
+          <div className="text-xs text-muted-foreground ml-2 px-2 py-1 bg-gray-50 rounded border hidden sm:block">
             Shift+drag to select range
           </div>
           
-          {/* Zoom Controls */}
-          <div className="zoom-controls flex items-center gap-1">
-            <Button 
-              size="icon" 
-              variant="ghost" 
+          {/* Zoom Controls (hidden on mobile) */}
+          <div className="zoom-controls hidden sm:flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
               onClick={() => handleZoomChange(zoomLevel - 0.5)}
               disabled={zoomLevel <= 1}
               className="w-6 h-6"
             >
               <ZoomOut size={14} />
             </Button>
-            
+
             <span className="text-xs font-medium w-8 text-center">
               {zoomLevel.toFixed(1)}x
             </span>
-            
-            <Button 
-              size="icon" 
-              variant="ghost" 
+
+            <Button
+              size="icon"
+              variant="ghost"
               onClick={() => handleZoomChange(zoomLevel + 0.5)}
               disabled={zoomLevel >= 10}
               className="w-6 h-6"
@@ -688,9 +761,9 @@ export function HorizontalTimeline({
             </Button>
           </div>
         </div>
-        
+
         {/* Loop Controls */}
-        <div className="flex items-center">
+        <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-end">
           {activeSection && sections.find(s => s.id === activeSection) && (
             <div className="mr-3 px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium border border-green-300 flex items-center gap-2">
               {sections.find(s => s.id === activeSection)!.title}
@@ -767,9 +840,9 @@ export function HorizontalTimeline({
       </div>
       
       {/* Timeline Container */}
-      <div 
+      <div
         ref={timelineRef}
-        className={`w-full h-16 relative overflow-x-auto border-b cursor-pointer`}
+        className={`w-full h-16 relative overflow-x-auto border-b cursor-pointer select-none touch-pan-x`}
         onClick={handleTimelineClick}
         onMouseDown={(e) => {
           handleMouseDown(e);
@@ -950,57 +1023,69 @@ export function HorizontalTimeline({
             );
           })}
 
-          {/* Time Markers (every minute or based on zoom) */}
-          {Array.from({ length: Math.ceil(visibleDuration / 60) + 1 }).map((_, i) => {
-            const markerTime = Math.floor(visibleStartTime / 60) * 60 + (i * 60);
-            if (markerTime <= duration && isTimeVisible(markerTime) && getTimePosition(markerTime)) {
-              return (
-                <div 
-                  key={`marker-${markerTime}`}
-                  className="absolute top-1/2 -translate-y-1/2 h-3 w-px bg-gray-400 pointer-events-none"
-                  style={{ left: getTimePosition(markerTime) }}
-                >
-                  <span className="absolute left-0 -translate-x-1/2 top-4 text-xs text-gray-500">
-                    {formatTime(markerTime)}
-                  </span>
-                </div>
-              );
-            }
-            return null;
-          })}
+          {/* Time Markers (responsive interval based on screen width and zoom) */}
+          {(() => {
+            const markerInterval = getMarkerInterval();
+            return Array.from({ length: Math.ceil(visibleDuration / markerInterval) + 1 }).map((_, i) => {
+              const markerTime = Math.floor(visibleStartTime / markerInterval) * markerInterval + (i * markerInterval);
+              if (markerTime <= duration && isTimeVisible(markerTime) && getTimePosition(markerTime)) {
+                return (
+                  <div
+                    key={`marker-${markerTime}`}
+                    className="absolute top-1/2 -translate-y-1/2 h-3 w-px bg-gray-400 pointer-events-none"
+                    style={{ left: getTimePosition(markerTime) }}
+                  >
+                    <span className="absolute left-0 -translate-x-1/2 top-4 text-xs text-gray-500">
+                      {formatTime(markerTime)}
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            });
+          })()}
 
           {/* Annotations */}
           {sortedAnnotations.map(annotation => {
             if (!isTimeVisible(annotation.timestamp) || !getTimePosition(annotation.timestamp)) return null;
-            
-            const isInSelection = 
-              selectionStart !== null && 
-              selectionEnd !== null && 
-              annotation.timestamp >= Math.min(selectionStart, selectionEnd) && 
+
+            const isInSelection =
+              selectionStart !== null &&
+              selectionEnd !== null &&
+              annotation.timestamp >= Math.min(selectionStart, selectionEnd) &&
               annotation.timestamp <= Math.max(selectionStart, selectionEnd);
-            
+
             const isSnapped = snappedToTimestamp === annotation.id;
-            
+            const isBeingDragged = draggingTimestampId === annotation.id;
+
             // Different colors for regular vs selected timestamps
             const bgColor = isInSelection ? '#3B82F6' : '#EF4444';
 
             return (
-              <div 
+              <div
                 key={annotation.id}
-                className="absolute bottom-2 -translate-x-1/2 z-20"
+                className="timestamp-marker absolute bottom-2 -translate-x-1/2 z-20"
                 style={{ left: getTimePosition(annotation.timestamp) }}
               >
                 {/* Timestamp marker */}
-                <div 
-                  className={`w-3 h-3 rounded-full cursor-pointer hover:scale-125 transition-transform
+                <div
+                  className={`w-3 h-3 rounded-full cursor-move hover:scale-125 transition-transform
                     ${isSnapped ? 'ring-2 ring-blue-500 ring-offset-1' : ''}
+                    ${isBeingDragged ? 'scale-150 ring-2 ring-yellow-400' : ''}
                     ${isInSelection ? 'bg-blue-500' : 'bg-red-500'}`}
                   style={{ backgroundColor: bgColor }}
+                  onMouseDown={(e) => {
+                    // Allow dragging to move timestamp
+                    handleTimestampDragStart(e, annotation.id);
+                  }}
                   onClick={(e) => {
                     e.stopPropagation(); // Prevent timeline click
-                    onJumpToTimestamp(annotation.timestamp);
+                    // Only jump if we're not dragging
+                    if (!isDraggingTimestamp) {
+                      onJumpToTimestamp(annotation.timestamp);
+                    }
                   }}
-                  title={`${formatTime(annotation.timestamp)} - Click to play`}
+                  title={`${formatTime(annotation.timestamp)} - Drag to move, click to play`}
                 ></div>
               </div>
             );

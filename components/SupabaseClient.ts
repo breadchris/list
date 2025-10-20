@@ -171,6 +171,256 @@ export const signInWithApple = async () => {
   }
 };
 
+export const signInWithSpotify = async () => {
+  console.log("🔍 SupabaseClient: Starting Spotify OAuth sign in...");
+  try {
+    // Check if we're in iOS app (has webkit message handlers)
+    const isIOSApp = typeof (window as any).webkit !== 'undefined' &&
+                     (window as any).webkit.messageHandlers &&
+                     (window as any).webkit.messageHandlers.authHandler;
+
+    let redirectTo: string;
+    if (isIOSApp) {
+      redirectTo = 'list://auth/success';
+    } else {
+      // For web browsers, use the current origin
+      redirectTo = window.location.origin;
+    }
+
+    console.log("🔧 SupabaseClient: Using redirect URL:", redirectTo);
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'spotify',
+      options: {
+        redirectTo: redirectTo,
+        scopes: 'playlist-read-private playlist-read-collaborative'
+      }
+    });
+
+    if (error) {
+      console.error('❌ SupabaseClient: Spotify OAuth error:', error);
+      throw error;
+    }
+
+    console.log("✅ SupabaseClient: Spotify OAuth initiated successfully");
+    return data;
+  } catch (error) {
+    console.error('❌ SupabaseClient: signInWithSpotify failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Link Spotify account to currently authenticated user
+ * This allows users to connect Spotify without creating a separate account
+ */
+export const linkSpotifyAccount = async () => {
+  console.log("🔍 SupabaseClient: Starting Spotify account linking...");
+  try {
+    // Check if user is already authenticated
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error('❌ SupabaseClient: User must be logged in to link accounts');
+      throw new Error('You must be logged in to link your Spotify account');
+    }
+
+    // Check if Spotify is already linked
+    const spotifyIdentity = user.identities?.find(identity => identity.provider === 'spotify');
+    if (spotifyIdentity) {
+      console.log('ℹ️ SupabaseClient: Spotify account already linked');
+      throw new Error('Spotify account is already linked to this account');
+    }
+
+    // Check if we're in iOS app
+    const isIOSApp = typeof (window as any).webkit !== 'undefined' &&
+                     (window as any).webkit.messageHandlers &&
+                     (window as any).webkit.messageHandlers.authHandler;
+
+    let redirectTo: string;
+    if (isIOSApp) {
+      redirectTo = 'list://auth/success';
+    } else {
+      redirectTo = window.location.origin;
+    }
+
+    console.log("🔧 SupabaseClient: Linking Spotify with redirect URL:", redirectTo);
+
+    // Use linkIdentity to link Spotify to existing account
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'spotify',
+      options: {
+        redirectTo: redirectTo,
+        scopes: 'playlist-read-private playlist-read-collaborative'
+      }
+    });
+
+    if (error) {
+      console.error('❌ SupabaseClient: Spotify linking error:', error);
+      throw error;
+    }
+
+    console.log("✅ SupabaseClient: Spotify account linking initiated successfully");
+    return data;
+  } catch (error) {
+    console.error('❌ SupabaseClient: linkSpotifyAccount failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Unlink Spotify account from currently authenticated user
+ */
+export const unlinkSpotifyAccount = async () => {
+  console.log("🔍 SupabaseClient: Starting Spotify account unlinking...");
+  try {
+    // Get current user and find Spotify identity
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error('You must be logged in to unlink accounts');
+    }
+
+    const spotifyIdentity = user.identities?.find(identity => identity.provider === 'spotify');
+    if (!spotifyIdentity) {
+      throw new Error('No Spotify account is linked to this account');
+    }
+
+    console.log("🔧 SupabaseClient: Unlinking Spotify identity:", spotifyIdentity.id);
+
+    // Unlink the identity
+    const { data, error } = await supabase.auth.unlinkIdentity(spotifyIdentity);
+
+    if (error) {
+      console.error('❌ SupabaseClient: Spotify unlinking error:', error);
+      throw error;
+    }
+
+    console.log("✅ SupabaseClient: Spotify account unlinked successfully");
+    return data;
+  } catch (error) {
+    console.error('❌ SupabaseClient: unlinkSpotifyAccount failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Link GitHub account to currently authenticated user
+ * This allows users to connect GitHub for repo access in Claude Code
+ */
+export const linkGitHubAccount = async () => {
+  console.log("🔍 SupabaseClient: Starting GitHub account linking...");
+  try {
+    // Check if user is already authenticated
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error('❌ SupabaseClient: User must be logged in to link accounts');
+      throw new Error('You must be logged in to link your GitHub account');
+    }
+
+    // Check if GitHub is already linked
+    const githubIdentity = user.identities?.find(identity => identity.provider === 'github');
+    if (githubIdentity) {
+      console.log('ℹ️ SupabaseClient: GitHub account already linked');
+      throw new Error('GitHub account is already linked to this account');
+    }
+
+    // Check if we're in iOS app
+    const isIOSApp = typeof (window as any).webkit !== 'undefined' &&
+                     (window as any).webkit.messageHandlers &&
+                     (window as any).webkit.messageHandlers.authHandler;
+
+    let redirectTo: string;
+    if (isIOSApp) {
+      redirectTo = 'list://auth/success';
+    } else {
+      redirectTo = window.location.origin;
+    }
+
+    console.log("🔧 SupabaseClient: Linking GitHub with redirect URL:", redirectTo);
+
+    // Use linkIdentity to link GitHub to existing account
+    // Request 'repo' scope for full repository access (clone, push)
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'github',
+      options: {
+        redirectTo: redirectTo,
+        scopes: 'repo'
+      }
+    });
+
+    if (error) {
+      console.error('❌ SupabaseClient: GitHub linking error:', error);
+      throw error;
+    }
+
+    console.log("✅ SupabaseClient: GitHub account linking initiated successfully");
+    return data;
+  } catch (error) {
+    console.error('❌ SupabaseClient: linkGitHubAccount failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Unlink GitHub account from currently authenticated user
+ */
+export const unlinkGitHubAccount = async () => {
+  console.log("🔍 SupabaseClient: Starting GitHub account unlinking...");
+  try {
+    // Get current user and find GitHub identity
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error('You must be logged in to unlink accounts');
+    }
+
+    const githubIdentity = user.identities?.find(identity => identity.provider === 'github');
+    if (!githubIdentity) {
+      throw new Error('No GitHub account is linked to this account');
+    }
+
+    console.log("🔧 SupabaseClient: Unlinking GitHub identity:", githubIdentity.id);
+
+    // Unlink the identity
+    const { data, error } = await supabase.auth.unlinkIdentity(githubIdentity);
+
+    if (error) {
+      console.error('❌ SupabaseClient: GitHub unlinking error:', error);
+      throw error;
+    }
+
+    console.log("✅ SupabaseClient: GitHub account unlinked successfully");
+    return data;
+  } catch (error) {
+    console.error('❌ SupabaseClient: unlinkGitHubAccount failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all linked identities for the current user
+ */
+export const getLinkedIdentities = async () => {
+  console.log("🔍 SupabaseClient: Getting linked identities...");
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      console.error('❌ SupabaseClient: Error getting user:', error);
+      return [];
+    }
+
+    const identities = user.identities || [];
+    console.log("✅ SupabaseClient: Found", identities.length, "linked identities");
+    return identities;
+  } catch (error) {
+    console.error('❌ SupabaseClient: getLinkedIdentities failed:', error);
+    return [];
+  }
+};
+
 // Helper function to create timeout wrapper with exponential backoff
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number = 5000): Promise<T> => {
   return Promise.race([

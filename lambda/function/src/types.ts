@@ -13,7 +13,7 @@ export interface ContentQueueJob {
 }
 
 export interface ContentRequest {
-	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio';
+	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio';
 	payload: any;
 	sync?: boolean; // When true, execute immediately and return results. When false/omitted, queue job (default)
 }
@@ -105,6 +105,12 @@ export interface ClaudeCodeExecutePayload {
 	group_id: string;
 	parent_content_id: string;
 	session_id?: string;
+	github_repo?: {
+		owner: string;
+		name: string;
+		branch: string;
+		token: string; // GitHub OAuth access token
+	};
 }
 
 // Claude Code Job Status Types
@@ -132,6 +138,28 @@ export interface ClaudeCodeJobResponse {
 // YouTube Playlist Types
 export interface YouTubePlaylistPayload {
 	selectedContent: ContentItem[];
+}
+
+// YouTube Subtitle Types
+export interface YouTubeSubtitlePayload {
+	selectedContent: ContentItem[];
+}
+
+export interface YouTubeSubtitleTrack {
+	language_code: string;
+	name: string;
+	base_url: string;
+	content: string;
+	is_automatic: boolean;
+}
+
+export interface YouTubeSubtitleResult {
+	content_id: string;
+	success: boolean;
+	video_id?: string;
+	tracks_found?: number;
+	transcript_content_ids?: string[];
+	error?: string;
 }
 
 export interface YouTubeThumbnail {
@@ -217,6 +245,7 @@ export interface LibgenSearchPayload {
 	topics?: string[];
 	filters?: Record<string, string>;
 	maxResults?: number; // Max results per content item
+	autoCreate?: boolean; // If false, return book metadata without creating Content items (default: true)
 }
 
 // Job Queue Types

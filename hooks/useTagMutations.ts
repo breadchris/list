@@ -13,8 +13,8 @@ export const useCreateTagMutation = () => {
       return await contentRepository.createTag(name, color);
     },
     onSuccess: () => {
-      // Invalidate any tag-related queries if we add them later
-      // queryClient.invalidateQueries({ queryKey: ['tags'] });
+      // Invalidate all tag queries to refetch with new tag
+      queryClient.invalidateQueries({ queryKey: QueryKeys.tags });
     }
   });
 };
@@ -35,6 +35,8 @@ export const useAddTagToContentMutation = () => {
       queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent });
       queryClient.invalidateQueries({ queryKey: QueryKeys.contentSearch });
       queryClient.invalidateQueries({ queryKey: QueryKeys.contentById(contentId) });
+      // Invalidate tag queries to update available tags for group
+      queryClient.invalidateQueries({ queryKey: QueryKeys.tags });
     }
   });
 };
@@ -55,6 +57,8 @@ export const useRemoveTagFromContentMutation = () => {
       queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent });
       queryClient.invalidateQueries({ queryKey: QueryKeys.contentSearch });
       queryClient.invalidateQueries({ queryKey: QueryKeys.contentById(contentId) });
+      // Invalidate tag queries to update available tags for group
+      queryClient.invalidateQueries({ queryKey: QueryKeys.tags });
     }
   });
 };
