@@ -6,12 +6,14 @@ interface SavedTagFilterButtonProps {
   groupId: string;
   currentFilter: Tag[];
   onFilterApply: (tags: Tag[]) => void;
+  className?: string;
 }
 
 export const SavedTagFilterButton: React.FC<SavedTagFilterButtonProps> = ({
   groupId,
   currentFilter,
-  onFilterApply
+  onFilterApply,
+  className = ''
 }) => {
   // Query for saved tag filters in this group
   const {
@@ -72,7 +74,7 @@ export const SavedTagFilterButton: React.FC<SavedTagFilterButtonProps> = ({
   }
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div className={`flex items-center gap-2 flex-wrap ${className}`}>
       {savedFilters.map(filter => {
         const isActive = isFilterActive(filter.metadata);
         const filterName = filter.data || filter.metadata?.filter_name || 'Unnamed Filter';

@@ -4,7 +4,7 @@
   "description": "AWS Lambda for Claude Code execution with session management",
   "main": "dist/index.cjs",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs --external:@anthropic-ai/claude-code --tree-shaking=false --keep-names",
+    "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs --external:@anthropic-ai/claude-code --tree-shaking=false --keep-names",
     "test:docker:build": "docker build -t lambda-test .",
     "test:docker:run": "docker run --rm -p 9000:8080 -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -e SUPABASE_URL=$SUPABASE_URL -e SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY -e OPENAI_API_KEY=$OPENAI_API_KEY -e CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID -e CLOUDFLARE_API_KEY=$CLOUDFLARE_API_KEY -e TMDB_API_KEY=$TMDB_API_KEY -e DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY lambda-test",
     "test:docker:invoke": "curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json'",

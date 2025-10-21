@@ -48,4 +48,5 @@ RUN npm ci --omit=dev
 COPY --from=ts-builder /build/dist ./dist
 
 # Set the CMD to your handler
+# Lambda will use package.json "main" field to resolve to index.cjs
 CMD [ "dist/index.handler" ]

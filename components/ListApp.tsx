@@ -6,6 +6,7 @@ import { UserAuth } from './UserAuth';
 import { GroupSelector } from './GroupSelector';
 import { ContentList } from './ContentList';
 import { ContentStack } from './ContentStack';
+import { ContentMasonry } from './ContentMasonry';
 import { ContentInput } from './ContentInput';
 import { JsEditorView } from './JsEditorView';
 import { ChatView } from './ChatView';
@@ -2272,7 +2273,8 @@ export const ListApp: React.FC = () => {
                 <SavedTagFilterButton
                   groupId={currentGroup.id}
                   currentFilter={selectedTagFilter}
-                  onFilterApply={(tags) => setSelectedTagFilter(tags)}
+                  onFilterApply={(tags) => setSelectedTagFilter(tags.map(tag => ({ tag, mode: 'include' })))}
+                  className="hidden md:flex"
                 />
 
                 {/* Selected Tags Display - Collapsible with Hover Expand */}
@@ -2597,6 +2599,27 @@ export const ListApp: React.FC = () => {
             activeExternalSearch={activeExternalSearch}
             onActivateExternalSearch={setActiveExternalSearch}
             onExecuteExternalSearch={handleExecuteExternalSearch}
+          />
+        ) : displayMode === 'masonry' ? (
+          <ContentMasonry
+            groupId={currentGroup?.id || ''}
+            userId={user?.id}
+            newContent={newContent}
+            parentContentId={currentParentId}
+            onNavigate={handleNavigate}
+            searchQuery={searchQuery}
+            isSearching={isSearching}
+            selection={contentSelection}
+            showInput={showInput}
+            onInputClose={handleInputClose}
+            onContentAdded={handleContentAdded}
+            viewMode={viewMode}
+            searchWorkflows={searchWorkflows}
+            onSearchQueryChange={handleContentSearchChange}
+            activeExternalSearch={activeExternalSearch}
+            onActivateExternalSearch={setActiveExternalSearch}
+            onExecuteExternalSearch={handleExecuteExternalSearch}
+            selectedTagFilter={selectedTagFilter}
           />
         ) : (
           <ContentList

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Tag, TagFilter, contentRepository } from "./ContentRepository";
 import { useDebounce } from "../hooks/useDebounce";
-import { useCreateContentMutation } from "../hooks/useContentQueries";
+import { useCreateContentMutation, useInfiniteContentByParent } from "../hooks/useContentQueries";
 import { useToast } from "./ToastProvider";
 
 interface TagFilterSelectorProps {
@@ -30,6 +30,23 @@ export const TagFilterSelector: React.FC<TagFilterSelectorProps> = ({
   const saveInputRef = useRef<HTMLInputElement>(null);
   const createContentMutation = useCreateContentMutation();
   const toast = useToast();
+
+  // Fetch saved tag filters for this group
+  const {
+    data: savedFiltersData,
+    isLoading: savedFiltersLoading,
+  } = useInfiniteContentByParent(
+    groupId,
+    null,
+    { viewMode: 'chronological' }
+  );
+
+  // Extract saved tag-filter content items
+  const savedFilters = React.useMemo(() => {
+    if (!savedFiltersData) return [];
+    const allContent = savedFiltersData.pages.flatMap(page => page.items);
+    return allContent.filter(content => content.type === 'tag-filter');
+  }, [savedFiltersData]);
 
   const [selectedMode, setSelectedMode] = useState<"include" | "exclude">(
     "include",
@@ -154,6 +171,41 @@ export const TagFilterSelector: React.FC<TagFilterSelectorProps> = ({
     }
   }, [isSaving]);
 
+  // Check if a saved filter is currently active
+  const isFilterActive = (filterMetadata: any) => {
+    if (!filterMetadata?.tag_ids || !Array.isArray(filterMetadata.tag_ids)) {
+      return false;
+    }
+
+    const filterTagIds = new Set(filterMetadata.tag_ids);
+    const currentTagIds = new Set(selectedTags.map(t => t.tag.id));
+
+    if (filterTagIds.size !== currentTagIds.size) {
+      return false;
+    }
+
+    return Array.from(filterTagIds).every(id => currentTagIds.has(id));
+  };
+
+  // Apply a saved filter
+  const applySavedFilter = (filterContent: any) => {
+    if (!filterContent.metadata?.tag_ids || !filterContent.metadata?.tag_names) {
+      return;
+    }
+
+    const tags: Tag[] = filterContent.metadata.tag_ids.map((id: string, index: number) => ({
+      id,
+      name: filterContent.metadata.tag_names[index],
+      created_at: '',
+      user_id: '',
+      color: filterContent.metadata.tag_colors?.[index]
+    }));
+
+    // Clear existing filters and add all tags from saved filter
+    onClearAll();
+    tags.forEach(tag => onTagAdd(tag, 'include'));
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Filter by Tag Button */}
@@ -259,6 +311,40 @@ export const TagFilterSelector: React.FC<TagFilterSelectorProps> = ({
                     </button>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Saved Filters Section (Mobile Only) */}
+          {savedFilters.length > 0 && (
+            <div className="md:hidden p-3 border-b border-gray-200">
+              <div className="text-xs font-semibold text-gray-600 mb-2">Saved Filters</div>
+              <div className="flex flex-wrap gap-2">
+                {savedFilters.map(filter => {
+                  const isActive = isFilterActive(filter.metadata);
+                  const filterName = filter.data || filter.metadata?.filter_name || 'Unnamed Filter';
+
+                  return (
+                    <button
+                      key={filter.id}
+                      onClick={() => applySavedFilter(filter)}
+                      className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                      title={`Apply filter: ${filterName}`}
+                    >
+                      <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                      </svg>
+                      {filterName}
+                      {filter.metadata?.tag_ids && (
+                        <span className="ml-1.5 opacity-75">({filter.metadata.tag_ids.length})</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
