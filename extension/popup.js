@@ -55,10 +55,14 @@ async function initialize() {
 }
 
 async function checkAuth() {
+  console.log('[POPUP] Starting auth check...');
   try {
+    console.log('[POPUP] Sending check-auth message...');
     const response = await chrome.runtime.sendMessage({ action: 'check-auth' });
+    console.log('[POPUP] Received response:', response);
 
     if (response && response.success) {
+      console.log('[POPUP] Response has success, authenticated:', response.authenticated);
       authStatus.authenticated = response.authenticated;
       authStatus.userId = response.userId;
 
@@ -68,19 +72,23 @@ async function checkAuth() {
       const loginBtn = document.getElementById('login-btn');
 
       if (!authStatus.authenticated) {
+        console.log('[POPUP] Setting UI to not-authenticated');
         authStatusEl.className = 'auth-status not-authenticated';
         authTextEl.textContent = '⚠️ Not logged in';
         loginBtn.style.display = 'block';
       } else {
+        console.log('[POPUP] Setting UI to authenticated');
         authStatusEl.className = 'auth-status authenticated';
         authTextEl.textContent = '✓ Logged in';
         loginBtn.style.display = 'none';
       }
 
-      console.log('Auth status:', authStatus);
+      console.log('[POPUP] Auth status:', authStatus);
+    } else {
+      console.log('[POPUP] Response failed check:', { hasResponse: !!response, success: response?.success });
     }
   } catch (error) {
-    console.error('Error checking auth:', error);
+    console.error('[POPUP] Error checking auth:', error);
     authStatus.authenticated = false;
 
     // Show error state

@@ -17,17 +17,19 @@ export const useSpotifyPlaylists = (accessToken: string | null, enabled: boolean
   return useQuery({
     queryKey: ['spotify', 'playlists', accessToken],
     queryFn: async () => {
-      if (!accessToken) {
-        throw new Error('No Spotify access token available');
-      }
+      // TEMPORARY: Hardcode token for testing
+      const hardcodedToken = '39ccc787-067a-4db2-ae74-83d24cd46848';
 
-      const spotifyService = new SpotifyService(accessToken);
+      console.log('🧪 Using hardcoded token for testing:', hardcodedToken);
+      console.log('🧪 Original accessToken was:', accessToken ? `${accessToken.substring(0, 10)}...` : 'null');
+
+      const spotifyService = new SpotifyService(hardcodedToken);
       const response = await spotifyService.getUserPlaylists(50, 0);
 
-      console.log(`Fetched ${response.items.length} Spotify playlists`);
+      console.log(`✅ Fetched ${response.items.length} Spotify playlists`);
       return response.items;
     },
-    enabled: enabled && !!accessToken,
+    enabled: true,  // Force enabled for testing
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 };

@@ -29,14 +29,31 @@ export const useSpotifyAuth = () => {
           identity => identity.provider === 'spotify'
         );
 
+        console.log('🔍 Spotify Auth Check:', {
+          hasIdentity: !!spotifyIdentity,
+          identityCount: session?.user?.identities?.length || 0,
+          providers: session?.user?.identities?.map(i => i.provider) || []
+        });
+
         if (spotifyIdentity) {
+          // Extract Spotify-specific token from identity data
+          // session.provider_token returns the PRIMARY provider's token (e.g., Google)
+          // For linked identities, we need the provider-specific token
+          const spotifyToken = (spotifyIdentity.identity_data as any)?.provider_token;
+
+          console.log('🎵 Spotify token extracted:', {
+            hasToken: !!spotifyToken,
+            tokenPreview: spotifyToken ? `${spotifyToken.substring(0, 15)}...` : 'null'
+          });
+
           setAuthState({
             isAuthenticated: true,
-            accessToken: session?.provider_token || null,
+            accessToken: spotifyToken || null,
             isLoading: false,
             error: null
           });
         } else {
+          console.log('❌ No Spotify identity found - showing link button');
           setAuthState({
             isAuthenticated: false,
             accessToken: null,
@@ -63,14 +80,32 @@ export const useSpotifyAuth = () => {
         identity => identity.provider === 'spotify'
       );
 
+      console.log('🔍 Spotify Auth State Change:', {
+        event: _event,
+        hasIdentity: !!spotifyIdentity,
+        identityCount: session?.user?.identities?.length || 0,
+        providers: session?.user?.identities?.map(i => i.provider) || []
+      });
+
       if (spotifyIdentity) {
+        // Extract Spotify-specific token from identity data
+        // session.provider_token returns the PRIMARY provider's token (e.g., Google)
+        // For linked identities, we need the provider-specific token
+        const spotifyToken = (spotifyIdentity.identity_data as any)?.provider_token;
+
+        console.log('🎵 Spotify token from state change:', {
+          hasToken: !!spotifyToken,
+          tokenPreview: spotifyToken ? `${spotifyToken.substring(0, 15)}...` : 'null'
+        });
+
         setAuthState({
           isAuthenticated: true,
-          accessToken: session?.provider_token || null,
+          accessToken: spotifyToken || null,
           isLoading: false,
           error: null
         });
       } else {
+        console.log('❌ No Spotify identity in state change - should show link button');
         setAuthState({
           isAuthenticated: false,
           accessToken: null,

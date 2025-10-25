@@ -43,14 +43,65 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error('Missing Supabase configuration: SUPABASE_URL and SUPABASE_ANON_KEY are required');
 }
 
+// Chrome extension storage adapter (shares session with extension)
+// Extension ID (stable when using key in manifest.json)
+const EXTENSION_ID = 'ibkpiakkaphbgmafokndbkllndmdaelg';
+
+// Detect if chrome.runtime.sendMessage is available (enabled via externally_connectable)
+const isChromeExtensionAvailable = typeof chrome !== 'undefined' &&
+                                   chrome.runtime &&
+                                   typeof chrome.runtime.sendMessage === 'function';
+
+const chromeStorageAdapter = isChromeExtensionAvailable ? {
+  getItem: async (key: string) => {
+    console.log('[Supabase] Extension getItem:', key);
+    try {
+      const response = await chrome.runtime.sendMessage(EXTENSION_ID, { action: 'storage-get', key });
+      console.log('[Supabase] Extension getItem response received:', typeof response, response);
+      // Unwrap if response is wrapped in { value: ... }
+      return response?.value ?? response ?? null;
+    } catch (error) {
+      console.error('[Supabase] Extension getItem error:', error);
+      return null;
+    }
+  },
+  setItem: async (key: string, value: string) => {
+    console.log('[Supabase] Extension setItem:', key);
+    try {
+      await chrome.runtime.sendMessage(EXTENSION_ID, { action: 'storage-set', key, value });
+    } catch (error) {
+      console.error('[Supabase] Extension setItem error:', error);
+    }
+  },
+  removeItem: async (key: string) => {
+    console.log('[Supabase] Extension removeItem:', key);
+    try {
+      await chrome.runtime.sendMessage(EXTENSION_ID, { action: 'storage-remove', key });
+    } catch (error) {
+      console.error('[Supabase] Extension removeItem error:', error);
+    }
+  }
+} : undefined;
+
+// Log storage adapter configuration
+if (typeof window !== 'undefined') {
+  if (isChromeExtensionAvailable) {
+    console.log('[Supabase] Using chrome extension for session persistence (shared storage)');
+  } else {
+    console.log('[Supabase] Using default localStorage for session persistence');
+  }
+}
+
 // Create Supabase client with build-time configuration (will be used immediately)
 // This will be the primary client instance, with build-time injected values if available
+// Uses chrome.storage.local when Chrome extension API is available (shares session with extension)
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    flowType: 'pkce' // More secure and faster
+    flowType: 'pkce', // More secure and faster
+    ...(chromeStorageAdapter ? { storage: chromeStorageAdapter } : {})
   },
   realtime: {
     params: {

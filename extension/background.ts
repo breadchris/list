@@ -17,9 +17,20 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: false,
     flowType: 'pkce',
     storage: {
-      getItem: (key) => chrome.storage.local.get([key]).then(result => result[key]),
-      setItem: (key, value) => chrome.storage.local.set({ [key]: value }),
-      removeItem: (key) => chrome.storage.local.remove([key])
+      getItem: async (key) => {
+        const result = await chrome.storage.local.get([key]);
+        const value = result[key] ?? null;
+        console.log(`[STORAGE] getItem("${key}"):`, value ? `found (${typeof value}, ${value.length || 0} bytes)` : 'null');
+        return value;
+      },
+      setItem: async (key, value) => {
+        console.log(`[STORAGE] setItem("${key}"):`, typeof value, value ? `${value.length || 0} bytes` : 'null');
+        return chrome.storage.local.set({ [key]: value });
+      },
+      removeItem: async (key) => {
+        console.log(`[STORAGE] removeItem("${key}")`);
+        return chrome.storage.local.remove([key]);
+      }
     }
   }
 });
@@ -62,11 +73,14 @@ async function saveSelectedGroupId(groupId: string): Promise<void> {
 
 // Fetch user's groups from Supabase
 async function fetchUserGroups(): Promise<Group[]> {
+  console.log('[GROUPS] Fetching user groups...');
+
   try {
     const { data: { user } } = await supabase.auth.getUser();
+    console.log('[GROUPS] getUser result:', { hasUser: !!user, userId: user?.id });
 
     if (!user) {
-      console.warn('No authenticated user');
+      console.warn('[GROUPS] No authenticated user');
       return [];
     }
 
@@ -83,13 +97,15 @@ async function fetchUserGroups(): Promise<Group[]> {
       .eq('user_id', user.id);
 
     if (error) {
-      console.error('Error fetching groups:', error);
+      console.error('[GROUPS] Error fetching groups:', error);
       return [];
     }
 
-    return data?.map((item: any) => item.groups).filter(Boolean) || [];
+    const groups = data?.map((item: any) => item.groups).filter(Boolean) || [];
+    console.log('[GROUPS] Found groups:', groups.length);
+    return groups;
   } catch (error) {
-    console.error('Error in fetchUserGroups:', error);
+    console.error('[GROUPS] Exception in fetchUserGroups:', error);
     return [];
   }
 }
@@ -109,24 +125,41 @@ async function redirectToLogin() {
 
 // Check authentication status
 async function checkAuthStatus(redirectOnFail: boolean = false): Promise<{ authenticated: boolean; userId?: string }> {
+  console.log('[AUTH CHECK] Starting auth check, redirectOnFail:', redirectOnFail);
+
   try {
+    console.log('[AUTH CHECK] Calling supabase.auth.getUser()...');
     const { data, error } = await supabase.auth.getUser();
 
-    // Check if session exists
+    console.log('[AUTH CHECK] getUser response:', {
+      hasUser: !!data.user,
+      userId: data.user?.id,
+      userEmail: data.user?.email,
+      hasError: !!error,
+      errorCode: error?.code,
+      errorMessage: error?.message
+    });
+
+    // Check if user exists
     const authenticated = !!data.user && !error;
+    console.log('[AUTH CHECK] Computed authenticated:', authenticated);
 
     if (!authenticated && redirectOnFail) {
+      console.log('[AUTH CHECK] Not authenticated, redirecting to login');
       await redirectToLogin();
     }
 
-    return {
+    const result = {
       authenticated,
       userId: data.user?.id
     };
+    console.log('[AUTH CHECK] Returning:', result);
+    return result;
   } catch (error) {
-    console.error('Error checking auth status:', error);
+    console.error('[AUTH CHECK] Exception in checkAuthStatus:', error);
 
     if (redirectOnFail) {
+      console.log('[AUTH CHECK] Exception occurred, redirecting to login');
       await redirectToLogin();
     }
 
@@ -460,10 +493,21 @@ async function updateExtensionBadge() {
   }
 }
 
-// Handle messages from popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Handle messages from popup and web app
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   console.log('Message received:', message);
 
+  // Handle messages from web app (type-based)
+  if (message.type === 'auth-success') {
+    console.log('Received auth success notification from web app:', message.userId);
+    // Session is already in chrome.storage.local via shared storage adapter
+    // No action needed - just log success
+    showNotification('Login Successful', 'You are now authenticated!');
+    sendResponse({ success: true });
+    return false;
+  }
+
+  // Handle messages from popup (action-based)
   switch (message.action) {
     case 'share-page':
       shareCurrentPage()
@@ -551,13 +595,61 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       return true;
 
-    case 'check-auth':
-      checkAuthStatus()
-        .then(authStatus => sendResponse({ success: true, ...authStatus }))
+    case 'storage-get':
+      console.log('[BRIDGE] Handling storage-get for key:', message.key);
+      chrome.storage.local.get([message.key])
+        .then(result => {
+          const value = result[message.key] ?? null;
+          console.log('[BRIDGE] storage-get result:', { key: message.key, hasValue: !!value });
+          sendResponse(value);
+        })
         .catch(error => {
-          console.error('Error in checkAuthStatus:', error);
+          console.error('[BRIDGE] storage-get error:', error);
+          sendResponse(null);
+        });
+      return true;
+
+    case 'storage-set':
+      console.log('[BRIDGE] Handling storage-set for key:', message.key);
+      chrome.storage.local.set({ [message.key]: message.value })
+        .then(() => {
+          console.log('[BRIDGE] storage-set success:', message.key);
+          sendResponse({ success: true });
+        })
+        .catch(error => {
+          console.error('[BRIDGE] storage-set error:', error);
           sendResponse({ success: false, error: error.message });
         });
+      return true;
+
+    case 'storage-remove':
+      console.log('[BRIDGE] Handling storage-remove for key:', message.key);
+      chrome.storage.local.remove([message.key])
+        .then(() => {
+          console.log('[BRIDGE] storage-remove success:', message.key);
+          sendResponse({ success: true });
+        })
+        .catch(error => {
+          console.error('[BRIDGE] storage-remove error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true;
+
+    case 'check-auth':
+      console.log('[MESSAGE] Handling check-auth request');
+      (async () => {
+        try {
+          const authStatus = await checkAuthStatus();
+          const response = { success: true, ...authStatus };
+          console.log('[MESSAGE] check-auth response:', response);
+          sendResponse(response);
+        } catch (error) {
+          console.error('[MESSAGE] Error in checkAuthStatus:', error);
+          const errorResponse = { success: false, error: error.message };
+          console.log('[MESSAGE] check-auth error response:', errorResponse);
+          sendResponse(errorResponse);
+        }
+      });
       return true;
 
     case 'login':
@@ -590,6 +682,61 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ error: 'Unknown action' });
   }
 });
+
+// Handle messages from externally connectable web pages (localhost:3002, justshare.io)
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  console.log('[EXTERNAL MESSAGE] Received from:', sender.origin, message);
+
+  switch (message.action) {
+    case 'storage-get':
+      console.log('[BRIDGE] Handling external storage-get for key:', message.key);
+      chrome.storage.local.get([message.key])
+        .then(result => {
+          const value = result[message.key] ?? null;
+          console.log('[BRIDGE] External storage-get result:', { key: message.key, hasValue: !!value });
+          // Wrap response for external messages
+          sendResponse({ value: value });
+        })
+        .catch(error => {
+          console.error('[BRIDGE] External storage-get error:', error);
+          sendResponse({ value: null });
+        });
+      return true; // Keep channel open for async response
+
+    case 'storage-set':
+      console.log('[BRIDGE] Handling external storage-set for key:', message.key);
+      chrome.storage.local.set({ [message.key]: message.value })
+        .then(() => {
+          console.log('[BRIDGE] External storage-set success:', message.key);
+          sendResponse({ success: true });
+        })
+        .catch(error => {
+          console.error('[BRIDGE] External storage-set error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true;
+
+    case 'storage-remove':
+      console.log('[BRIDGE] Handling external storage-remove for key:', message.key);
+      chrome.storage.local.remove([message.key])
+        .then(() => {
+          console.log('[BRIDGE] External storage-remove success:', message.key);
+          sendResponse({ success: true });
+        })
+        .catch(error => {
+          console.error('[BRIDGE] External storage-remove error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true;
+
+    default:
+      console.log('[EXTERNAL MESSAGE] Unknown action:', message.action);
+      sendResponse({ error: 'Unknown action' });
+      return false;
+  }
+});
+
+console.log('[EXTERNAL] External message listener ready');
 
 // Get extension statistics
 async function getExtensionStats() {

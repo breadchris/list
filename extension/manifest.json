@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "share",
   "version": "2.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq7JqPQ0PH9n+ZPNVnLp3LqN9dGmLqGCqhQGVdVGN8TqFNm5gCqYp4K8Wh7yGLuVvHJN8PvN0MuQx3K6VmR9yYLJGdQpN4Kl6VH8tDnN0FqGpHs8W5Z7QqK3LN7h8VpQGJ2LnN6R8Kl4Hn6L9Jq5Nz7Vl3Gh8WqN5Mz7Ql8Kp3Vn8Yq2Hm9Jl6Gp5Nn7Wh3Jq9Mp8Vl5Gn6Kq7Jp8Hn9Ml4Vp6Lq8Gn5Jm7Wl9Hp6Mp8Vn5Kq7Gl8Jn6Hm9Ml5Vq8Gp7Jl6Wn9Hq8Mp5Kl7Gm6Jn8Hp9Ml4Vq5Gl8Jm7Wn6Hq9Kp8Ml5Gn7Jl6Vq9Hp8Mm5Kl7Gn6Jq8Hp9Ml4Vl5QwIDAQAB",
   "description": "Simple browser extension for sharing pages and reloading the extension.",
   "permissions": [
     "activeTab",
@@ -14,6 +15,8 @@
   "host_permissions": [
     "http://localhost:8080/*",
     "https://localhost:8080/*",
+    "http://localhost:3002/*",
+    "https://localhost:3002/*",
     "https://zazsrepfnamdmibcyenx.supabase.co/*"
   ],
   "background": {
@@ -34,5 +37,11 @@
       "js": ["content.js"],
       "run_at": "document_end"
     }
-  ]
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:3002/*",
+      "https://justshare.io/*"
+    ]
+  }
 }

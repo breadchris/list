@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { Layers } from 'lucide-react';
 import { Content, contentRepository, Tag, TagFilter, SEOMetadata, SharingMetadata, YouTubeVideoMetadata } from './ContentRepository';
 import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
@@ -121,7 +122,9 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number; zIndex: number }>>({});
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [preventClick, setPreventClick] = useState(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
+  const hasDragged = useRef(false);
 
   // localStorage key for custom positions
   const getPositionsKey = () => `deckPositions_${groupId}_${parentContentId || 'root'}`;
@@ -147,12 +150,7 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
     localStorage.setItem(key, JSON.stringify(positions));
   };
 
-  // Reset all custom positions
-  const handleResetLayout = () => {
-    setCustomPositions({});
-    const key = getPositionsKey();
-    localStorage.removeItem(key);
-  };
+  // Stack all cards neatly (removed - now defined after currentItems)
 
   // Responsive breakpoint detection
   useEffect(() => {
@@ -304,8 +302,10 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
   };
 
   const handleContentClick = (contentItem: Content) => {
-    // Don't navigate if we were dragging
-    if (draggedCardId) return;
+    // Prevent click if we just finished dragging
+    if (preventClick) {
+      return;
+    }
 
     if (selection.isSelectionMode) {
       selection.toggleItem(contentItem.id);
@@ -326,6 +326,7 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
 
     e.preventDefault();
     setDraggedCardId(contentId);
+    hasDragged.current = false; // Reset drag flag
 
     // Record starting position
     dragStartPos.current = { x: e.clientX, y: e.clientY };
@@ -342,6 +343,15 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
 
     e.preventDefault();
 
+    // Check if we've moved beyond threshold (5 pixels)
+    const deltaX = Math.abs(e.clientX - dragStartPos.current.x);
+    const deltaY = Math.abs(e.clientY - dragStartPos.current.y);
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (distance > 5) {
+      hasDragged.current = true;
+    }
+
     // Calculate new position
     const newX = e.clientX - dragOffset.x;
     const newY = e.clientY - dragOffset.y;
@@ -352,13 +362,14 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
       30 // default max
     );
 
-    // Update position
+    // Update position while preserving rotation
     setCustomPositions(prev => ({
       ...prev,
       [draggedCardId]: {
         x: newX,
         y: newY,
-        zIndex: maxZ + 1 // Bring to front
+        zIndex: maxZ + 1, // Bring to front
+        rotation: prev[draggedCardId]?.rotation ?? 0 // Preserve rotation
       }
     }));
   };
@@ -366,13 +377,20 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
   const handleMouseUp = () => {
     if (!draggedCardId) return;
 
+    // If we actually dragged, prevent the click event
+    if (hasDragged.current) {
+      setPreventClick(true);
+      // Reset the flag after the click event has had a chance to fire
+      setTimeout(() => setPreventClick(false), 0);
+    }
+
     // Save positions to localStorage
     savePositions(customPositions);
     setDraggedCardId(null);
   };
 
   // Touch event handlers for mobile
-  const handleTouchStart = (e: React.TouchEvent, contentId: string, currentX: number, currentY: number) => {
+  const handleTouchStart = (e: React.TouchEvent, contentId: string, currentX: number, currentY: number, currentRotation: number) => {
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('a') || target.closest('input')) {
       return;
@@ -380,6 +398,7 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
 
     const touch = e.touches[0];
     setDraggedCardId(contentId);
+    hasDragged.current = false; // Reset drag flag
 
     dragStartPos.current = { x: touch.clientX, y: touch.clientY };
 
@@ -387,6 +406,19 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
       x: touch.clientX - currentX,
       y: touch.clientY - currentY
     });
+
+    // If card doesn't have custom position yet, initialize with current rotation
+    if (!customPositions[contentId]) {
+      setCustomPositions(prev => ({
+        ...prev,
+        [contentId]: {
+          x: currentX,
+          y: currentY,
+          zIndex: 30,
+          rotation: currentRotation
+        }
+      }));
+    }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -394,6 +426,15 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
 
     e.preventDefault();
     const touch = e.touches[0];
+
+    // Check if we've moved beyond threshold (5 pixels)
+    const deltaX = Math.abs(touch.clientX - dragStartPos.current.x);
+    const deltaY = Math.abs(touch.clientY - dragStartPos.current.y);
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (distance > 5) {
+      hasDragged.current = true;
+    }
 
     const newX = touch.clientX - dragOffset.x;
     const newY = touch.clientY - dragOffset.y;
@@ -408,13 +449,21 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
       [draggedCardId]: {
         x: newX,
         y: newY,
-        zIndex: maxZ + 1
+        zIndex: maxZ + 1,
+        rotation: prev[draggedCardId]?.rotation ?? 0 // Preserve rotation
       }
     }));
   };
 
   const handleTouchEnd = () => {
     if (!draggedCardId) return;
+
+    // If we actually dragged, prevent the click event
+    if (hasDragged.current) {
+      setPreventClick(true);
+      // Reset the flag after the click event has had a chance to fire
+      setTimeout(() => setPreventClick(false), 0);
+    }
 
     savePositions(customPositions);
     setDraggedCardId(null);
@@ -426,6 +475,15 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
 
     const handleGlobalMouseMove = (e: MouseEvent) => {
       if (!draggedCardId) return;
+
+      // Check if we've moved beyond threshold (5 pixels)
+      const deltaX = Math.abs(e.clientX - dragStartPos.current.x);
+      const deltaY = Math.abs(e.clientY - dragStartPos.current.y);
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      if (distance > 5) {
+        hasDragged.current = true;
+      }
 
       const newX = e.clientX - dragOffset.x;
       const newY = e.clientY - dragOffset.y;
@@ -440,13 +498,21 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
         [draggedCardId]: {
           x: newX,
           y: newY,
-          zIndex: maxZ + 1
+          zIndex: maxZ + 1,
+          rotation: prev[draggedCardId]?.rotation ?? 0
         }
       }));
     };
 
     const handleGlobalMouseUp = () => {
       if (draggedCardId) {
+        // If we actually dragged, prevent the click event
+        if (hasDragged.current) {
+          setPreventClick(true);
+          // Reset the flag after the click event has had a chance to fire
+          setTimeout(() => setPreventClick(false), 0);
+        }
+
         savePositions(customPositions);
         setDraggedCardId(null);
       }
@@ -514,6 +580,27 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
   const currentError = isSearching ? searchError : (isTagFilterActive ? tagError : contentError);
   const currentStatus = isSearching ? searchStatus : (isTagFilterActive ? tagStatus : contentStatus);
 
+  // Stack all cards neatly in a pile at center position
+  const handleStackCards = () => {
+    // Center position for the stack
+    const centerX = 0; // Center of container
+    const centerY = 0; // Center of container
+
+    const stackedPositions: Record<string, { x: number; y: number; zIndex: number; rotation: number }> = {};
+
+    currentItems.forEach((item, index) => {
+      stackedPositions[item.id] = {
+        x: centerX,
+        y: centerY + (index * 0.5), // Tiny vertical offset (0.5px per card) for realistic depth
+        zIndex: currentItems.length - index, // Higher cards have higher z-index
+        rotation: 0 // No rotation for neat stack
+      };
+    });
+
+    setCustomPositions(stackedPositions);
+    savePositions(stackedPositions);
+  };
+
   const renderContentItem = (item: Content, index: number, total: number) => {
     const isSelected = selection.selectedItems.has(item.id);
     const isDragging = draggedCardId === item.id;
@@ -523,14 +610,16 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
     let cardStyle: React.CSSProperties;
     let currentX = 0;
     let currentY = 0;
+    let currentRotation = 0;
 
     if (hasCustomPosition) {
-      // Use custom dragged position
+      // Use custom dragged position with preserved rotation
       currentX = hasCustomPosition.x;
       currentY = hasCustomPosition.y;
+      currentRotation = hasCustomPosition.rotation;
       cardStyle = {
         position: 'absolute',
-        transform: `translate(${currentX}px, ${currentY}px)`,
+        transform: `translate(${currentX}px, ${currentY}px) rotate(${currentRotation}deg)`,
         zIndex: isDragging ? 1000 : hasCustomPosition.zIndex,
         cursor: isDragging ? 'grabbing' : 'grab',
         transition: isDragging ? 'none' : 'box-shadow 0.2s ease-out',
@@ -545,6 +634,7 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
         const pos = getCardTransformDefault(index, total, isMobile);
         currentX = pos.x;
         currentY = pos.y;
+        currentRotation = pos.rotation;
         cardStyle = {
           position: 'absolute',
           transform: `translate(${pos.x}px, ${pos.y}px) rotate(${pos.rotation}deg)`,
@@ -566,8 +656,8 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
             : 'border-gray-200'
         } ${isDragging ? 'shadow-2xl scale-105' : ''}`}
         onClick={() => handleContentClick(item)}
-        onMouseDown={(e) => handleMouseDown(e, item.id, currentX, currentY)}
-        onTouchStart={(e) => handleTouchStart(e, item.id, currentX, currentY)}
+        onMouseDown={(e) => handleMouseDown(e, item.id, currentX, currentY, currentRotation)}
+        onTouchStart={(e) => handleTouchStart(e, item.id, currentX, currentY, currentRotation)}
         onMouseEnter={() => setHoveredItemId(item.id)}
         onMouseLeave={() => setHoveredItemId(null)}
       >
@@ -712,21 +802,17 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
               </div>
             </div>
 
-            {/* Reset Layout Button - only show when custom positions exist */}
-            {Object.keys(customPositions).length > 0 && (
-              <div className="fixed bottom-20 right-6 z-50">
-                <button
-                  onClick={handleResetLayout}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:shadow-xl transition-all text-sm font-medium text-gray-700"
-                  title="Reset all cards to default positions"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span className="hidden sm:inline">Reset Layout</span>
-                </button>
-              </div>
-            )}
+            {/* Stack Cards Button - Stack all cards neatly (always visible) */}
+            <div className="fixed bottom-20 right-6 z-50">
+              <button
+                onClick={handleStackCards}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:shadow-xl transition-all text-sm font-medium text-gray-700"
+                title="Stack all cards neatly"
+              >
+                <Layers className="w-4 h-4" />
+                <span className="hidden sm:inline">Stack Cards</span>
+              </button>
+            </div>
 
             {currentFetching && !currentLoading && !currentFetchingNext && currentItems.length > 0 && (
               <div className="flex justify-center py-2 mt-8">

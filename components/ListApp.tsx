@@ -1911,10 +1911,13 @@ export const ListApp: React.FC = () => {
             
             // Mark that we've processed the first auth event
             isFirstAuthRef.current = false;
-            
+
             // Small delay before re-initializing to prevent DOM conflicts
             await new Promise(resolve => setTimeout(resolve, 100));
             await initializeApp();
+
+            // Session is automatically shared with extension via chrome.storage bridge
+            // No explicit notification needed - extension will detect session on next auth check
           } else if (!session?.user && event === 'SIGNED_OUT') {
             // User signed out - batch reset state with small delay
             await new Promise(resolve => setTimeout(resolve, 50));
