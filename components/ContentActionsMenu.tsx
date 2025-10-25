@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export type ContentAction = 'ai-chat' | 'image' | 'epub' | 'plugin' | 'import';
+export type ContentAction = 'ai-chat' | 'claude-code' | 'image' | 'epub' | 'plugin' | 'import';
 
 interface ContentActionsMenuProps {
   onActionSelect: (action: ContentAction) => void;
@@ -59,6 +59,19 @@ export const ContentActionsMenu: React.FC<ContentActionsMenuProps> = ({
               <div className="flex-1 text-left">
                 <div className="font-medium">AI Chat</div>
                 <div className="text-xs text-gray-500">Start a conversation</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => handleActionClick('claude-code')}
+              className="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <svg className="w-5 h-5 mr-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              <div className="flex-1 text-left">
+                <div className="font-medium">Claude Code</div>
+                <div className="text-xs text-gray-500">Start a coding session</div>
               </div>
             </button>
 

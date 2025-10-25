@@ -1,0 +1,19 @@
+{
+  "action": "youtube-subtitle-extract",
+  "payload": {
+    "selectedContent": [
+      {
+        "id": "test-content-123",
+        "type": "text",
+        "data": "https://www.youtube.com/watch?v=gqSpMYd0xyQ",
+        "metadata": {
+          "youtube_video_id": "gqSpMYd0xyQ"
+        },
+        "group_id": "test-group-456",
+        "user_id": "test-user-789",
+        "parent_content_id": null
+      }
+    ]
+  },
+  "sync": true
+}

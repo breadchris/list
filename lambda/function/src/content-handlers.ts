@@ -26,6 +26,7 @@ import { createClient } from '@deepgram/sdk';
 import { executeGo } from './go-executor.js';
 import type { SubtitleRequest } from './go-client.js';
 import { isSubtitleResponse } from './go-client.js';
+import { executeYouTubeTranscript } from './python-client.js';
 
 // =============================================================================
 // SEO EXTRACTION
@@ -1156,84 +1157,61 @@ async function processYouTubeSubtitlesForContent(supabase: any, contentItem: Con
     throw new Error('No YouTube video ID found in content');
   }
 
-  console.log(`Extracting subtitles for video ID: ${videoId}`);
+  console.log(`Extracting transcript for video ID: ${videoId} using yt-dlp`);
 
-  // Call Go binary to fetch subtitles
-  const request: SubtitleRequest = { video_id: videoId };
-  const response = await executeGo({
-    method: 'youtube.subtitles',
-    params: request
-  });
+  // Build full YouTube URL
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-  if (!response.success) {
-    throw new Error(`Subtitle extraction failed: ${response.error}`);
+  // Call Python script to extract transcript using yt-dlp
+  const transcriptData = await executeYouTubeTranscript(videoUrl);
+
+  console.log(`Successfully extracted transcript for "${transcriptData.title}" (${transcriptData.channel})`);
+  console.log(`Transcript has ${transcriptData.transcript.length} segments`);
+
+  // Convert transcript segments to full text
+  const transcriptText = transcriptData.transcript
+    .map(segment => segment.text)
+    .join(' ');
+
+  // Create transcript content as child
+  const { data: transcriptContent, error: insertError } = await supabase
+    .from('content')
+    .insert({
+      type: 'transcript',
+      data: transcriptText,
+      metadata: {
+        youtube_video_id: videoId,
+        video_title: transcriptData.title,
+        channel: transcriptData.channel,
+        source_content_id: contentItem.id,
+        subtitle_extracted_at: new Date().toISOString(),
+        // Store word-level timing data for future features (video player sync, etc.)
+        segments: transcriptData.transcript,
+        segment_count: transcriptData.transcript.length
+      },
+      group_id: contentItem.group_id,
+      user_id: contentItem.user_id,
+      parent_content_id: contentItem.id
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    throw new Error(`Failed to create transcript content: ${insertError.message}`);
   }
 
-  if (!isSubtitleResponse(response.result)) {
-    throw new Error('Invalid subtitle response format');
+  if (!transcriptContent) {
+    throw new Error('No transcript content returned from insert');
   }
 
-  const subtitleResponse = response.result;
-  const tracks = subtitleResponse.tracks;
-
-  if (tracks.length === 0) {
-    return {
-      content_id: contentItem.id,
-      success: true,
-      video_id: videoId,
-      tracks_found: 0,
-      transcript_content_ids: []
-    };
-  }
-
-  console.log(`Found ${tracks.length} subtitle tracks for video ${videoId}`);
-
-  // Create child content items for each subtitle track
-  const transcriptContentIds: string[] = [];
-
-  for (const track of tracks) {
-    try {
-      // Create transcript content as child
-      const { data: transcriptContent, error: insertError } = await supabase
-        .from('content')
-        .insert({
-          type: 'transcript',
-          data: track.content,
-          metadata: {
-            youtube_video_id: videoId,
-            language_code: track.language_code,
-            track_name: track.name,
-            is_automatic: track.is_automatic,
-            source_content_id: contentItem.id,
-            subtitle_extracted_at: new Date().toISOString()
-          },
-          group_id: contentItem.group_id,
-          user_id: contentItem.user_id,
-          parent_content_id: contentItem.id
-        })
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error(`Error creating transcript content for ${track.language_code}:`, insertError);
-        continue;
-      }
-
-      if (transcriptContent) {
-        transcriptContentIds.push(transcriptContent.id);
-        console.log(`Created transcript content ${transcriptContent.id} for ${track.language_code} (${track.name})`);
-      }
-    } catch (error: any) {
-      console.error(`Error processing subtitle track ${track.language_code}:`, error);
-    }
-  }
+  console.log(`Created transcript content ${transcriptContent.id} for video "${transcriptData.title}"`);
 
   return {
     content_id: contentItem.id,
     success: true,
     video_id: videoId,
-    tracks_found: tracks.length,
-    transcript_content_ids: transcriptContentIds
+    tracks_found: 1,
+    transcript_content_ids: [transcriptContent.id]
   };
 }
 

@@ -28,6 +28,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 const DEFAULT_SERVER_URL = 'http://localhost:8080';
 let serverUrl = DEFAULT_SERVER_URL;
 
+// Web app URL configuration for authentication
+const DEFAULT_WEB_APP_URL = 'http://localhost:3002';
+let webAppUrl = DEFAULT_WEB_APP_URL;
+
 // Group and authentication management
 interface Group {
   id: string;
@@ -90,17 +94,42 @@ async function fetchUserGroups(): Promise<Group[]> {
   }
 }
 
+// Redirect to login page
+async function redirectToLogin() {
+  console.log('Redirecting to login:', webAppUrl);
+
+  // Open login page in new tab
+  await chrome.tabs.create({
+    url: `${webAppUrl}/`,  // React app shows auth UI when not logged in
+    active: true
+  });
+
+  showNotification('Login Required', 'Please sign in to use the extension');
+}
+
 // Check authentication status
-async function checkAuthStatus(): Promise<{ authenticated: boolean; userId?: string }> {
+async function checkAuthStatus(redirectOnFail: boolean = false): Promise<{ authenticated: boolean; userId?: string }> {
   try {
-    const data = await supabase.auth.getUser();
-    console.log(data);
+    const { data, error } = await supabase.auth.getUser();
+
+    // Check if session exists
+    const authenticated = !!data.user && !error;
+
+    if (!authenticated && redirectOnFail) {
+      await redirectToLogin();
+    }
+
     return {
-      authenticated: !!data.session,
-      userId: data.session?.user?.id
+      authenticated,
+      userId: data.user?.id
     };
   } catch (error) {
     console.error('Error checking auth status:', error);
+
+    if (redirectOnFail) {
+      await redirectToLogin();
+    }
+
     return { authenticated: false };
   }
 }
@@ -117,13 +146,37 @@ async function loadServerUrl() {
   }
 }
 
-// Initialize server URL
+// Load web app URL from storage
+async function loadWebAppUrl() {
+  try {
+    const result = await chrome.storage.sync.get(['webAppUrl']);
+    webAppUrl = result.webAppUrl || DEFAULT_WEB_APP_URL;
+    console.log('Loaded web app URL:', webAppUrl);
+  } catch (error) {
+    console.error('Error loading web app URL:', error);
+    webAppUrl = DEFAULT_WEB_APP_URL;
+  }
+}
+
+// Initialize server and web app URLs
 loadServerUrl();
+loadWebAppUrl();
 
 // Extension installation/startup
-chrome.runtime.onInstalled.addListener((details) => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('Extension installed/updated:', details.reason);
-  
+
+  // Load web app URL
+  await loadWebAppUrl();
+
+  // Check authentication
+  const { authenticated } = await checkAuthStatus(false);
+
+  if (!authenticated) {
+    console.log('Not authenticated - user will need to login before sharing');
+    showNotification('Welcome!', 'Please login to start sharing pages');
+  }
+
   if (details.reason === 'install') {
     // Set default server URL if not already set
     chrome.storage.sync.get(['serverUrl'], (result) => {
@@ -131,16 +184,25 @@ chrome.runtime.onInstalled.addListener((details) => {
         chrome.storage.sync.set({ serverUrl: DEFAULT_SERVER_URL });
       }
     });
+
+    // Set default web app URL if not already set
+    chrome.storage.sync.get(['webAppUrl'], (result) => {
+      if (!result.webAppUrl) {
+        chrome.storage.sync.set({ webAppUrl: DEFAULT_WEB_APP_URL });
+      }
+    });
   }
-  
+
   // Always create context menus on any install/update/reload
   createContextMenus();
   updateExtensionBadge();
 });
 
 // Also create context menus on startup
-chrome.runtime.onStartup.addListener(() => {
+chrome.runtime.onStartup.addListener(async () => {
   console.log('Extension startup');
+  await loadWebAppUrl();
+  await checkAuthStatus(false);  // Check but don't redirect on startup
   createContextMenus();
   updateExtensionBadge();
 });
@@ -186,11 +248,12 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 // Share current page function
 async function shareCurrentPage() {
   try {
-    // Check authentication first
-    const authStatus = await checkAuthStatus();
+    // Check authentication with redirect enabled
+    const authStatus = await checkAuthStatus(true);  // Will redirect if not authenticated
+
     if (!authStatus.authenticated) {
-      showNotification('Not Authenticated', 'Please log in to the web app first');
-      throw new Error('User not authenticated');
+      // redirectToLogin() already called by checkAuthStatus
+      return;  // Stop execution
     }
 
     // Get selected group ID
@@ -496,6 +559,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ success: false, error: error.message });
         });
       return true;
+
+    case 'login':
+      redirectToLogin()
+        .then(() => sendResponse({ success: true }))
+        .catch(error => {
+          console.error('Error in redirectToLogin:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true;
+
+    case 'set-web-app-url':
+      chrome.storage.sync.set({ webAppUrl: message.url })
+        .then(() => {
+          webAppUrl = message.url;
+          console.log('Web app URL updated to:', webAppUrl);
+          sendResponse({ success: true });
+        })
+        .catch(error => {
+          console.error('Error saving web app URL:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true;
+
+    case 'get-web-app-url':
+      sendResponse({ success: true, url: webAppUrl });
+      return false;
 
     default:
       sendResponse({ error: 'Unknown action' });

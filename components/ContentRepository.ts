@@ -137,6 +137,19 @@ export interface ContentTag {
   created_at: string;
 }
 
+export interface SerializedContent {
+  id: string;
+  type: string;
+  data: string;
+  metadata: any;
+  children: Array<{
+    id: string;
+    type: string;
+    data: string;
+    metadata: any;
+  }>;
+}
+
 // Content Repository class for data access
 export class ContentRepository {
   // Content methods
@@ -499,6 +512,40 @@ export class ContentRepository {
     };
 
     return contentWithTags;
+  }
+
+  async serializeContentWithChildren(contentId: string): Promise<SerializedContent> {
+    // Fetch the main content item
+    const content = await this.getContentById(contentId);
+    if (!content) {
+      throw new Error(`Content not found: ${contentId}`);
+    }
+
+    // Fetch direct children of this content
+    const { data: children, error } = await supabase
+      .from('content')
+      .select('id, type, data, metadata')
+      .eq('parent_content_id', contentId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching content children:', error);
+      throw new Error(error.message);
+    }
+
+    // Return serialized structure
+    return {
+      id: content.id,
+      type: content.type,
+      data: content.data,
+      metadata: content.metadata,
+      children: (children || []).map(child => ({
+        id: child.id,
+        type: child.type,
+        data: child.data,
+        metadata: child.metadata
+      }))
+    };
   }
 
   async searchContent(
@@ -990,6 +1037,23 @@ export class ContentRepository {
     return Array.from(tagMap.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  async getTagFiltersForGroup(groupId: string): Promise<Content[]> {
+    const { data, error } = await supabase
+      .from('content')
+      .select('*')
+      .eq('group_id', groupId)
+      .eq('type', 'tag-filter')
+      .is('parent_content_id', null)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching tag filters for group:', error);
+      throw new Error(error.message);
+    }
+
+    return data || [];
+  }
+
   // User methods
   async createOrUpdateUser(id: string, username?: string): Promise<User> {
     try {
@@ -1323,6 +1387,61 @@ export class ContentRepository {
     } catch (error) {
       console.error('Failed to extract YouTube subtitles:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Extract YouTube transcripts for multiple videos (batch processing with queue support)
+   * Creates transcript content items as children of the video content
+   */
+  async extractYouTubeTranscripts(
+    selectedContent: Content[],
+    useQueue: boolean = true
+  ): Promise<{
+    success: boolean;
+    data: Array<{
+      content_id: string;
+      success: boolean;
+      video_id?: string;
+      tracks_found?: number;
+      transcript_content_ids?: string[];
+      error?: string;
+    }>;
+    error?: string;
+    queued?: boolean;
+  }> {
+    try {
+      const result = await LambdaClient.invoke({
+        action: 'youtube-subtitle-extract',
+        payload: {
+          selectedContent
+        },
+        sync: !useQueue
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'YouTube transcript extraction failed');
+      }
+
+      if (result.queued) {
+        return {
+          success: true,
+          data: [],
+          queued: true
+        };
+      }
+
+      return {
+        success: true,
+        data: result.data || []
+      };
+    } catch (error) {
+      console.error('Failed to extract YouTube transcripts:', error);
+      return {
+        success: false,
+        data: [],
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
     }
   }
 

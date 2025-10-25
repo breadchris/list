@@ -20,6 +20,7 @@ interface ContentInputProps {
   groupId: string;
   parentContentId?: string | null;
   onContentAdded: (content: Content) => void;
+  onNavigate?: (contentId: string) => void;
   onActionSelect?: (action: ContentAction) => void;
   // Workflow props
   workflowActions?: WorkflowAction[];
@@ -32,6 +33,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   groupId,
   parentContentId = null,
   onContentAdded,
+  onNavigate,
   onActionSelect,
   workflowActions = [],
   selectedCount = 0,
@@ -71,6 +73,12 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     // If active action is AI chat, route to AI handler
     if (activeAction === 'ai-chat') {
       handleAISubmit(text);
+      return;
+    }
+
+    // If active action is Claude Code, route to Claude Code start handler
+    if (activeAction === 'claude-code') {
+      handleClaudeCodeStart(text);
       return;
     }
 
@@ -299,10 +307,92 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       setActiveAction(null);
       lexicalInputRef.current?.clear();
 
+      // Navigate to the new chat
+      if (onNavigate) {
+        onNavigate(chatContent.id);
+      }
+
     } catch (error) {
       console.error('Error starting chat:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       toast.error('Chat Failed', errorMessage);
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
+
+  const handleClaudeCodeStart = async (text: string) => {
+    if (!text || createContentMutation.isPending || isGeneratingAI) return;
+
+    setIsGeneratingAI(true);
+
+    try {
+      // Step 1: Create the claude-code container
+      const claudeCodeContent = await createContentMutation.mutateAsync({
+        type: 'claude-code',
+        data: `Code: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`,
+        group_id: groupId,
+        parent_content_id: parentContentId,
+      });
+
+      // Step 2: Create first user prompt as child
+      const userPrompt = await createContentMutation.mutateAsync({
+        type: 'text',
+        data: text,
+        group_id: groupId,
+        parent_content_id: claudeCodeContent.id,
+        metadata: { role: 'user', type: 'claude-code-prompt' }
+      });
+
+      toast.success('Executing Claude Code', 'Running your prompt...');
+
+      // Step 3: Execute Claude Code
+      const response = await ClaudeCodeService.executeClaudeCode(
+        text,
+        groupId,
+        undefined, // No session_id for new session
+        [], // No selected content for initial start
+        claudeCodeContent.id,
+        (status) => {
+          console.log('Claude Code progress:', status);
+        }
+      );
+
+      if (!response.success) {
+        throw new Error(response.error || 'Claude Code execution failed');
+      }
+
+      // Step 4: Store session metadata if we got a session_id
+      if (response.session_id) {
+        await contentRepository.storeClaudeCodeSession(claudeCodeContent.id, {
+          session_id: response.session_id,
+          s3_url: response.s3_url,
+          initial_prompt: text,
+          created_at: new Date().toISOString(),
+          last_updated_at: new Date().toISOString()
+        });
+      }
+
+      toast.success('Claude Code Complete', 'Session started successfully');
+
+      // Invalidate cache to show new results
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.contentByParent(groupId, claudeCodeContent.id)
+      });
+
+      onContentAdded(claudeCodeContent);
+      setActiveAction(null);
+      lexicalInputRef.current?.clear();
+
+      // Navigate to the new Claude Code session
+      if (onNavigate) {
+        onNavigate(claudeCodeContent.id);
+      }
+
+    } catch (error) {
+      console.error('Error starting Claude Code session:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Claude Code Failed', errorMessage);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -422,6 +512,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
               disabled={createContentMutation.isPending || isGeneratingAI}
               parentContentId={parentContentId}
               availableTags={availableTags}
+              activeAction={activeAction}
             />
           </div>
         </div>

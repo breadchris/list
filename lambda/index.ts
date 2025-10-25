@@ -221,6 +221,13 @@ const contentRoute = new aws.apigatewayv2.Route('content-route', {
 	target: pulumi.interpolate`integrations/${integration.id}`
 });
 
+// Create route for /health (health check endpoint)
+const healthRoute = new aws.apigatewayv2.Route('health-route', {
+	apiId: api.id,
+	routeKey: 'GET /health',
+	target: pulumi.interpolate`integrations/${integration.id}`
+});
+
 // Create default stage
 const stage = new aws.apigatewayv2.Stage('default-stage', {
 	apiId: api.id,

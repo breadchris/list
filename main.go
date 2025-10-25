@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/urfave/cli/v2"
 )
@@ -937,4 +943,102 @@ func buildExtensionScript(watch bool) api.BuildResult {
 			}
 		}`,
 	})
+}
+
+// handleLambdaLogs fetches CloudWatch Logs for the Lambda function
+func handleLambdaLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse query parameters
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50 // default
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Lambda configuration from Pulumi outputs
+	const (
+		logGroupName = "/aws/lambda/claude-code-lambda-d643b14"
+		awsRegion    = "us-east-1"
+	)
+
+	// Create AWS config
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(awsRegion))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load AWS config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Create CloudWatch Logs client
+	client := cloudwatchlogs.NewFromConfig(cfg)
+
+	// Get the most recent log stream
+	describeInput := &cloudwatchlogs.DescribeLogStreamsInput{
+		LogGroupName: aws.String(logGroupName),
+		OrderBy:      types.OrderByLastEventTime,
+		Descending:   aws.Bool(true),
+		Limit:        aws.Int32(1),
+	}
+
+	describeOutput, err := client.DescribeLogStreams(ctx, describeInput)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to describe log streams: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if len(describeOutput.LogStreams) == 0 {
+		http.Error(w, "No log streams found", http.StatusNotFound)
+		return
+	}
+
+	logStreamName := describeOutput.LogStreams[0].LogStreamName
+
+	// Get log events from the most recent stream
+	getEventsInput := &cloudwatchlogs.GetLogEventsInput{
+		LogGroupName:  aws.String(logGroupName),
+		LogStreamName: logStreamName,
+		Limit:         aws.Int32(int32(limit)),
+		StartFromHead: aws.Bool(false), // Get most recent events
+	}
+
+	getEventsOutput, err := client.GetLogEvents(ctx, getEventsInput)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get log events: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Transform log events into response format
+	type LogEvent struct {
+		Timestamp int64  `json:"timestamp"`
+		Message   string `json:"message"`
+	}
+
+	events := make([]LogEvent, len(getEventsOutput.Events))
+	for i, event := range getEventsOutput.Events {
+		events[i] = LogEvent{
+			Timestamp: *event.Timestamp,
+			Message:   *event.Message,
+		}
+	}
+
+	// Create response
+	response := map[string]interface{}{
+		"log_group":  logGroupName,
+		"log_stream": *logStreamName,
+		"events":     events,
+		"count":      len(events),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }

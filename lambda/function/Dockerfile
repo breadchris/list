@@ -27,11 +27,25 @@ COPY src/ ./src/
 # Bundle with esbuild (no tree-shaking to preserve handler)
 RUN npm run build
 
-# Stage 3: Lambda runtime
+# Stage 2.5: Install Python packages in Python 3.11 Lambda environment with working SSL
+FROM public.ecr.aws/lambda/python:3.11 AS python-builder
+
+# Install yt-dlp and webvtt-py directly into the Lambda Python runtime
+RUN pip3.11 install --no-cache-dir yt-dlp==2025.4.30 webvtt-py==0.5.1
+
+# Stage 3: Lambda runtime (Node.js 20)
 FROM public.ecr.aws/lambda/nodejs:20
 
 # Set IS_SANDBOX to enable bypassPermissions mode
 ENV IS_SANDBOX=1
+
+# Copy the entire Python 3.11 runtime from Lambda Python image (includes working SSL)
+# This includes /var/lang/bin/python3.11 and /var/runtime/bootstrap
+COPY --from=python-builder /var/lang /var/lang
+COPY --from=python-builder /var/runtime /var/runtime-python
+
+# Add Lambda Python runtime to PATH so python3.11 is available
+ENV PATH="/var/lang/bin:${PATH}"
 
 # Copy Go binary from builder stage
 COPY --from=go-builder /go-build/youtube-handler /usr/local/bin/youtube-handler
@@ -46,6 +60,9 @@ RUN npm ci --omit=dev
 
 # Copy compiled TypeScript from builder stage
 COPY --from=ts-builder /build/dist ./dist
+
+# Copy Python script
+COPY yt_transcript2.py ./
 
 # Set the CMD to your handler
 # Lambda will use package.json "main" field to resolve to index.cjs

@@ -5,6 +5,7 @@ import { SEOCard } from './SEOCard';
 import { JsContentDisplay } from './JsContentDisplay';
 import { UrlPreviewCard } from './UrlPreviewCard';
 import { YouTubeVideoCard } from './YouTubeVideoCard';
+import { YouTubeSectionCard } from './YouTubeSectionCard';
 import { ImageDisplay } from './ImageDisplay';
 import { AudioDisplay } from './AudioDisplay';
 import { EpubViewer } from './EpubViewer';
@@ -25,6 +26,8 @@ import { WorkflowAction } from './WorkflowFAB';
 import { ContentJobsIndicator } from './ContentJobsIndicator';
 import { useActiveJobs } from '../hooks/useJobsQueries';
 import { UserAvatar } from './UserAvatar';
+import { supabase } from './SupabaseClient';
+import { QueryInvalidation } from '../hooks/queryKeys';
 
 interface ContentListProps {
   groupId: string;
@@ -149,6 +152,9 @@ export const ContentList: React.FC<ContentListProps> = ({
 
   // Content persistence state to prevent immediate clearing during navigation
   const [persistentItems, setPersistentItems] = useState<Content[]>([]);
+
+  // Track which TSX components have been loaded (lazy loading)
+  const [loadedTsxComponents, setLoadedTsxComponents] = useState<Set<string>>(new Set());
 
   // Hover state for tag button visibility
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
@@ -367,6 +373,40 @@ export const ContentList: React.FC<ContentListProps> = ({
       return () => clearTimeout(timer);
     }
   }, [groupId, contentData, searchData, isSearching, searchFetching, contentFetching, searchFetchingNext, contentFetchingNext, searchLoading, contentLoading, queryClient, searchQuery, parentContentId]);
+
+  // Realtime subscription for DELETE events
+  useEffect(() => {
+    if (!groupId) return;
+
+    const channel = supabase
+      .channel(`content-deletes-${groupId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'content',
+          filter: `group_id=eq.${groupId}`
+        },
+        (payload) => {
+          console.log('Content deleted via realtime:', payload);
+          const deletedId = payload.old.id;
+
+          // Remove from individual content cache
+          queryClient.removeQueries({ queryKey: QueryKeys.contentById(deletedId) });
+
+          // Invalidate all content lists to remove from UI
+          queryClient.invalidateQueries({
+            queryKey: QueryInvalidation.allContentForGroup(groupId)
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [groupId, queryClient]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -817,25 +857,46 @@ export const ContentList: React.FC<ContentListProps> = ({
                           </svg>
                           <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">TSX Component</span>
                         </div>
-                        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                          <TsxRenderer
-                            tsxSource={item.data}
-                            filename={item.metadata?.filename || `component-${item.id}.tsx`}
-                            minHeight={100}
-                            maxHeight={800}
-                            fallback={
-                              <div className="flex items-center gap-2 text-gray-500 p-4">
-                                <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                                <span>Loading component...</span>
-                              </div>
-                            }
-                            errorFallback={(error) => (
-                              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                                <p className="text-red-600 text-sm">{error.message}</p>
-                              </div>
-                            )}
-                          />
-                        </div>
+                        {loadedTsxComponents.has(item.id) ? (
+                          <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                            <TsxRenderer
+                              tsxSource={item.data}
+                              filename={item.metadata?.filename || `component-${item.id}.tsx`}
+                              minHeight={100}
+                              maxHeight={800}
+                              fallback={
+                                <div className="flex items-center gap-2 text-gray-500 p-4">
+                                  <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                                  <span>Loading component...</span>
+                                </div>
+                              }
+                              errorFallback={(error) => (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                  <p className="text-red-600 text-sm">{error.message}</p>
+                                </div>
+                              )}
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50 shadow-sm flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
+                            style={{ height: '200px' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLoadedTsxComponents(prev => new Set(prev).add(item.id));
+                            }}
+                          >
+                            <svg className="w-12 h-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                            </svg>
+                            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm mb-2">
+                              Load Component
+                            </button>
+                            <p className="text-xs text-gray-500 font-mono">
+                              {item.metadata?.filename || `component-${item.id}.tsx`}
+                            </p>
+                          </div>
+                        )}
                         <TagDisplay tags={item.tags || []} isVisible={true} />
                         <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                         <div className="flex items-center gap-2 mt-2">
@@ -1088,48 +1149,15 @@ export const ContentList: React.FC<ContentListProps> = ({
                       </div>
                     ) : item.type === 'video_section' ? (
                       <div>
-                        <div className="flex items-center space-x-2 mb-2">
-                          <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-                          </svg>
-                          <span className="text-xs font-medium text-indigo-600 uppercase tracking-wide">
-                            Video Section
-                          </span>
-                          {item.metadata?.timestamp_ids && item.metadata.timestamp_ids.length > 0 && (
-                            <span className="text-xs text-gray-500">
-                              ({item.metadata.timestamp_ids.length} timestamp{item.metadata.timestamp_ids.length !== 1 ? 's' : ''})
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 cursor-pointer hover:bg-indigo-100 transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const youtubeUrl = item.metadata?.youtube_url;
-                            const startTime = Math.floor(item.metadata?.start_time || 0);
-                            if (youtubeUrl) {
-                              const urlWithTimestamp = `${youtubeUrl}${youtubeUrl.includes('?') ? '&' : '?'}t=${startTime}`;
-                              window.open(urlWithTimestamp, '_blank');
-                            }
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <h4 className="text-sm font-semibold text-indigo-900 mb-1">
-                              {item.data}
-                            </h4>
-                            <svg className="w-4 h-4 text-indigo-600 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-indigo-700 font-medium">
-                              {formatTimestamp(item.metadata?.start_time || 0)} - {formatTimestamp(item.metadata?.end_time || 0)}
-                            </span>
-                            <span className="text-xs text-indigo-600">
-                              ({Math.floor((item.metadata?.end_time || 0) - (item.metadata?.start_time || 0))}s duration)
-                            </span>
-                          </div>
-                        </div>
+                        <YouTubeSectionCard
+                          contentId={item.id}
+                          youtubeUrl={item.metadata?.youtube_url || ''}
+                          startTime={item.metadata?.start_time || 0}
+                          endTime={item.metadata?.end_time || 0}
+                          title={item.data}
+                          metadata={item.metadata}
+                          onClick={() => handleContentClick(item)}
+                        />
                         <TagDisplay tags={item.tags || []} isVisible={true} />
                         <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                         <div className="flex items-center gap-2 mt-2">
@@ -1226,6 +1254,49 @@ export const ContentList: React.FC<ContentListProps> = ({
                             </div>
                           )}
                         </div>
+                      </div>
+                    ) : item.metadata?.role ? (
+                      <div>
+                        {/* AI Chat Message */}
+                        {item.metadata.role === 'assistant' && (
+                          <div className="flex items-center gap-2 mb-2">
+                            <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
+                              <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
+                            </svg>
+                            <span className="text-xs font-semibold text-blue-700 uppercase">AI Assistant</span>
+                            {item.metadata.streaming && (
+                              <div className="flex items-center gap-1 ml-2">
+                                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className={item.metadata.role === 'assistant' ? 'bg-blue-50 border-l-4 border-blue-500 rounded-lg p-3' : ''}>
+                          <LinkifiedText
+                            text={item.data}
+                            className={`whitespace-pre-wrap break-words text-sm sm:text-base ${
+                              item.metadata.error ? 'text-red-800' : 'text-gray-900'
+                            }`}
+                            maxHeight={200}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                          {item.child_count && item.child_count > 0 && (
+                            <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+                          <TagDisplay tags={item.tags || []} isVisible={true} />
+                        </div>
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                       </div>
                     ) : (
                       <div>

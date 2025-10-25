@@ -18,7 +18,8 @@ export const EnterKeySubmitPlugin: React.FC<EnterKeySubmitPluginProps> = ({
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    return editor.registerCommand(
+    // Register Enter key handler
+    const unregisterEnter = editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event: KeyboardEvent) => {
         if (disabled) return false;
@@ -59,6 +60,25 @@ export const EnterKeySubmitPlugin: React.FC<EnterKeySubmitPluginProps> = ({
       },
       COMMAND_PRIORITY_LOW
     );
+
+    // Register Clear Editor command handler
+    const unregisterClear = editor.registerCommand(
+      CLEAR_EDITOR_COMMAND,
+      () => {
+        editor.update(() => {
+          const root = $getRoot();
+          root.clear();
+        });
+        return true;
+      },
+      COMMAND_PRIORITY_LOW
+    );
+
+    // Cleanup both handlers
+    return () => {
+      unregisterEnter();
+      unregisterClear();
+    };
   }, [editor, onSubmit, disabled, availableTags]);
 
   return null;

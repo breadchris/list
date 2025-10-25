@@ -6,6 +6,7 @@ import { SEOCard } from './SEOCard';
 import { JsContentDisplay } from './JsContentDisplay';
 import { UrlPreviewCard } from './UrlPreviewCard';
 import { YouTubeVideoCard } from './YouTubeVideoCard';
+import { YouTubeSectionCard } from './YouTubeSectionCard';
 import { ImageDisplay } from './ImageDisplay';
 import { AudioDisplay } from './AudioDisplay';
 import { EpubViewer } from './EpubViewer';
@@ -22,6 +23,8 @@ import { TagButton } from './TagButton';
 import { TruncatedContent } from './TruncatedContent';
 import { ContentJobsIndicator } from './ContentJobsIndicator';
 import { useActiveJobs } from '../hooks/useJobsQueries';
+import { supabase } from './SupabaseClient';
+import { QueryInvalidation } from '../hooks/queryKeys';
 
 interface ContentMasonryProps {
   groupId: string;
@@ -292,6 +295,40 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
     };
   }, [userId, groupId, queryClient]);
 
+  // Realtime subscription for DELETE events
+  useEffect(() => {
+    if (!groupId) return;
+
+    const channel = supabase
+      .channel(`content-deletes-masonry-${groupId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'content',
+          filter: `group_id=eq.${groupId}`
+        },
+        (payload) => {
+          console.log('Content deleted via realtime (masonry):', payload);
+          const deletedId = payload.old.id;
+
+          // Remove from individual content cache
+          queryClient.removeQueries({ queryKey: QueryKeys.contentById(deletedId) });
+
+          // Invalidate all content lists to remove from UI
+          queryClient.invalidateQueries({
+            queryKey: QueryInvalidation.allContentForGroup(groupId)
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [groupId, queryClient]);
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
 
@@ -416,7 +453,7 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
     return (
       <div
         key={item.id}
-        className={`bg-white rounded-lg shadow-sm border p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer relative break-inside-avoid ${
+        className={`bg-white rounded-lg shadow-sm border p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer relative break-inside-avoid mb-4 ${
           isSelected
             ? 'border-blue-500 border-2 bg-blue-50'
             : 'border-gray-200'
@@ -493,6 +530,33 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
             ) : item.type === 'image' ? (
               <div>
                 <ImageDisplay imageUrl={item.data} alt="Uploaded image" />
+                <TagDisplay tags={item.tags || []} isVisible={true} />
+                <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                <div className="flex items-center gap-2 mt-2">
+                  <p className="text-xs text-gray-500">
+                    {formatRelativeTime(item.created_at)}
+                  </p>
+                  {item.child_count && item.child_count > 0 && (
+                    <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : item.type === 'video_section' ? (
+              <div>
+                {/* YouTube Video Section Card */}
+                <YouTubeSectionCard
+                  contentId={item.id}
+                  youtubeUrl={item.metadata?.youtube_url || ''}
+                  startTime={item.metadata?.start_time || 0}
+                  endTime={item.metadata?.end_time || 0}
+                  title={item.data}
+                  metadata={item.metadata}
+                  onClick={() => handleContentClick(item)}
+                />
                 <TagDisplay tags={item.tags || []} isVisible={true} />
                 <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                 <div className="flex items-center gap-2 mt-2">

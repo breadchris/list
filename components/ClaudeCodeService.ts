@@ -1,4 +1,4 @@
-import { Content } from './ContentRepository';
+import { Content, ContentRepository, SerializedContent } from './ContentRepository';
 import { LambdaClient } from './LambdaClient';
 import { supabase } from './SupabaseClient';
 
@@ -16,6 +16,7 @@ export interface ClaudeCodeResponse {
   stdout?: string;
   stderr?: string;
   exitCode?: number;
+  input_content_ids?: string[]; // IDs of input content to be stored in metadata
 }
 
 export interface ClaudeCodeJobResponse {
@@ -33,6 +34,7 @@ export interface ClaudeCodeSessionMetadata {
   initial_prompt: string;
   created_at: string;
   last_updated_at?: string;
+  input_content_ids?: string[]; // IDs of content tagged with "input" for TSX component props
   github_repo?: {
     owner: string;
     name: string;
@@ -87,6 +89,25 @@ ${formattedItems}
   }
 
   /**
+   * Format serialized input content for Claude Code component props
+   */
+  static formatInputContentForPrompt(serializedContent: SerializedContent[]): string {
+    if (!serializedContent || serializedContent.length === 0) {
+      return '';
+    }
+
+    const jsonContent = JSON.stringify(serializedContent, null, 2);
+
+    return `This is serialized content that will be passed into the tsx component at runtime as props. When writing the tsx component, consider how this content will be processed and used in the component. For example, if the provided content describes a recipe, and the requested app is a recipe viewer, the provided content will be used when rendering the recipe view.
+
+<input_content>
+${jsonContent}
+</input_content>
+
+`;
+  }
+
+  /**
    * Execute Claude Code with a prompt and optional session continuation
    * Uses async job pattern with polling
    */
@@ -113,14 +134,55 @@ ${formattedItems}
         throw new Error('Group ID is required');
       }
 
-      // Prepend base prompt to all Claude Code executions
-      let fullPrompt = CLAUDE_CODE_BASE_PROMPT + prompt.trim();
+      // Track input content IDs for metadata storage
+      const inputContentIds: string[] = [];
+      let inputContentString = '';
 
-      // Format selected content and prepend if provided
+      // Filter selected content for "input" tag and serialize
       if (selectedContent && selectedContent.length > 0) {
-        const contextString = this.formatSelectedContentForContext(selectedContent);
-        fullPrompt = CLAUDE_CODE_BASE_PROMPT + contextString + prompt.trim();
+        const inputContent = selectedContent.filter(item =>
+          item.tags?.some(tag => tag.name.toLowerCase() === 'input')
+        );
+
+        if (inputContent.length > 0) {
+          // Serialize each input content item with its children
+          const repository = new ContentRepository();
+          const serializedContent: SerializedContent[] = [];
+
+          for (const item of inputContent) {
+            try {
+              const serialized = await repository.serializeContentWithChildren(item.id);
+              serializedContent.push(serialized);
+              inputContentIds.push(item.id);
+            } catch (error) {
+              console.error(`Failed to serialize input content ${item.id}:`, error);
+              // Continue with other items even if one fails
+            }
+          }
+
+          // Format serialized content for prompt
+          if (serializedContent.length > 0) {
+            inputContentString = this.formatInputContentForPrompt(serializedContent);
+          }
+        }
       }
+
+      // Prepend base prompt to all Claude Code executions
+      let fullPrompt = CLAUDE_CODE_BASE_PROMPT + inputContentString;
+
+      // Format remaining selected content (non-input items) and add if provided
+      if (selectedContent && selectedContent.length > 0) {
+        const nonInputContent = selectedContent.filter(item =>
+          !item.tags?.some(tag => tag.name.toLowerCase() === 'input')
+        );
+        if (nonInputContent.length > 0) {
+          const contextString = this.formatSelectedContentForContext(nonInputContent);
+          fullPrompt += contextString;
+        }
+      }
+
+      // Add user prompt at the end
+      fullPrompt += prompt.trim();
 
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
@@ -185,6 +247,11 @@ ${formattedItems}
 
       // Poll for completion
       const result = await this.pollJobStatus(job_id, onProgress);
+
+      // Add input_content_ids to result for metadata storage
+      if (inputContentIds.length > 0) {
+        result.input_content_ids = inputContentIds;
+      }
 
       return result;
 
@@ -294,7 +361,8 @@ ${formattedItems}
     sessionId: string,
     s3Url: string,
     initialPrompt: string,
-    isUpdate: boolean = false
+    isUpdate: boolean = false,
+    inputContentIds?: string[]
   ): ClaudeCodeSessionMetadata {
     const metadata: ClaudeCodeSessionMetadata = {
       session_id: sessionId,
@@ -305,6 +373,10 @@ ${formattedItems}
 
     if (isUpdate) {
       metadata.last_updated_at = new Date().toISOString();
+    }
+
+    if (inputContentIds && inputContentIds.length > 0) {
+      metadata.input_content_ids = inputContentIds;
     }
 
     return metadata;

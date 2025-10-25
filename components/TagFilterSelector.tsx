@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Tag, TagFilter, contentRepository } from "./ContentRepository";
 import { useDebounce } from "../hooks/useDebounce";
-import { useCreateContentMutation, useInfiniteContentByParent } from "../hooks/useContentQueries";
+import { useCreateContentMutation, useTagFiltersForGroup } from "../hooks/useContentQueries";
 import { useToast } from "./ToastProvider";
 
 interface TagFilterSelectorProps {
@@ -33,20 +33,9 @@ export const TagFilterSelector: React.FC<TagFilterSelectorProps> = ({
 
   // Fetch saved tag filters for this group
   const {
-    data: savedFiltersData,
+    data: savedFilters = [],
     isLoading: savedFiltersLoading,
-  } = useInfiniteContentByParent(
-    groupId,
-    null,
-    { viewMode: 'chronological' }
-  );
-
-  // Extract saved tag-filter content items
-  const savedFilters = React.useMemo(() => {
-    if (!savedFiltersData) return [];
-    const allContent = savedFiltersData.pages.flatMap(page => page.items);
-    return allContent.filter(content => content.type === 'tag-filter');
-  }, [savedFiltersData]);
+  } = useTagFiltersForGroup(groupId);
 
   const [selectedMode, setSelectedMode] = useState<"include" | "exclude">(
     "include",

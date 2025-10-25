@@ -10,6 +10,7 @@ import { TermsOfService } from './TermsOfService';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { RefundPolicy } from './RefundPolicy';
 import { PricingPage } from './PricingPage';
+import { AdminPage } from './AdminPage';
 
 /**
  * Main App component that wraps the application with providers and React Router
@@ -31,10 +32,13 @@ export const App: React.FC = () => {
 
               {/* Public content route */}
               <Route path="/public/content/:contentId" element={<PublicContentView />} />
-              
+
+              {/* Admin page */}
+              <Route path="/admin" element={<AdminPage />} />
+
               {/* Pricing page */}
               <Route path="/pricing" element={<PricingPage />} />
-              
+
               {/* Legal pages */}
               <Route path="/terms-of-service" element={<TermsOfService />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />

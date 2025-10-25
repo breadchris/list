@@ -416,6 +416,13 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 	// Handle direct Lambda invocation (testing)
 	if (!isAPIGateway) {
 		process.stderr.write('Direct invocation detected\n');
+		// Check if it's a content request (has action and payload)
+		if (event.action && event.payload) {
+			const result = await handleContentRequest(event as ContentRequest);
+			await flushLogs();
+			return result;
+		}
+		// Otherwise treat as Claude Code request
 		const result = await handleClaudeCodeRequest(event as ClaudeCodeRequest);
 		await flushLogs();
 		return result;
@@ -431,6 +438,30 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 		result = {
 			statusCode: 204,
 			headers: corsHeaders
+		};
+		await flushLogs();
+		return result;
+	}
+
+	// Handle GET /health request
+	if (method === 'GET' && (path === '/health' || path === '/health/')) {
+		const healthResponse = {
+			status: 'healthy',
+			version: process.env.CODE_VERSION || 'unknown',
+			deployed_at: process.env.DEPLOYED_AT || 'unknown',
+			deployment_type: process.env.DEPLOYMENT_TYPE || 'unknown',
+			git_commit: process.env.GIT_COMMIT || 'unknown',
+			git_branch: process.env.GIT_BRANCH || 'unknown',
+			uptime: process.uptime()
+		};
+
+		result = {
+			statusCode: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify(healthResponse)
 		};
 		await flushLogs();
 		return result;

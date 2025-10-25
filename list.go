@@ -23,6 +23,9 @@ func createHTTPServer() *http.ServeMux {
 	// API endpoint for frontend configuration
 	mux.HandleFunc("/api/config", handleAPIConfig)
 
+	// API endpoint for Lambda logs
+	mux.HandleFunc("/api/lambda-logs", handleLambdaLogs)
+
 	// Static file server for CSS and fonts
 	fileServer := http.FileServer(http.Dir("public/"))
 	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))

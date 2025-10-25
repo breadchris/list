@@ -8,11 +8,13 @@
 import React, { useEffect, useState } from 'react';
 import { TsxComponentLoader } from './TsxComponentLoader';
 import { TsxIframeRenderer } from './TsxIframeRenderer';
+import { ContentRepository, SerializedContent } from './ContentRepository';
 
 interface TsxRendererProps {
   tsxSource: string;
   filename?: string;
   componentProps?: Record<string, any>;
+  contentId?: string; // Optional ID of TSX content to fetch input_content_ids from metadata
   onError?: (error: Error) => void;
   onLoad?: () => void;
   fallback?: React.ReactNode;
@@ -34,6 +36,7 @@ export function TsxRenderer({
   tsxSource,
   filename = 'component.tsx',
   componentProps = {},
+  contentId,
   onError,
   onLoad,
   fallback,
@@ -46,6 +49,68 @@ export function TsxRenderer({
     loading: true,
     error: null
   });
+
+  const [inputContent, setInputContent] = useState<SerializedContent[]>([]);
+  const [inputContentLoading, setInputContentLoading] = useState(false);
+
+  // Fetch input content from metadata effect
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchInputContent = async () => {
+      if (!contentId) {
+        setInputContent([]);
+        return;
+      }
+
+      try {
+        setInputContentLoading(true);
+        const repository = new ContentRepository();
+
+        // Fetch the TSX content to get its metadata
+        const tsxContent = await repository.getContentById(contentId);
+
+        if (!tsxContent || !tsxContent.metadata?.input_content_ids) {
+          if (isMounted) {
+            setInputContent([]);
+            setInputContentLoading(false);
+          }
+          return;
+        }
+
+        const inputContentIds = tsxContent.metadata.input_content_ids as string[];
+
+        // Serialize each input content item with its children
+        const serialized: SerializedContent[] = [];
+        for (const inputId of inputContentIds) {
+          try {
+            const serializedItem = await repository.serializeContentWithChildren(inputId);
+            serialized.push(serializedItem);
+          } catch (error) {
+            console.error(`Failed to serialize input content ${inputId}:`, error);
+            // Continue with other items even if one fails
+          }
+        }
+
+        if (isMounted) {
+          setInputContent(serialized);
+          setInputContentLoading(false);
+        }
+      } catch (error) {
+        console.error('Failed to fetch input content:', error);
+        if (isMounted) {
+          setInputContent([]);
+          setInputContentLoading(false);
+        }
+      }
+    };
+
+    fetchInputContent();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [contentId]);
 
   // Transpile component effect
   useEffect(() => {
@@ -79,7 +144,7 @@ export function TsxRenderer({
   }, [tsxSource, filename, onError]);
 
   // Loading state
-  if (state.loading) {
+  if (state.loading || inputContentLoading) {
     return (
       <div className="flex items-center justify-center p-8">
         {fallback || (
@@ -114,11 +179,17 @@ export function TsxRenderer({
 
   // Render compiled component in iframe
   if (state.compiledJS) {
+    // Merge input content into component props
+    const mergedProps = {
+      ...componentProps,
+      content: inputContent
+    };
+
     return (
       <TsxIframeRenderer
         compiledJS={state.compiledJS}
         filename={filename}
-        componentProps={componentProps}
+        componentProps={mergedProps}
         onError={onError}
         onLoad={onLoad}
         minHeight={minHeight}

@@ -38,6 +38,12 @@ async function initialize() {
     document.getElementById('share-btn').addEventListener('click', sharePage);
     document.getElementById('reload-btn').addEventListener('click', reloadExtension);
     document.getElementById('group-select').addEventListener('change', handleGroupChange);
+    document.getElementById('login-btn').addEventListener('click', handleLogin);
+    document.getElementById('settings-toggle').addEventListener('click', toggleSettings);
+    document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
+
+    // Load web app URL setting
+    await loadWebAppUrl();
 
     // Update keyboard shortcuts for different platforms
     updateKeyboardShortcuts();
@@ -56,11 +62,19 @@ async function checkAuth() {
       authStatus.authenticated = response.authenticated;
       authStatus.userId = response.userId;
 
-      const authWarning = document.getElementById('auth-warning');
+      // Update auth status UI
+      const authStatusEl = document.getElementById('auth-status');
+      const authTextEl = document.getElementById('auth-text');
+      const loginBtn = document.getElementById('login-btn');
+
       if (!authStatus.authenticated) {
-        authWarning.style.display = 'block';
+        authStatusEl.className = 'auth-status not-authenticated';
+        authTextEl.textContent = '⚠️ Not logged in';
+        loginBtn.style.display = 'block';
       } else {
-        authWarning.style.display = 'none';
+        authStatusEl.className = 'auth-status authenticated';
+        authTextEl.textContent = '✓ Logged in';
+        loginBtn.style.display = 'none';
       }
 
       console.log('Auth status:', authStatus);
@@ -68,6 +82,15 @@ async function checkAuth() {
   } catch (error) {
     console.error('Error checking auth:', error);
     authStatus.authenticated = false;
+
+    // Show error state
+    const authStatusEl = document.getElementById('auth-status');
+    const authTextEl = document.getElementById('auth-text');
+    const loginBtn = document.getElementById('login-btn');
+
+    authStatusEl.className = 'auth-status not-authenticated';
+    authTextEl.textContent = '⚠️ Authentication error';
+    loginBtn.style.display = 'block';
   }
 }
 
@@ -355,7 +378,7 @@ function showLoading(show) {
 function updateKeyboardShortcuts() {
   // Update keyboard shortcuts display for different platforms
   const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-  
+
   const shortcuts = document.querySelectorAll('.keyboard-shortcut');
   shortcuts.forEach(shortcut => {
     if (isMac) {
@@ -365,6 +388,104 @@ function updateKeyboardShortcuts() {
       shortcut.textContent = shortcut.textContent.replace('Cmd+', 'Ctrl+');
     }
   });
+}
+
+async function handleLogin() {
+  const button = document.getElementById('login-btn');
+  const originalText = button.textContent;
+
+  try {
+    button.disabled = true;
+    button.textContent = 'Opening...';
+
+    // Send login request to background script (opens web app in new tab)
+    const response = await chrome.runtime.sendMessage({ action: 'login' });
+
+    if (response && response.success) {
+      showSuccess('Login page opened. Please sign in and close the tab when done.');
+
+      // Check auth status after a delay
+      setTimeout(async () => {
+        await checkAuth();
+        if (authStatus.authenticated) {
+          await loadGroups();
+          await loadSelectedGroup();
+          showSuccess('Successfully logged in!');
+        }
+      }, 3000);
+    } else {
+      throw new Error(response?.error || 'Failed to open login page');
+    }
+  } catch (error) {
+    console.error('Error opening login:', error);
+    showError('Failed to open login page: ' + error.message);
+  } finally {
+    button.textContent = originalText;
+    button.disabled = false;
+  }
+}
+
+function toggleSettings() {
+  const settingsPanel = document.getElementById('settings-panel');
+  settingsPanel.classList.toggle('show');
+}
+
+async function loadWebAppUrl() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'get-web-app-url' });
+
+    if (response && response.success) {
+      const urlInput = document.getElementById('web-app-url-input');
+      urlInput.value = response.url;
+      console.log('Loaded web app URL:', response.url);
+    }
+  } catch (error) {
+    console.error('Error loading web app URL:', error);
+  }
+}
+
+async function saveSettings() {
+  const button = document.getElementById('save-settings-btn');
+  const urlInput = document.getElementById('web-app-url-input');
+  const originalText = button.textContent;
+
+  try {
+    const url = urlInput.value.trim();
+
+    if (!url) {
+      showError('Please enter a web app URL');
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(url);
+    } catch {
+      showError('Please enter a valid URL');
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = 'Saving...';
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'set-web-app-url',
+      url: url
+    });
+
+    if (response && response.success) {
+      showSuccess('Settings saved successfully!');
+      console.log('Web app URL updated to:', url);
+    } else {
+      throw new Error(response?.error || 'Failed to save settings');
+    }
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    showError('Failed to save settings: ' + error.message);
+  } finally {
+    button.textContent = originalText;
+    button.disabled = false;
+  }
 }
 
 // Handle messages from background script (if any)

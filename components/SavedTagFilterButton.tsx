@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tag } from './ContentRepository';
-import { useInfiniteContentByParent } from '../hooks/useContentQueries';
+import { useTagFiltersForGroup } from '../hooks/useContentQueries';
 
 interface SavedTagFilterButtonProps {
   groupId: string;
@@ -17,24 +17,10 @@ export const SavedTagFilterButton: React.FC<SavedTagFilterButtonProps> = ({
 }) => {
   // Query for saved tag filters in this group
   const {
-    data,
+    data: savedFilters = [],
     isLoading,
     error
-  } = useInfiniteContentByParent(
-    groupId,
-    null, // parent_content_id
-    {
-      viewMode: 'chronological'
-    }
-  );
-
-  // Extract saved tag-filter content items
-  const savedFilters = React.useMemo(() => {
-    if (!data) return [];
-
-    const allContent = data.pages.flatMap(page => page.items);
-    return allContent.filter(content => content.type === 'tag-filter');
-  }, [data]);
+  } = useTagFiltersForGroup(groupId);
 
   // Check if a filter is currently active
   const isFilterActive = (filterMetadata: any) => {

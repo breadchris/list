@@ -10,6 +10,7 @@ import { BeautifulMentionsPlugin, BeautifulMentionNode } from 'lexical-beautiful
 import { EnterKeySubmitPlugin } from './EnterKeySubmitPlugin';
 import { EditorState, $getRoot, CLEAR_EDITOR_COMMAND } from 'lexical';
 import { Tag } from './ContentRepository';
+import { ContentAction } from './ContentActionsMenu';
 
 interface LexicalContentInputProps {
   onSubmit: (text: string, mentions: string[]) => void;
@@ -18,6 +19,7 @@ interface LexicalContentInputProps {
   disabled?: boolean;
   parentContentId?: string | null;
   availableTags?: Tag[];
+  activeAction?: ContentAction | null;
 }
 
 export interface LexicalContentInputRef {
@@ -33,6 +35,7 @@ const LexicalContentInputInternal: React.FC<LexicalContentInputProps & { innerRe
   disabled = false,
   parentContentId,
   availableTags = [],
+  activeAction = null,
   innerRef
 }) => {
   const [editor] = useLexicalComposerContext();
@@ -52,7 +55,9 @@ const LexicalContentInputInternal: React.FC<LexicalContentInputProps & { innerRe
     }
   }), [editor, onSubmit]);
 
-  const defaultPlaceholder = parentContentId
+  const defaultPlaceholder = activeAction === 'ai-chat'
+    ? "Ask AI a question..."
+    : parentContentId
     ? "Add a sub-item..."
     : "Add a new item to the list...";
 
@@ -66,8 +71,10 @@ const LexicalContentInputInternal: React.FC<LexicalContentInputProps & { innerRe
       <RichTextPlugin
         contentEditable={
           <ContentEditable
-            className={`lexical-content-editable w-full px-3 py-2 bg-transparent text-white border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${
-              disabled ? 'opacity-50 cursor-not-allowed' : ''
+            className={`lexical-content-editable w-full px-3 py-2 bg-transparent text-white border rounded-md focus:outline-none focus:ring-2 ${
+              disabled ? 'opacity-50 cursor-not-allowed' :
+              activeAction === 'ai-chat' ? 'border-blue-500 ring-1 ring-blue-400 focus:ring-blue-400 focus:border-blue-500' :
+              'border-gray-600 focus:ring-blue-400 focus:border-blue-400'
             }`}
             ariaLabel="Content editor"
             aria-placeholder={placeholder || defaultPlaceholder}
@@ -98,7 +105,8 @@ export const LexicalContentInput = forwardRef<LexicalContentInputRef, LexicalCon
   placeholder,
   disabled = false,
   parentContentId,
-  availableTags = []
+  availableTags = [],
+  activeAction = null
 }, ref) => {
   const initialConfig = {
     namespace: 'ContentEditor',
@@ -132,6 +140,7 @@ export const LexicalContentInput = forwardRef<LexicalContentInputRef, LexicalCon
         disabled={disabled}
         parentContentId={parentContentId}
         availableTags={availableTags}
+        activeAction={activeAction}
         innerRef={ref}
       />
     </LexicalComposer>

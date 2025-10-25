@@ -7,9 +7,9 @@ import { GroupSelector } from './GroupSelector';
 import { ContentList } from './ContentList';
 import { ContentStack } from './ContentStack';
 import { ContentMasonry } from './ContentMasonry';
+import { ContentDeck } from './ContentDeck';
 import { ContentInput } from './ContentInput';
 import { JsEditorView } from './JsEditorView';
-import { ChatView } from './ChatView';
 import { SavedTagFilterButton } from './SavedTagFilterButton';
 import { MicroGameOverlay } from './MicroGameOverlay';
 import { SEOProgressOverlay, SEOProgressItem } from './SEOProgressOverlay';
@@ -38,12 +38,13 @@ import { useMarkdownExtraction, MarkdownProgressItem } from '../hooks/useMarkdow
 import { useYouTubePlaylistExtraction, YouTubeProgressItem } from '../hooks/useYouTubePlaylistExtraction';
 import { useLibgenSearch } from '../hooks/useLibgenSearch';
 import { useAudioTranscription } from '../hooks/useAudioTranscription';
+import { useYouTubeTranscript } from '../hooks/useYouTubeTranscript';
 import { useTagsForGroup } from '../hooks/useTagQueries';
 import { useToast } from './ToastProvider';
 import { extractUrls, getFirstUrl } from '../utils/urlDetection';
 import { getYouTubeVideoFromContent } from '../utils/youtubeHelpers';
 import { Clock, SkipBack, ArrowDownAZ, Shuffle } from 'lucide-react';
-import { ViewDisplayToggle, DisplayMode } from './ViewDisplayToggle';
+import { ViewDisplaySelector, DisplayMode } from './ViewDisplaySelector';
 
 // Simplified app loading states to prevent rapid transitions
 type AppLoadingState = 'loading' | 'ready' | 'error';
@@ -70,7 +71,6 @@ export const ListApp: React.FC = () => {
   const [newContent, setNewContent] = useState<Content | undefined>();
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
   const [currentJsContent, setCurrentJsContent] = useState<Content | null>(null);
-  const [currentChatContent, setCurrentChatContent] = useState<Content | null>(null);
   const [navigationStack, setNavigationStack] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'Root'}]);
   const [showInput, setShowInput] = useState(true);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -95,6 +95,7 @@ export const ListApp: React.FC = () => {
   const youTubeExtractionMutation = useYouTubePlaylistExtraction();
   const libgenSearchMutation = useLibgenSearch();
   const audioTranscriptionMutation = useAudioTranscription();
+  const youtubeTranscriptMutation = useYouTubeTranscript();
 
   // Load tags for current group
   const { data: availableTags = [] } = useTagsForGroup(currentGroup?.id || '');
@@ -408,7 +409,10 @@ export const ListApp: React.FC = () => {
 
     try {
       // Perform bulk delete
-      await bulkDeleteMutation.mutateAsync(selectedIds);
+      await bulkDeleteMutation.mutateAsync({
+        contentIds: selectedIds,
+        groupId: currentGroup.id
+      });
 
       // Clear selection after successful deletion
       contentSelection.clearSelection();
@@ -1333,6 +1337,108 @@ export const ListApp: React.FC = () => {
     }
   };
 
+  const handleYouTubeTranscript = async () => {
+    console.log('📜 YouTube Transcript Extraction button clicked!');
+    console.log('Selection state:', {
+      isSelectionMode: contentSelection.isSelectionMode,
+      selectedCount: contentSelection.selectedCount,
+      selectedItems: contentSelection.selectedItems
+    });
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+    console.log('Selected IDs:', selectedIds);
+
+    if (selectedIds.length === 0) {
+      console.log('No items selected, exiting');
+      return;
+    }
+
+    try {
+      // Fetch selected content items
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          const content = await contentRepository.getContentById(id);
+          return content;
+        })
+      );
+
+      // Filter valid content and check for YouTube videos
+      const validContent = selectedContent.filter(Boolean) as Content[];
+
+      // Helper function to check if content is a YouTube video
+      const isYouTubeVideo = (content: Content): boolean => {
+        if (content.metadata?.youtube_video_id) {
+          return true;
+        }
+        const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+        return youtubeRegex.test(content.data);
+      };
+
+      const youtubeContent = validContent.filter(isYouTubeVideo);
+
+      console.log('Valid content items:', validContent.length);
+      console.log('YouTube video items:', youtubeContent.length);
+
+      if (youtubeContent.length === 0) {
+        toast.info('No YouTube Videos', 'Selected content items do not contain any YouTube videos to extract transcripts from.');
+        return;
+      }
+
+      // Show initial progress notification
+      toast.info('Extracting Transcripts', `Starting transcript extraction for ${youtubeContent.length} YouTube video${youtubeContent.length > 1 ? 's' : ''}...`);
+
+      // Call the transcript extraction mutation
+      const results = await youtubeTranscriptMutation.mutateAsync({
+        selectedContent: youtubeContent,
+        useQueue: true,
+        onProgress: (item) => {
+          console.log('Transcript extraction progress:', item);
+
+          if (item.status === 'completed') {
+            toast.success(
+              'Transcript Extraction Complete',
+              `Finished extracting transcript for video`
+            );
+          } else if (item.status === 'failed') {
+            toast.error(
+              'Transcript Extraction Failed',
+              item.error || 'Failed to extract transcript'
+            );
+          }
+        }
+      });
+
+      // Show final notification
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.length - successCount;
+
+      if (successCount > 0 && failureCount === 0) {
+        toast.success(
+          'Transcript Extraction Complete',
+          `Successfully extracted transcripts for ${successCount} video${successCount > 1 ? 's' : ''}!`
+        );
+      } else if (successCount > 0) {
+        toast.warning(
+          'Transcript Extraction Partially Complete',
+          `Extracted ${successCount} transcript${successCount > 1 ? 's' : ''}, ${failureCount} failed`
+        );
+      } else if (results.length === 0) {
+        // Jobs were queued
+        toast.info('Jobs Queued', `${youtubeContent.length} transcript extraction job${youtubeContent.length > 1 ? 's' : ''} queued for processing`);
+      } else {
+        toast.error('Transcript Extraction Failed', 'Failed to extract any transcripts. Please try again later.');
+      }
+
+      // Exit selection mode and refresh content list
+      contentSelection.clearSelection();
+      setNewContent(undefined);
+
+    } catch (error) {
+      console.error('Error in YouTube transcript extraction:', error);
+      toast.error('Error', 'Failed to process selected content for transcript extraction');
+    }
+  };
+
   const handleYouTubeAnnotation = async () => {
     console.log('🎞️ YouTube Annotation button clicked!');
     console.log('Selection state:', {
@@ -1460,6 +1566,107 @@ export const ListApp: React.FC = () => {
     }
   };
 
+  // AI Content Analysis handler - creates chat with selected content for AI analysis
+  const handleAIContentAnalysis = async () => {
+    console.log('🧠 AI Content Analysis clicked!');
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+
+    if (selectedIds.length === 0) {
+      toast.error('No content selected', 'Please select content to analyze');
+      return;
+    }
+
+    if (!currentGroup || !user) {
+      toast.error('Cannot create chat', 'Please select a group first');
+      return;
+    }
+
+    try {
+      // Fetch full content objects
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          const content = await contentRepository.getContentById(id);
+          if (!content) {
+            throw new Error(`Content with ID ${id} not found`);
+          }
+          return content;
+        })
+      );
+
+      // Serialize content into readable format
+      const serializedContent = selectedContent.map((item, index) => {
+        let contentStr = `${index + 1}. [Type: ${item.type}] ${item.data}`;
+
+        // Add tags if available
+        if (item.tags && item.tags.length > 0) {
+          contentStr += `\n   Tags: ${item.tags.map(t => t.name).join(', ')}`;
+        }
+
+        // Add metadata for certain types
+        if (item.type === 'seo' && item.metadata) {
+          if (item.metadata.title) contentStr += `\n   Title: ${item.metadata.title}`;
+          if (item.metadata.description) contentStr += `\n   Description: ${item.metadata.description}`;
+        }
+
+        return contentStr;
+      }).join('\n\n');
+
+      // Construct the prompt
+      const prompt = `Consider the following content and elaborate on what it is. If you are not sure, then think about what it could be:\n\n${serializedContent}`;
+
+      // Create chat container
+      const chatContent = await contentRepository.createContent({
+        type: 'chat',
+        data: `AI Analysis: ${selectedContent.length} item${selectedContent.length > 1 ? 's' : ''}`,
+        group_id: currentGroup.id,
+        user_id: user.id,
+        parent_content_id: currentParentId,
+        metadata: {
+          created_via: 'content_analysis',
+          analyzed_content_count: selectedContent.length
+        }
+      });
+
+      // Create user message with the prompt
+      await contentRepository.createContent({
+        type: 'text',
+        data: prompt,
+        group_id: currentGroup.id,
+        user_id: user.id,
+        parent_content_id: chatContent.id,
+        metadata: { role: 'user' }
+      });
+
+      // Call chat service to get AI response
+      const chatResponse = await ChatService.sendMessage({
+        chat_content_id: chatContent.id,
+        message: prompt,
+        group_id: currentGroup.id
+      });
+
+      if (!chatResponse.success) {
+        throw new Error(chatResponse.error || 'AI analysis failed');
+      }
+
+      // Invalidate cache to show AI response
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.contentByParent(currentGroup.id, chatContent.id)
+      });
+
+      // Navigate to the chat
+      await handleNavigate(chatContent.id);
+
+      // Clear selection
+      contentSelection.clearSelection();
+
+      toast.success('AI Analysis Started!', 'Analyzing your content');
+    } catch (error) {
+      console.error('Failed to create AI content analysis:', error);
+      toast.error('Analysis Failed', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
   // Define available workflow actions
   const workflowActions = [
     {
@@ -1473,6 +1680,16 @@ export const ListApp: React.FC = () => {
       }
     },
     {
+      id: 'ai-analyze',
+      name: 'Analyze with AI',
+      description: 'Ask AI to analyze and elaborate on selected content',
+      icon: '🧠',
+      onClick: () => {
+        console.log('🧠 WorkflowAction onClick triggered for AI Content Analysis');
+        handleAIContentAnalysis();
+      }
+    },
+    {
       id: 'claude-code',
       name: 'Claude Code',
       description: 'Execute coding tasks with Claude Code SDK',
@@ -1480,16 +1697,6 @@ export const ListApp: React.FC = () => {
       onClick: () => {
         console.log('💻 WorkflowAction onClick triggered for Claude Code execution');
         handleClaudeCodeExecution();
-      }
-    },
-    {
-      id: 'llm-generate',
-      name: 'Generate with AI',
-      description: 'Use AI to generate content from selection',
-      icon: '🤖',
-      onClick: () => {
-        console.log('🤖 WorkflowAction onClick triggered for LLM generation');
-        handleLLMGeneration();
       }
     },
     {
@@ -1572,6 +1779,16 @@ export const ListApp: React.FC = () => {
       onClick: () => {
         console.log('🎙️ WorkflowAction onClick triggered for audio transcription');
         handleTranscribeAudio();
+      }
+    },
+    {
+      id: 'youtube-transcript',
+      name: 'Extract Transcript',
+      description: 'Get transcripts from YouTube videos',
+      icon: '📜',
+      onClick: () => {
+        console.log('📜 WorkflowAction onClick triggered for YouTube transcript extraction');
+        handleYouTubeTranscript();
       }
     },
     {
@@ -1828,7 +2045,7 @@ export const ListApp: React.FC = () => {
   useEffect(() => {
     if (currentGroup?.id) {
       const savedDisplayMode = localStorage.getItem(`displayMode_${currentGroup.id}`) as DisplayMode;
-      if (savedDisplayMode && ['list', 'stack'].includes(savedDisplayMode)) {
+      if (savedDisplayMode && ['list', 'stack', 'masonry', 'deck'].includes(savedDisplayMode)) {
         setDisplayMode(savedDisplayMode);
       } else {
         setDisplayMode('list'); // Default display mode
@@ -1938,7 +2155,7 @@ export const ListApp: React.FC = () => {
   };
 
   const handleNavigate = async (parentId: string | null) => {
-    if (parentId === currentParentId && !currentJsContent && !currentChatContent) return;
+    if (parentId === currentParentId && !currentJsContent) return;
 
     // Close input when navigating
     setShowInput(false);
@@ -1950,7 +2167,6 @@ export const ListApp: React.FC = () => {
       // Navigate to root
       setCurrentParentId(null);
       setCurrentJsContent(null);
-      setCurrentChatContent(null);
       setNavigationStack([{id: null, name: 'Root'}]);
 
       // Use React Router to navigate to group root
@@ -1965,24 +2181,16 @@ export const ListApp: React.FC = () => {
           // Check content type and set appropriate state
           if (parentContent.type === 'js') {
             setCurrentJsContent(parentContent);
-            setCurrentChatContent(null);
-            setCurrentParentId(parentId);
-          } else if (parentContent.type === 'chat') {
-            setCurrentChatContent(parentContent);
-            setCurrentJsContent(null);
             setCurrentParentId(parentId);
           } else {
             // Regular content navigation
             setCurrentJsContent(null);
-            setCurrentChatContent(null);
             setCurrentParentId(parentId);
           }
 
           // Add to navigation stack
           const displayName = parentContent.type === 'js'
             ? `JS: ${parentContent.data.substring(0, 20)}...`
-            : parentContent.type === 'chat'
-            ? `💬 ${parentContent.data || 'AI Chat'}`
             : parentContent.data.substring(0, 30);
           const newStack = [...navigationStack, {id: parentId, name: displayName}];
           setNavigationStack(newStack);
@@ -2400,11 +2608,11 @@ export const ListApp: React.FC = () => {
                   )}
                 </button>
               )}
-              {/* Display Mode Toggle */}
+              {/* Display Mode Selector */}
               {currentGroup && !isSearching && (
-                <ViewDisplayToggle
+                <ViewDisplaySelector
                   currentMode={displayMode}
-                  onToggle={setDisplayMode}
+                  onSelect={setDisplayMode}
                 />
               )}
               {/* Sharing Button - only show when viewing specific content */}
@@ -2550,22 +2758,8 @@ export const ListApp: React.FC = () => {
           </div>
         )}
 
-        {/* Content List, Chat View, or JS Editor View */}
-        {currentChatContent ? (
-          <ChatView
-            chatContent={currentChatContent}
-            groupId={currentGroup?.id || ''}
-            onClose={() => handleNavigate(null)}
-            onNavigate={handleNavigate}
-            searchQuery={searchQuery}
-            isSearching={isSearching}
-            selection={contentSelection}
-            newContent={newContent}
-            onContentAdded={handleContentAdded}
-            viewMode={viewMode}
-            availableTags={availableTags}
-          />
-        ) : currentJsContent ? (
+        {/* Content List or JS Editor View */}
+        {currentJsContent ? (
           <JsEditorView
             jsContent={currentJsContent}
             groupId={currentGroup?.id || ''}
@@ -2621,6 +2815,27 @@ export const ListApp: React.FC = () => {
             onExecuteExternalSearch={handleExecuteExternalSearch}
             selectedTagFilter={selectedTagFilter}
           />
+        ) : displayMode === 'deck' ? (
+          <ContentDeck
+            groupId={currentGroup?.id || ''}
+            userId={user?.id}
+            newContent={newContent}
+            parentContentId={currentParentId}
+            onNavigate={handleNavigate}
+            searchQuery={searchQuery}
+            isSearching={isSearching}
+            selection={contentSelection}
+            showInput={showInput}
+            onInputClose={handleInputClose}
+            onContentAdded={handleContentAdded}
+            viewMode={viewMode}
+            searchWorkflows={searchWorkflows}
+            onSearchQueryChange={handleContentSearchChange}
+            activeExternalSearch={activeExternalSearch}
+            onActivateExternalSearch={setActiveExternalSearch}
+            onExecuteExternalSearch={handleExecuteExternalSearch}
+            selectedTagFilter={selectedTagFilter}
+          />
         ) : (
           <ContentList
             groupId={currentGroup?.id || ''}
@@ -2645,13 +2860,14 @@ export const ListApp: React.FC = () => {
         )}
       </div>
 
-      {/* Content Input - Always visible when group is selected and not in JS/Chat view */}
-      {currentGroup && !currentJsContent && !currentChatContent && (
+      {/* Content Input - Always visible when group is selected and not in JS view */}
+      {currentGroup && !currentJsContent && (
         <div className="fixed bottom-0 left-0 right-0 z-40">
           <ContentInput
             groupId={currentGroup.id}
             parentContentId={currentParentId}
             onContentAdded={handleContentAdded}
+            onNavigate={handleNavigate}
             onActionSelect={(action) => {
               if (action === 'import') {
                 setShowSpotifyModal(true);
