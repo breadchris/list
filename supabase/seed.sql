@@ -147,3 +147,22 @@ INSERT INTO public.content (id, type, data, group_id, user_id, parent_content_id
     ('c0000000-0000-0000-0000-000000000001', 'text', 'Welcome to the test group!', 'b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', NULL, NOW(), NOW()),
     ('c0000000-0000-0000-0000-000000000002', 'text', 'This is a sample task item', 'b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', NULL, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
+
+-- Create root relationships for the test content (from_content_id = NULL for root items)
+-- Note: ON CONFLICT removed because db reset ensures fresh data
+INSERT INTO public.content_relationships (from_content_id, to_content_id, display_order) VALUES
+    (NULL, 'c0000000-0000-0000-0000-000000000001', 0),
+    (NULL, 'c0000000-0000-0000-0000-000000000002', 0);
+
+-- Catchall: Create relationships for ALL content that doesn't have them yet
+-- This handles any production data that may have been imported
+INSERT INTO public.content_relationships (from_content_id, to_content_id, display_order)
+SELECT
+  parent_content_id,  -- NULL for root items, parent ID for children
+  id,
+  0
+FROM content
+WHERE NOT EXISTS (
+  SELECT 1 FROM content_relationships cr
+  WHERE cr.to_content_id = content.id
+);

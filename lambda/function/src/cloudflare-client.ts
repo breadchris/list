@@ -37,10 +37,18 @@ export async function generateScreenshot(url: string): Promise<ArrayBuffer> {
     apiToken: cloudflareApiKey,
   });
 
-  // Generate screenshot - Cloudflare API no longer accepts full_page parameter
+  // Generate screenshot with wait parameters to ensure page loads fully
   const screenshot = await client.browserRendering.screenshot.create({
     account_id: accountId,
-    url: url
+    url: url,
+    goto_options: {
+      wait_until: 'networkidle2',  // Wait until network is idle (≤2 connections for 500ms)
+      timeout: 30000                // 30 second timeout for page load
+    },
+    options: {
+      viewport: { width: 1280, height: 720 },  // Consistent viewport size
+      full_page: false                          // Capture viewport only, not full scrollable page
+    }
   });
 
   return screenshot as unknown as ArrayBuffer;

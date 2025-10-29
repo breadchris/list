@@ -22,7 +22,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
   const toast = useToast();
 
   const { isAuthenticated, accessToken, isLoading: authLoading, login } = useSpotifyAuth();
-  const { data: playlists, isLoading: playlistsLoading } = useSpotifyPlaylists(accessToken, isAuthenticated);
+  const { data: playlists, isLoading: playlistsLoading } = useSpotifyPlaylists(accessToken, isAuthenticated && isVisible);
   const importMutation = useImportSpotifyPlaylist();
 
   console.log('🎵 Spotify Modal State:', {

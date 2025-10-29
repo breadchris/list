@@ -345,6 +345,9 @@ async function shareCurrentPage() {
       throw new Error(`Failed to save: ${error.message}`);
     }
 
+    // Note: content_relationship is automatically created by database trigger
+    // No need to manually create it here
+
     console.log('Page shared successfully to Supabase:', data);
 
     showNotification('Page Shared', `"${tab.title}" has been saved to your group`);
@@ -494,7 +497,7 @@ async function updateExtensionBadge() {
 }
 
 // Handle messages from popup and web app
-chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Message received:', message);
 
   // Handle messages from web app (type-based)
@@ -637,19 +640,18 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 
     case 'check-auth':
       console.log('[MESSAGE] Handling check-auth request');
-      (async () => {
-        try {
-          const authStatus = await checkAuthStatus();
+      checkAuthStatus()
+        .then(authStatus => {
           const response = { success: true, ...authStatus };
           console.log('[MESSAGE] check-auth response:', response);
           sendResponse(response);
-        } catch (error) {
+        })
+        .catch(error => {
           console.error('[MESSAGE] Error in checkAuthStatus:', error);
           const errorResponse = { success: false, error: error.message };
           console.log('[MESSAGE] check-auth error response:', errorResponse);
           sendResponse(errorResponse);
-        }
-      });
+        });
       return true;
 
     case 'login':

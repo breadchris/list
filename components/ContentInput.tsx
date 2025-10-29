@@ -12,7 +12,7 @@ import { ImageUploadInput } from './ImageUploadInput';
 import { EpubUploadInput } from './EpubUploadInput';
 import { PluginLoader } from './PluginLoader';
 import { PluginEditor } from './PluginEditor';
-import { ContentActionsMenu, ContentAction } from './ContentActionsMenu';
+import { ContentPieMenu, ContentAction } from './ContentPieMenu';
 import { WorkflowActionsMenu } from './WorkflowActionsMenu';
 import { WorkflowAction } from './WorkflowFAB';
 
@@ -488,23 +488,25 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   // Always show the new content input UI
   return (
     <>
+      {/* Floating Action Button (FAB) - centered above input bar */}
+      {!isSelectionMode && (
+        <ContentPieMenu
+          onActionSelect={handleActionSelect}
+        />
+      )}
+
       <div className="bg-gray-800 px-4 py-3">
         <div className="flex items-center space-x-3 max-w-4xl mx-auto">
           {/* Workflow Actions Menu (shown when items are selected) */}
-          {isSelectionMode && selectedCount > 0 ? (
+          {isSelectionMode && selectedCount > 0 && (
             <WorkflowActionsMenu
               actions={workflowActions}
               selectedCount={selectedCount}
               onActionSelect={(action) => action.onClick()}
             />
-          ) : (
-            /* Content Actions Menu (shown when not in selection mode) */
-            <ContentActionsMenu
-              onActionSelect={handleActionSelect}
-            />
           )}
 
-          {/* Text Input */}
+          {/* Text Input - full width when not in selection mode */}
           <div className="flex-1">
             <LexicalContentInput
               ref={lexicalInputRef}

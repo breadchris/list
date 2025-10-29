@@ -52,41 +52,43 @@ const isChromeExtensionAvailable = typeof chrome !== 'undefined' &&
                                    chrome.runtime &&
                                    typeof chrome.runtime.sendMessage === 'function';
 
-const chromeStorageAdapter = isChromeExtensionAvailable ? {
+// Dual-write storage adapter: localStorage (primary, fast) + chrome extension (secondary, async)
+const dualStorageAdapter = isChromeExtensionAvailable ? {
   getItem: async (key: string) => {
-    console.log('[Supabase] Extension getItem:', key);
-    try {
-      const response = await chrome.runtime.sendMessage(EXTENSION_ID, { action: 'storage-get', key });
-      console.log('[Supabase] Extension getItem response received:', typeof response, response);
-      // Unwrap if response is wrapped in { value: ... }
-      return response?.value ?? response ?? null;
-    } catch (error) {
-      console.error('[Supabase] Extension getItem error:', error);
-      return null;
-    }
+    // Read from localStorage immediately (no blocking)
+    return localStorage.getItem(key);
   },
   setItem: async (key: string, value: string) => {
-    console.log('[Supabase] Extension setItem:', key);
-    try {
-      await chrome.runtime.sendMessage(EXTENSION_ID, { action: 'storage-set', key, value });
-    } catch (error) {
-      console.error('[Supabase] Extension setItem error:', error);
-    }
+    // Write to localStorage first (synchronous, fast)
+    localStorage.setItem(key, value);
+
+    // Then sync to extension in background (fire-and-forget, non-blocking)
+    chrome.runtime.sendMessage(EXTENSION_ID, {
+      action: 'storage-set',
+      key,
+      value
+    }).catch(error => {
+      console.warn('[Supabase] Extension sync failed (non-blocking):', error);
+    });
   },
   removeItem: async (key: string) => {
-    console.log('[Supabase] Extension removeItem:', key);
-    try {
-      await chrome.runtime.sendMessage(EXTENSION_ID, { action: 'storage-remove', key });
-    } catch (error) {
-      console.error('[Supabase] Extension removeItem error:', error);
-    }
+    // Remove from localStorage first (synchronous, fast)
+    localStorage.removeItem(key);
+
+    // Then sync to extension in background (fire-and-forget, non-blocking)
+    chrome.runtime.sendMessage(EXTENSION_ID, {
+      action: 'storage-remove',
+      key
+    }).catch(error => {
+      console.warn('[Supabase] Extension sync failed (non-blocking):', error);
+    });
   }
 } : undefined;
 
 // Log storage adapter configuration
 if (typeof window !== 'undefined') {
   if (isChromeExtensionAvailable) {
-    console.log('[Supabase] Using chrome extension for session persistence (shared storage)');
+    console.log('[Supabase] Using dual storage: localStorage (primary) + chrome extension (sync)');
   } else {
     console.log('[Supabase] Using default localStorage for session persistence');
   }
@@ -94,14 +96,14 @@ if (typeof window !== 'undefined') {
 
 // Create Supabase client with build-time configuration (will be used immediately)
 // This will be the primary client instance, with build-time injected values if available
-// Uses chrome.storage.local when Chrome extension API is available (shares session with extension)
+// Uses dual storage: localStorage (primary, fast) + chrome extension sync (background, non-blocking)
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
     flowType: 'pkce', // More secure and faster
-    ...(chromeStorageAdapter ? { storage: chromeStorageAdapter } : {})
+    ...(dualStorageAdapter ? { storage: dualStorageAdapter } : {})
   },
   realtime: {
     params: {

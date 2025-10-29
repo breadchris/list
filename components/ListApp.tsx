@@ -3007,7 +3007,7 @@ export const ListApp: React.FC = () => {
       />
 
       {/* Spotify Playlist Import Modal */}
-      {currentGroup && (
+      {currentGroup && showSpotifyModal && (
         <SpotifyPlaylistModal
           isVisible={showSpotifyModal}
           groupId={currentGroup.id}

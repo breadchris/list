@@ -34,6 +34,13 @@ export const QueryKeys = {
   tagFiltersByGroup: (groupId: string) =>
     ['tag-filters', 'by-group', groupId] as const,
 
+  // Content relationship operations
+  contentRelationships: ['content-relationships'] as const,
+  parentsByContent: (contentId: string) =>
+    ['content-relationships', 'parents', contentId] as const,
+  childrenByContent: (contentId: string) =>
+    ['content-relationships', 'children', contentId] as const,
+
   // SEO operations
   seoChildren: (contentId: string) =>
     ['content', 'seo-children', contentId] as const,

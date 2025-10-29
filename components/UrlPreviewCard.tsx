@@ -1,5 +1,4 @@
 import React from 'react';
-import {supabase} from "./SupabaseClient";
 
 interface UrlPreviewCardProps {
   previewUrl: string;
@@ -10,7 +9,7 @@ interface UrlPreviewCardProps {
  * Component to display URL preview screenshots
  */
 export const UrlPreviewCard: React.FC<UrlPreviewCardProps> = ({ previewUrl, className = '' }) => {
-  const fullImageUrl = supabase.storage.from('content').getPublicUrl(previewUrl).data.publicUrl;
+  const fullImageUrl = previewUrl;
 
   return (
     <div className={`mt-3 border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow ${className}`}>

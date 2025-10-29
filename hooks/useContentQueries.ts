@@ -422,3 +422,80 @@ export const useTagFiltersForGroup = (groupId: string) => {
     refetchOnWindowFocus: true,
   });
 };
+
+/**
+ * Query hook for fetching all parent content items for a given content ID
+ * Returns parents with their relationship metadata
+ */
+export const useParentsForContent = (contentId: string) => {
+  return useQuery({
+    queryKey: QueryKeys.parentsByContent(contentId),
+    queryFn: async () => {
+      return await contentRepository.getParentsForContent(contentId);
+    },
+    enabled: !!contentId,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    refetchOnWindowFocus: false,
+  });
+};
+
+/**
+ * Mutation for creating a relationship between two content items
+ */
+export const useCreateRelationshipMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (relationship: {
+      from_content_id: string;
+      to_content_id: string;
+      display_order?: number;
+    }) => {
+      return await contentRepository.createRelationship(relationship);
+    },
+    onSuccess: (createdRelationship) => {
+      // Invalidate parent and child queries for both content items
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.parentsByContent(createdRelationship.to_content_id)
+      });
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.childrenByContent(createdRelationship.from_content_id)
+      });
+      // Also invalidate content queries to update child counts
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.content
+      });
+    },
+  });
+};
+
+/**
+ * Mutation for deleting a relationship between two content items
+ */
+export const useDeleteRelationshipMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ relationshipId, fromContentId, toContentId }: {
+      relationshipId: string;
+      fromContentId: string;
+      toContentId: string;
+    }) => {
+      await contentRepository.deleteRelationship(relationshipId);
+      return { fromContentId, toContentId };
+    },
+    onSuccess: ({ fromContentId, toContentId }) => {
+      // Invalidate parent and child queries for both content items
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.parentsByContent(toContentId)
+      });
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.childrenByContent(fromContentId)
+      });
+      // Also invalidate content queries to update child counts
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.content
+      });
+    },
+  });
+};

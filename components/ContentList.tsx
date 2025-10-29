@@ -28,6 +28,8 @@ import { useActiveJobs } from '../hooks/useJobsQueries';
 import { UserAvatar } from './UserAvatar';
 import { supabase } from './SupabaseClient';
 import { QueryInvalidation } from '../hooks/queryKeys';
+import { PieMenu } from './pie/PieMenu';
+import { useContentPieMenu } from '../hooks/useContentPieMenu';
 
 interface ContentListProps {
   groupId: string;
@@ -158,6 +160,15 @@ export const ContentList: React.FC<ContentListProps> = ({
 
   // Hover state for tag button visibility
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+
+  // Pie menu for tag application
+  const {
+    isPieMenuOpen,
+    pieMenuPosition,
+    pieMenuItems,
+    handleContextMenu,
+    closePieMenu
+  } = useContentPieMenu(groupId);
 
   // Split tag filters into include and exclude arrays
   const includeTagIds = useMemo(() =>
@@ -407,6 +418,46 @@ export const ContentList: React.FC<ContentListProps> = ({
       supabase.removeChannel(channel);
     };
   }, [groupId, queryClient]);
+
+  // Realtime subscription for content relationship changes
+  useEffect(() => {
+    if (!parentContentId) return;
+
+    const channel = supabase
+      .channel(`relationships-${parentContentId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'content_relationships',
+          filter: `from_content_id=eq.${parentContentId}`
+        },
+        (payload) => {
+          console.log('Relationship changed via realtime:', payload);
+
+          // Invalidate content lists to refresh with new relationships
+          queryClient.invalidateQueries({
+            queryKey: QueryInvalidation.allContentForGroup(groupId)
+          });
+
+          // Also invalidate parent queries for the affected content
+          if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+            const affectedContentId = payload.new?.to_content_id || payload.old?.to_content_id;
+            if (affectedContentId) {
+              queryClient.invalidateQueries({
+                queryKey: QueryKeys.parentsByContent(affectedContentId)
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [parentContentId, groupId, queryClient]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -784,6 +835,11 @@ export const ContentList: React.FC<ContentListProps> = ({
                   onClick={() => handleContentClick(item)}
                   onMouseEnter={() => setHoveredItemId(item.id)}
                   onMouseLeave={() => setHoveredItemId(null)}
+                  onContextMenu={(e) => {
+                    if (!selection.isSelectionMode) {
+                      handleContextMenu(e, item);
+                    }
+                  }}
                 >
                   {/* Selection indicator - better mobile positioning */}
                   {selection.isSelectionMode && (
@@ -1454,6 +1510,16 @@ export const ContentList: React.FC<ContentListProps> = ({
           </div>
         )}
       </div>
+
+      {/* Pie menu for tag application (only when not in selection mode) */}
+      {!selection.isSelectionMode && (
+        <PieMenu
+          items={pieMenuItems}
+          isOpen={isPieMenuOpen}
+          position={pieMenuPosition}
+          onClose={closePieMenu}
+        />
+      )}
     </div>
   );
 };

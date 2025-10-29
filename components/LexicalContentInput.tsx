@@ -10,7 +10,7 @@ import { BeautifulMentionsPlugin, BeautifulMentionNode } from 'lexical-beautiful
 import { EnterKeySubmitPlugin } from './EnterKeySubmitPlugin';
 import { EditorState, $getRoot, CLEAR_EDITOR_COMMAND } from 'lexical';
 import { Tag } from './ContentRepository';
-import { ContentAction } from './ContentActionsMenu';
+import { ContentAction } from './ContentPieMenu';
 
 interface LexicalContentInputProps {
   onSubmit: (text: string, mentions: string[]) => void;
