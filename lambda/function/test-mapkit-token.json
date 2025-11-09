@@ -1,0 +1,32 @@
+{
+  "version": "2.0",
+  "routeKey": "POST /mapkit/token",
+  "rawPath": "/mapkit/token",
+  "rawQueryString": "",
+  "headers": {
+    "accept": "*/*",
+    "content-type": "application/json",
+    "host": "localhost:9000",
+    "user-agent": "curl/8.0.0"
+  },
+  "requestContext": {
+    "accountId": "123456789012",
+    "apiId": "test",
+    "domainName": "localhost",
+    "domainPrefix": "test",
+    "http": {
+      "method": "POST",
+      "path": "/mapkit/token",
+      "protocol": "HTTP/1.1",
+      "sourceIp": "127.0.0.1",
+      "userAgent": "curl/8.0.0"
+    },
+    "requestId": "test-request-id",
+    "routeKey": "POST /mapkit/token",
+    "stage": "$default",
+    "time": "02/Nov/2025:18:00:00 +0000",
+    "timeEpoch": 1762104000000
+  },
+  "body": "{\"origin\": \"https://list-lyart.vercel.app\"}",
+  "isBase64Encoded": false
+}

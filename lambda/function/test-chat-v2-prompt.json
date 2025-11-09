@@ -1,0 +1,4 @@
+{
+  "action": "chat-v2-stream",
+  "prompt": "What is 2+2? Please explain your answer."
+}

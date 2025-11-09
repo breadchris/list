@@ -85,11 +85,19 @@ class ShareViewController: UIViewController {
     }
 
     private func saveToInbox(url: String) {
-        do {
-            let inbox = try SharedInbox(appGroupId: appGroupId)
-            let item = ShareItem(url: url)
-            try inbox.enqueue(item)
+        print("📤 Share Extension: Starting save process for URL: \(url)")
 
+        do {
+            print("🔍 Share Extension: Opening inbox at App Group: \(appGroupId)")
+            let inbox = try SharedInbox(appGroupId: appGroupId)
+
+            let item = ShareItem(url: url)
+            print("📝 Share Extension: Created ShareItem with ID: \(item.id)")
+
+            try inbox.enqueue(item)
+            print("✅ Share Extension: Successfully enqueued item to inbox")
+
+            print("📢 Share Extension: Posting Darwin notification: com.breadchris.list.inbox.changed")
             CFNotificationCenterPostNotification(
                 CFNotificationCenterGetDarwinNotifyCenter(),
                 CFNotificationName("com.breadchris.list.inbox.changed" as CFString),
@@ -97,6 +105,7 @@ class ShareViewController: UIViewController {
                 nil,
                 true
             )
+            print("✅ Share Extension: Darwin notification posted")
 
             showSuccess()
         } catch {

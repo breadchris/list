@@ -78,6 +78,81 @@ func main() {
 				},
 				Action: buildExtensionCommand,
 			},
+			{
+				Name:      "import",
+				Usage:     "Import files from directory to Supabase",
+				ArgsUsage: "<directory>",
+				Description: "Import files and folders from a local directory into Supabase.\n" +
+					"   The folder structure will be preserved using parent-child content relationships.\n" +
+					"   You can interactively select file types, map them to content types, and choose the target group.\n\n" +
+					"   Example: go run . import ./my-documents --user-id <uuid>",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "user-id",
+						Usage:    "User ID for content ownership (required)",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:  "group-id",
+						Usage: "Group ID for content (will prompt if not provided)",
+					},
+					&cli.BoolFlag{
+						Name:  "skip-hidden",
+						Value: true,
+						Usage: "Skip hidden files and directories",
+					},
+					&cli.IntFlag{
+						Name:  "max-file-size",
+						Value: 10,
+						Usage: "Maximum file size in MB",
+					},
+					&cli.BoolFlag{
+						Name:  "dry-run",
+						Value: false,
+						Usage: "Preview import without making changes",
+					},
+					&cli.BoolFlag{
+						Name:  "verbose",
+						Value: false,
+						Usage: "Show detailed progress output",
+					},
+				},
+				Action: importCommand,
+			},
+			{
+				Name:  "local",
+				Usage: "Manage local development stack (Supabase + Lambda + Frontend)",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "skip-supabase",
+						Value: false,
+						Usage: "Skip starting Supabase (manage separately with 'npx supabase start')",
+					},
+					&cli.BoolFlag{
+						Name:  "standalone-lambda",
+						Value: false,
+						Usage: "Use standalone Node.js Lambda server instead of Docker (faster startup)",
+					},
+				},
+				Subcommands: []*cli.Command{
+					{
+						Name:   "stop",
+						Usage:  "Stop all local services",
+						Action: localStopCommand,
+					},
+					{
+						Name:   "logs",
+						Usage:  "Tail logs from local services",
+						Action: localLogsCommand,
+					},
+					{
+						Name:   "reset",
+						Usage:  "Reset Supabase database",
+						Action: localResetCommand,
+					},
+				},
+				Action: localStartCommand,
+			},
 		},
 	}
 
@@ -124,7 +199,19 @@ func serveCommand(c *cli.Context) error {
 	fmt.Printf("   • GET  /              - Main List app\n")
 	fmt.Printf("   • GET  /render/{path} - Component debugging\n")
 	fmt.Printf("   • GET  /module/{path} - ES module serving\n")
+	fmt.Printf("   • POST /lambda-proxy  - Local Lambda CORS proxy\n")
 
+	// Check if Lambda endpoint is set to local proxy
+	if strings.Contains(config.LambdaEndpoint, "localhost") || strings.Contains(config.LambdaEndpoint, "127.0.0.1") {
+		if strings.Contains(config.LambdaEndpoint, fmt.Sprintf(":%s", config.Port)) {
+			fmt.Printf("\n⚡ Lambda proxy mode enabled\n")
+			fmt.Printf("   Frontend → http://localhost:%s/lambda-proxy\n", config.Port)
+			fmt.Printf("   Proxy    → http://localhost:9000 (Docker Lambda)\n")
+			fmt.Printf("   Make sure Lambda container is running on port 9000\n")
+		}
+	}
+
+	fmt.Println()
 	return http.ListenAndServe(":"+config.Port, mux)
 }
 
@@ -139,8 +226,21 @@ func buildCommand(c *cli.Context) error {
 		return fmt.Errorf("failed to create build directory: %v", err)
 	}
 
-	// Build main app bundle
-	result := buildWithEsbuild("./index.tsx", filepath.Join(buildDir, "app.js"), true)
+	// Load configuration to get Lambda endpoint
+	config, err := LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Create define map with Lambda endpoint for build-time injection
+	defines := map[string]string{
+		"LAMBDA_ENDPOINT": fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+	}
+
+	fmt.Printf("🔗 Injecting Lambda endpoint: %s\n", config.LambdaEndpoint)
+
+	// Build main app bundle with defines
+	result := buildWithEsbuildAndDefines("./index.tsx", filepath.Join(buildDir, "app.js"), true, defines)
 
 	if len(result.Errors) > 0 {
 		fmt.Println("❌ Production build failed:")
@@ -303,8 +403,14 @@ func handleRenderComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load Lambda endpoint for injection
+	config, _ := LoadConfig()
+	defines := map[string]string{
+		"LAMBDA_ENDPOINT": fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+	}
+
 	// Build with esbuild for rendering
-	result := buildComponentForRendering(string(sourceCode), filepath.Dir(srcPath), filepath.Base(srcPath))
+	result := buildComponentForRendering(string(sourceCode), filepath.Dir(srcPath), filepath.Base(srcPath), defines)
 
 	if len(result.Errors) > 0 {
 		errorMessages := make([]string, len(result.Errors))
@@ -312,9 +418,9 @@ func handleRenderComponent(w http.ResponseWriter, r *http.Request) {
 			errorMessages[i] = fmt.Sprintf("%s:%d:%d: %s", err.Location.File, err.Location.Line, err.Location.Column, err.Text)
 		}
 
-		errorHTML := generateErrorHTML(componentPath, errorMessages)
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(errorHTML))
+		errorJS := generateErrorJS(componentPath, errorMessages)
+		w.Header().Set("Content-Type", "text/javascript")
+		w.Write([]byte(errorJS))
 		return
 	}
 
@@ -365,8 +471,14 @@ func handleServeModule(w http.ResponseWriter, r *http.Request) {
 		sourceCodeStr = injectSupabaseConfig(sourceCodeStr)
 	}
 
+	// Load Lambda endpoint for injection
+	config, _ := LoadConfig()
+	defines := map[string]string{
+		"LAMBDA_ENDPOINT": fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+	}
+
 	// Build as ES module for browser consumption
-	result := buildAsESModule(sourceCodeStr, filepath.Dir(srcPath), filepath.Base(srcPath))
+	result := buildAsESModule(sourceCodeStr, filepath.Dir(srcPath), filepath.Base(srcPath), defines)
 
 	if len(result.Errors) > 0 {
 		errorMessages := make([]string, len(result.Errors))
@@ -393,6 +505,11 @@ func handleServeModule(w http.ResponseWriter, r *http.Request) {
 
 // buildWithEsbuild performs esbuild compilation with platform-specific settings
 func buildWithEsbuild(inputPath, outputPath string, writeToDisk bool) api.BuildResult {
+	return buildWithEsbuildAndDefines(inputPath, outputPath, writeToDisk, nil)
+}
+
+// buildWithEsbuildAndDefines performs esbuild compilation with custom defines for environment-specific config
+func buildWithEsbuildAndDefines(inputPath, outputPath string, writeToDisk bool, defines map[string]string) api.BuildResult {
 	return api.Build(api.BuildOptions{
 		EntryPoints: []string{inputPath},
 		Loader: map[string]api.Loader{
@@ -414,6 +531,7 @@ func buildWithEsbuild(inputPath, outputPath string, writeToDisk bool) api.BuildR
 		LogLevel:         api.LogLevelInfo,
 		Sourcemap:        api.SourceMapInline,
 		External:         []string{},
+		Define:           defines,
 		TsconfigRaw: `{
 			"compilerOptions": {
 				"jsx": "react-jsx",
@@ -437,7 +555,7 @@ func buildWithEsbuild(inputPath, outputPath string, writeToDisk bool) api.BuildR
 }
 
 // buildComponentForRendering builds a component for HTML page rendering
-func buildComponentForRendering(sourceCode, resolveDir, sourcefile string) api.BuildResult {
+func buildComponentForRendering(sourceCode, resolveDir, sourcefile string, defines map[string]string) api.BuildResult {
 	return api.Build(api.BuildOptions{
 		Stdin: &api.StdinOptions{
 			Contents:   sourceCode,
@@ -465,6 +583,7 @@ func buildComponentForRendering(sourceCode, resolveDir, sourcefile string) api.B
 		Sourcemap:         api.SourceMapInline,
 		LogLevel:          api.LogLevelSilent,
 		External:          []string{},
+		Define:            defines,
 		TsconfigRaw: `{
 			"compilerOptions": {
 				"jsx": "react-jsx",
@@ -487,7 +606,7 @@ func buildComponentForRendering(sourceCode, resolveDir, sourcefile string) api.B
 }
 
 // buildAsESModule builds source code as an ES module for direct browser consumption
-func buildAsESModule(sourceCode, resolveDir, sourcefile string) api.BuildResult {
+func buildAsESModule(sourceCode, resolveDir, sourcefile string, defines map[string]string) api.BuildResult {
 	return api.Build(api.BuildOptions{
 		Stdin: &api.StdinOptions{
 			Contents:   sourceCode,
@@ -512,6 +631,7 @@ func buildAsESModule(sourceCode, resolveDir, sourcefile string) api.BuildResult 
 		Sourcemap:       api.SourceMapInline,
 		LogLevel:        api.LogLevelSilent,
 		External:        []string{"react", "react-dom", "react/jsx-runtime", "@supabase/supabase-js"},
+		Define:          defines,
 		TsconfigRaw: `{
 			"compilerOptions": {
 				"jsx": "react-jsx",
@@ -575,6 +695,57 @@ func generateErrorHTML(componentPath string, errors []string) string {
 </html>`, componentPath, errorItems)
 }
 
+func generateErrorJS(componentPath string, errors []string) string {
+	// Escape errors for JavaScript string literal
+	escapedErrors := make([]string, len(errors))
+	for i, err := range errors {
+		// Replace backslashes, quotes, and newlines
+		escaped := strings.ReplaceAll(err, `\`, `\\`)
+		escaped = strings.ReplaceAll(escaped, `'`, `\'`)
+		escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+		escapedErrors[i] = escaped
+	}
+
+	// Join errors with HTML formatting
+	errorItems := ""
+	for _, err := range escapedErrors {
+		errorItems += fmt.Sprintf(`<div style="margin: 5px 0; padding: 5px; background: #ffffff; border-radius: 3px;">%s</div>`, err)
+	}
+
+	// Escape componentPath for JavaScript
+	escapedPath := strings.ReplaceAll(componentPath, `\`, `\\`)
+	escapedPath = strings.ReplaceAll(escapedPath, `'`, `\'`)
+
+	// Build JavaScript with template literal
+	js := "// Build error overlay\n" +
+		"(function() {\n" +
+		"  const errorOverlay = document.createElement('div');\n" +
+		"  errorOverlay.id = 'build-error-overlay';\n" +
+		"  errorOverlay.innerHTML = `\n" +
+		"    <div style=\"position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 999999; padding: 20px; overflow: auto; font-family: monospace;\">\n" +
+		"      <div style=\"max-width: 800px; margin: 0 auto; background: #fed7d7; border: 2px solid #fc8181; padding: 20px; border-radius: 8px;\">\n" +
+		"        <h1 style=\"color: #c53030; margin-top: 0;\">Build Error</h1>\n" +
+		"        <p>Failed to build component from <code>" + escapedPath + "</code></p>\n" +
+		"        <div style=\"margin: 10px 0;\">\n" +
+		"          " + errorItems + "\n" +
+		"        </div>\n" +
+		"        <h4>Troubleshooting:</h4>\n" +
+		"        <ul>\n" +
+		"          <li>Check TypeScript syntax and imports</li>\n" +
+		"          <li>Verify all dependencies are properly exported</li>\n" +
+		"          <li>Ensure Supabase client is correctly configured</li>\n" +
+		"          <li>Check for circular dependencies</li>\n" +
+		"        </ul>\n" +
+		"        <button onclick=\"document.getElementById('build-error-overlay').remove()\" style=\"margin-top: 10px; padding: 8px 16px; background: #c53030; color: white; border: none; border-radius: 4px; cursor: pointer;\">Close</button>\n" +
+		"      </div>\n" +
+		"    </div>\n" +
+		"  `;\n" +
+		"  document.body.appendChild(errorOverlay);\n" +
+		"})();"
+
+	return js
+}
+
 func generateRenderComponentHTML(componentName, componentPath string) string {
 	return fmt.Sprintf(`
 <!DOCTYPE html>
@@ -600,16 +771,16 @@ func generateRenderComponentHTML(componentName, componentPath string) string {
     <link rel="preload" href="/static/fonts/Satoshi-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
-    
+
     <link rel="stylesheet" type="text/css" href="/static/styles.css">
     <style>
         #root { width: 100%%; height: 100vh; }
-        .error { 
-            padding: 20px; 
-            color: #dc2626; 
-            background: #fef2f2; 
-            border: 1px solid #fecaca; 
-            margin: 20px; 
+        .error {
+            padding: 20px;
+            color: #dc2626;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            margin: 20px;
             border-radius: 8px;
             font-family: monospace;
         }
@@ -648,16 +819,16 @@ func generateComponentHTML(componentName, componentPath string) string {
     <link rel="preload" href="/static/fonts/Satoshi-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
-    
+
     <link rel="stylesheet" type="text/css" href="/static/styles.css">
     <style>
         #root { width: 100%%; height: 100vh; }
-        .error { 
-            padding: 20px; 
-            color: #dc2626; 
-            background: #fef2f2; 
-            border: 1px solid #fecaca; 
-            margin: 20px; 
+        .error {
+            padding: 20px;
+            color: #dc2626;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            margin: 20px;
             border-radius: 8px;
             font-family: monospace;
         }
@@ -755,7 +926,7 @@ func generateProductionHTML() string {
     <link rel="preload" href="/fonts/Satoshi-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/fonts/Satoshi-Medium.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/fonts/Satoshi-Bold.woff2" as="font" type="font/woff2" crossorigin>
-    
+
     <link rel="stylesheet" type="text/css" href="/styles.css">
     <style>
         #root { width: 100%; height: 100vh; }
@@ -1041,4 +1212,54 @@ func handleLambdaLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
+}
+
+// localStartCommand starts the local development stack
+func localStartCommand(c *cli.Context) error {
+	configPath := filepath.Join("data", "config.local.json")
+	skipSupabase := c.Bool("skip-supabase")
+	standaloneMode := c.Bool("standalone-lambda")
+
+	// Create local stack manager
+	stack, err := NewLocalStack(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to create local stack: %w", err)
+	}
+
+	// Start all services
+	if err := stack.Start(skipSupabase, standaloneMode); err != nil {
+		return fmt.Errorf("failed to start local stack: %w", err)
+	}
+
+	// Stream logs in the background
+	go stack.StreamLogs()
+
+	// Wait for interrupt signal
+	stack.WaitForInterrupt()
+
+	return nil
+}
+
+// localStopCommand stops the local development stack
+func localStopCommand(c *cli.Context) error {
+	configPath := filepath.Join("data", "config.local.json")
+
+	// Create local stack manager
+	stack, err := NewLocalStack(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to create local stack: %w", err)
+	}
+
+	// Stop all services
+	return stack.Stop()
+}
+
+// localLogsCommand tails logs from local services
+func localLogsCommand(c *cli.Context) error {
+	return TailLogs()
+}
+
+// localResetCommand resets the Supabase database
+func localResetCommand(c *cli.Context) error {
+	return ResetSupabaseDatabase()
 }

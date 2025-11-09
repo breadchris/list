@@ -77,16 +77,14 @@ export const GroupDropdown: React.FC<GroupDropdownProps> = ({
     );
   }
 
-  // If only one group or loading, show simple title without dropdown
-  if (groups.length <= 1 || isLoading) {
+  // If loading, show simple title without dropdown
+  if (isLoading) {
     return (
       <div className="flex items-center space-x-2">
         <span className="text-xl font-semibold text-gray-900">
           {currentGroup.name}
         </span>
-        {isLoading && (
-          <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full"></div>
-        )}
+        <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full"></div>
       </div>
     );
   }

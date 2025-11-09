@@ -15,8 +15,9 @@ interface ImageDisplayProps {
  * - Click to view full size in new tab
  * - Loading state with skeleton
  * - Error handling with fallback UI
+ * - Memoized to prevent unnecessary rerenders when parent updates
  */
-export const ImageDisplay: React.FC<ImageDisplayProps> = ({
+const ImageDisplayComponent: React.FC<ImageDisplayProps> = ({
   imageUrl,
   alt = 'Uploaded image',
   className = ''
@@ -114,3 +115,6 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
     </div>
   );
 };
+
+// Memoize to prevent rerenders when parent updates but props haven't changed
+export const ImageDisplay = React.memo(ImageDisplayComponent);

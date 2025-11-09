@@ -2,6 +2,8 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tansta
 import { Content, contentRepository } from '../components/ContentRepository';
 import { QueryKeys, QueryInvalidation } from './queryKeys';
 import { getFirstUrl } from '../utils/urlDetection';
+import { shouldGenerateScreenshot } from '../utils/urlHandlerConfig';
+import { getFeatureFlag } from '../utils/featureFlags';
 
 /**
  * Hook for fetching public content children (accessible to anonymous users)
@@ -30,6 +32,9 @@ export const useContentByParent = (
     staleTime?: number;
   }
 ) => {
+  // Check if query caching feature flag is enabled
+  const enableQueryCaching = getFeatureFlag('enableQueryCaching');
+
   return useQuery({
     queryKey: QueryKeys.contentByParent(groupId, parentId),
     queryFn: async () => {
@@ -39,7 +44,7 @@ export const useContentByParent = (
     enabled: !!groupId && options?.enabled !== false,
     staleTime: options?.staleTime ?? 300000, // 5 minutes - reduce unnecessary refetching during auth refresh
     gcTime: 600000, // 10 minutes
-    refetchOnMount: 'always',
+    refetchOnMount: enableQueryCaching ? false : 'always', // Use cache when feature flag enabled
     refetchOnWindowFocus: false, // Prevent refetch on window focus during auth events
     refetchOnReconnect: true
   });
@@ -272,7 +277,7 @@ export const useCreateContentMutation = () => {
 
       // Check if content contains URLs and generate preview asynchronously
       const firstUrl = getFirstUrl(content.data);
-      if (firstUrl) {
+      if (firstUrl && shouldGenerateScreenshot(firstUrl)) {
         // Don't await this - let it run in background
         generateUrlPreviewAsync(createdContent.id, firstUrl);
       }

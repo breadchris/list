@@ -1,0 +1,8 @@
+{
+  "action": "chat-message",
+  "payload": {
+    "chat_content_id": "test-chat-uuid-12345",
+    "message": "What is 2+2? Please explain step by step.",
+    "group_id": "test-group-uuid-67890"
+  }
+}

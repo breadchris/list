@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import Masonry from 'react-masonry-css';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Content, contentRepository, Tag, TagFilter, SEOMetadata, SharingMetadata, YouTubeVideoMetadata } from './ContentRepository';
+import { useContentFocus } from '../hooks/useContentFocus';
+import { FocusActionBar } from './FocusActionBar';
 import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
 import { JsContentDisplay } from './JsContentDisplay';
@@ -11,6 +14,7 @@ import { ImageDisplay } from './ImageDisplay';
 import { AudioDisplay } from './AudioDisplay';
 import { EpubViewer } from './EpubViewer';
 import { TranscriptViewer } from './TranscriptViewer';
+import { MapDisplay, type MapData } from './MapDisplay';
 import { TsxRenderer } from './TsxRenderer';
 import { PluginRenderer } from './PluginRenderer';
 import { useToast } from './ToastProvider';
@@ -34,6 +38,7 @@ interface ContentMasonryProps {
   newContent?: Content;
   parentContentId?: string | null;
   onNavigate?: (parentId: string | null) => void;
+  onFocusContent?: (contentId: string, contentName: string) => void;
   searchQuery: string;
   isSearching: boolean;
   selection: ContentSelectionState;
@@ -82,6 +87,7 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
   newContent,
   parentContentId = null,
   onNavigate,
+  onFocusContent,
   searchQuery,
   isSearching,
   selection,
@@ -102,14 +108,19 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
   const deleteContentMutation = useDeleteContentMutation();
   const toast = useToast();
 
+  // Focus mode for single-click content focusing
+  const focus = useContentFocus();
+
   // Skeleton delay state to prevent flashing
   const [showSkeleton, setShowSkeleton] = useState(false);
 
   // Content persistence state to prevent immediate clearing during navigation
   const [persistentItems, setPersistentItems] = useState<Content[]>([]);
 
-  // Hover state for tag button visibility
-  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+  // Removed hoveredItemId state - using CSS group-hover instead for better performance
+
+  // Double-click tracking for selection + navigation
+  const lastClickRef = useRef<{ itemId: string; timestamp: number } | null>(null);
 
   // Pie menu for tag application
   const {
@@ -410,16 +421,22 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
     }
   };
 
-  // Handle content click - either navigate or toggle selection
-  const handleContentClick = (contentItem: Content) => {
+  // Handle content click - double-click detection for selection + navigation
+  const handleContentClick = (contentItem: Content, e?: React.MouseEvent) => {
+    // Don't trigger focus if clicking on interactive elements
+    if (e) {
+      const target = e.target as HTMLElement;
+      if (target.closest('button, a, input, textarea, [role="button"]')) {
+        return;
+      }
+    }
+
     if (selection.isSelectionMode) {
       // In selection mode, toggle item selection
       selection.toggleItem(contentItem.id);
     } else {
-      // Normal mode, navigate to content
-      if (onNavigate) {
-        onNavigate(contentItem.id);
-      }
+      // Normal mode: toggle focus for this item
+      focus.toggleFocus(contentItem.id);
     }
   };
 
@@ -502,16 +519,30 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
     const isSelected = selection.selectedItems.has(item.id);
 
     return (
-      <div
+      <motion.div
         key={item.id}
-        className={`bg-white rounded-lg shadow-sm border p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer relative break-inside-avoid mb-4 ${
+        animate={focus.isFocused(item.id) ? { scale: 1.01 } : undefined}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className={`group bg-white rounded-lg shadow-sm border p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer relative break-inside-avoid mb-4 ${
+          focus.isFocused(item.id)
+            ? 'ring-2 ring-blue-400 shadow-lg'
+            : ''
+        } ${
           isSelected
             ? 'border-blue-500 border-2 bg-blue-50'
             : 'border-gray-200'
         }`}
-        onClick={() => handleContentClick(item)}
-        onMouseEnter={() => setHoveredItemId(item.id)}
-        onMouseLeave={() => setHoveredItemId(null)}
+        onClick={(e) => {
+          // Prevent triggering on button/link clicks
+          const target = e.target as HTMLElement;
+          if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.closest('button') || target.closest('a')) {
+            return;
+          }
+          // Truncate content name for display
+          const displayName = item.data.substring(0, 30);
+          onFocusContent?.(item.id, displayName);
+          handleContentClick(item, e);
+        }}
         onContextMenu={(e) => {
           if (!selection.isSelectionMode) {
             handleContextMenu(e, item);
@@ -586,6 +617,32 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
             ) : item.type === 'image' ? (
               <div>
                 <ImageDisplay imageUrl={item.data} alt="Uploaded image" />
+                <TagDisplay tags={item.tags || []} isVisible={true} />
+                <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                <div className="flex items-center gap-2 mt-2">
+                  <p className="text-xs text-gray-500">
+                    {formatRelativeTime(item.created_at)}
+                  </p>
+                  {item.child_count && item.child_count > 0 && (
+                    <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : item.type === 'map' ? (
+              <div>
+                <div className="flex items-center space-x-2 mb-2">
+                  <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 0c-4.198 0-8 3.403-8 7.602 0 4.198 3.469 9.21 8 16.398 4.531-7.188 8-12.2 8-16.398 0-4.199-3.801-7.602-8-7.602zm0 11c-1.657 0-3-1.343-3-3s1.343-3 3-3 3 1.343 3 3-1.343 3-3 3z" />
+                  </svg>
+                  <span className="text-xs font-medium text-red-600 uppercase tracking-wide">Map</span>
+                </div>
+                {item.metadata?.map_data && (
+                  <MapDisplay mapData={item.metadata.map_data as MapData} />
+                )}
                 <TagDisplay tags={item.tags || []} isVisible={true} />
                 <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                 <div className="flex items-center gap-2 mt-2">
@@ -694,34 +751,48 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
               )}
 
               {/* Selection button */}
-              {hoveredItemId === item.id && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!selection.isSelectionMode) {
-                      selection.toggleSelectionMode();
-                    }
-                    selection.toggleItem(item.id);
-                  }}
-                  className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
-                  title="Select for workflow"
-                >
-                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </button>
-              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!selection.isSelectionMode) {
+                    selection.toggleSelectionMode();
+                  }
+                  selection.toggleItem(item.id);
+                }}
+                className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
+                title="Select for workflow"
+              >
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
 
               {/* Tag button */}
-              <TagButton
-                contentId={item.id}
-                existingTags={item.tags || []}
-                isVisible={hoveredItemId === item.id}
-              />
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <TagButton
+                  contentId={item.id}
+                  existingTags={item.tags || []}
+                  isVisible={true}
+                />
+              </div>
             </div>
           )}
         </div>
-      </div>
+
+        {/* Focus mode action bar */}
+        <AnimatePresence mode="wait">
+          {focus.isFocused(item.id) && (
+            <FocusActionBar
+              contentItem={item}
+              groupId={groupId}
+              selection={selection}
+              onNavigate={(contentId) => onNavigate && onNavigate(contentId)}
+              hasChildren={!!item.child_count}
+              userId={userId}
+            />
+          )}
+        </AnimatePresence>
+      </motion.div>
     );
   };
 

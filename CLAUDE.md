@@ -9,12 +9,38 @@ This document contains high-level project guidelines. For specialized topics, se
 - **[`/lambda/CLAUDE.md`](lambda/CLAUDE.md)** - AWS Lambda development, local Docker testing, deployment
 - **[`/lambda/function/go/CLAUDE.md`](lambda/function/go/CLAUDE.md)** - Go testing patterns, test-as-script development
 - **[`/components/CLAUDE.md`](components/CLAUDE.md)** - Frontend development, React Query, OAuth configuration
+- **[`/LOCAL_DEVELOPMENT.md`](LOCAL_DEVELOPMENT.md)** - Local development stack with Docker (Supabase + Lambda)
 
 ## Development Environment
 
 - This is a React TypeScript project with Supabase backend
 - Never attempt to run tests or the development server (npm run dev, npm test, etc.)
 - The project uses Tailwind CSS for styling
+- **Local development stack**: Run `npm run local` to start Supabase and Lambda locally in Docker (see LOCAL_DEVELOPMENT.md)
+
+## Backend Architecture
+
+**CRITICAL**: All backend/API logic must be in AWS Lambda
+
+### Lambda-Only Backend Rule
+- **NEVER use the Go server for API endpoints** - The Go server is ONLY for serving the React frontend
+- **ALL backend logic goes in AWS Lambda** - Any API endpoints, business logic, or server-side processing MUST be implemented in the Lambda function
+- **Go server responsibilities**: Serve static files (HTML, JS, CSS), handle frontend routing, provide config endpoint
+- **Lambda responsibilities**: ALL business logic, API endpoints, AI chat, content processing, SEO extraction, transcription, etc.
+
+### Correct Architecture
+```
+Frontend (React) → AWS Lambda (/content endpoint) → External APIs/Services
+Frontend (React) → Supabase (direct) → Database
+
+Go Server → ONLY serves React app + /api/config
+```
+
+### What NOT to Add to Go Server
+- **No API endpoints** - Never add routes like `/api/chat`, `/api/content`, etc.
+- **No business logic** - Keep server purely for static file serving
+- **No external API calls** - All API integrations must be in Lambda
+- **No AI/ML processing** - OpenAI, transcription, etc. belong in Lambda
 
 ## Project Structure
 
@@ -23,7 +49,7 @@ This document contains high-level project guidelines. For specialized topics, se
 - `/supabase/` - Supabase configuration and migrations
 - `/types/` - TypeScript type definitions
 - `/tests/` - Playwright E2E tests
-- `/lambda/` - AWS Lambda functions and infrastructure
+- `/lambda/` - **AWS Lambda functions and ALL backend logic**
 - `/hooks/` - React hooks for data fetching and state management
 
 ## Key Features

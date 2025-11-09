@@ -10,7 +10,7 @@ import { BeautifulMentionsPlugin, BeautifulMentionNode } from 'lexical-beautiful
 import { EnterKeySubmitPlugin } from './EnterKeySubmitPlugin';
 import { EditorState, $getRoot, CLEAR_EDITOR_COMMAND } from 'lexical';
 import { Tag } from './ContentRepository';
-import { ContentAction } from './ContentPieMenu';
+import { ContentAction, ACTION_COLORS } from './ContentActionsDrawer';
 
 interface LexicalContentInputProps {
   onSubmit: (text: string, mentions: string[]) => void;
@@ -18,6 +18,8 @@ interface LexicalContentInputProps {
   placeholder?: string;
   disabled?: boolean;
   parentContentId?: string | null;
+  focusedParentName?: string;
+  onClearFocus?: () => void;
   availableTags?: Tag[];
   activeAction?: ContentAction | null;
 }
@@ -34,6 +36,8 @@ const LexicalContentInputInternal: React.FC<LexicalContentInputProps & { innerRe
   placeholder,
   disabled = false,
   parentContentId,
+  focusedParentName,
+  onClearFocus,
   availableTags = [],
   activeAction = null,
   innerRef
@@ -66,16 +70,53 @@ const LexicalContentInputInternal: React.FC<LexicalContentInputProps & { innerRe
     '#': availableTags.map(tag => tag.name)
   };
 
+  // Get border color based on active action
+  const getBorderStyle = () => {
+    if (disabled) return 'opacity-50 cursor-not-allowed border-gray-600';
+    if (!activeAction) return 'border-gray-600 focus:ring-blue-400 focus:border-blue-400';
+
+    // Apply action color to left border (4px) + matching focus ring
+    const color = ACTION_COLORS[activeAction];
+    return `border-l-4 border-y border-r border-gray-600 focus:ring-2 focus:ring-offset-0`;
+  };
+
+  // Get border color value for left border
+  const getBorderLeftColor = () => {
+    if (!activeAction) return undefined;
+    return { borderLeftColor: ACTION_COLORS[activeAction].hex };
+  };
+
   return (
     <div className="relative">
+      {/* Parent focus indicator */}
+      {parentContentId && focusedParentName && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border-l-2 border-indigo-400 rounded-t-md">
+          <svg className="w-3 h-3 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <span className="text-xs text-indigo-700 font-medium">
+            Child of: {focusedParentName}
+          </span>
+          {onClearFocus && (
+            <button
+              onClick={onClearFocus}
+              className="ml-auto text-indigo-500 hover:text-indigo-700"
+              title="Clear parent focus"
+              type="button"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+
       <RichTextPlugin
         contentEditable={
           <ContentEditable
-            className={`lexical-content-editable w-full px-3 py-2 bg-transparent text-white border rounded-md focus:outline-none focus:ring-2 ${
-              disabled ? 'opacity-50 cursor-not-allowed' :
-              activeAction === 'ai-chat' ? 'border-blue-500 ring-1 ring-blue-400 focus:ring-blue-400 focus:border-blue-500' :
-              'border-gray-600 focus:ring-blue-400 focus:border-blue-400'
-            }`}
+            className={`lexical-content-editable w-full px-3 py-2 bg-gray-800 text-white ${parentContentId && focusedParentName ? 'rounded-b-md' : 'rounded-md'} focus:outline-none ${getBorderStyle()}`}
+            style={getBorderLeftColor()}
             ariaLabel="Content editor"
             aria-placeholder={placeholder || defaultPlaceholder}
             spellCheck={true}

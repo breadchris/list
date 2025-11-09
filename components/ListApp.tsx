@@ -4,11 +4,13 @@ import { supabase, getFastSession } from './SupabaseClient';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { UserAuth } from './UserAuth';
 import { GroupSelector } from './GroupSelector';
+import { GroupOnboarding } from './GroupOnboarding';
 import { ContentList } from './ContentList';
 import { ContentStack } from './ContentStack';
 import { ContentMasonry } from './ContentMasonry';
 import { ContentDeck } from './ContentDeck';
 import { ContentInput } from './ContentInput';
+import { WorkflowActionsDrawer } from './WorkflowActionsDrawer';
 import { JsEditorView } from './JsEditorView';
 import { SavedTagFilterButton } from './SavedTagFilterButton';
 import { MicroGameOverlay } from './MicroGameOverlay';
@@ -22,9 +24,11 @@ import { LibgenSearchModal, LibgenSearchConfig } from './LibgenSearchModal';
 import { SpotifyImportSelector } from './SpotifyImportSelector';
 import { SpotifyPlaylistModal } from './SpotifyPlaylistModal';
 import { GroupDropdown } from './GroupDropdown';
+import { UserDropdown } from './UserDropdown';
 import { TagFilterSelector } from './TagFilterSelector';
 import SendToGroupModal from './SendToGroupModal';
 import { AppSkeleton, HeaderSkeleton, ContentListSkeleton } from './SkeletonComponents';
+import { GroupChatDrawer } from './GroupChatDrawer';
 import { Footer } from './Footer';
 import { LLMPromptModal } from './LLMPromptModal';
 import { ClaudeCodePromptModal } from './ClaudeCodePromptModal';
@@ -34,6 +38,7 @@ import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '..
 import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
+import { useBulkMarkAsPublic } from '../hooks/useBulkMarkAsPublic';
 import { useMarkdownExtraction, MarkdownProgressItem } from '../hooks/useMarkdownExtraction';
 import { useYouTubePlaylistExtraction, YouTubeProgressItem } from '../hooks/useYouTubePlaylistExtraction';
 import { useLibgenSearch } from '../hooks/useLibgenSearch';
@@ -76,6 +81,9 @@ export const ListApp: React.FC = () => {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupModalMode, setGroupModalMode] = useState<'create' | 'join'>('create');
   const [activeExternalSearch, setActiveExternalSearch] = useState<string | null>(null);
+  // Focused parent for click-to-focus child creation
+  const [focusedParentId, setFocusedParentId] = useState<string | null>(null);
+  const [focusedParentName, setFocusedParentName] = useState<string>('');
 
   // React Query hooks - only enable when we have user and app is ready for data loading
   const { data: groups = [], isLoading: groupsLoading, error: groupsError } = useGroupsQuery({ 
@@ -96,6 +104,7 @@ export const ListApp: React.FC = () => {
   const libgenSearchMutation = useLibgenSearch();
   const audioTranscriptionMutation = useAudioTranscription();
   const youtubeTranscriptMutation = useYouTubeTranscript();
+  const bulkMarkAsPublicMutation = useBulkMarkAsPublic();
 
   // Load tags for current group
   const { data: availableTags = [] } = useTagsForGroup(currentGroup?.id || '');
@@ -211,6 +220,9 @@ export const ListApp: React.FC = () => {
   const [showSharingModal, setShowSharingModal] = useState(false);
   const [currentContentForSharing, setCurrentContentForSharing] = useState<Content | null>(null);
 
+  // Group chat drawer state
+  const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+
   // LLM Prompt modal state
   const [showLLMPromptModal, setShowLLMPromptModal] = useState(false);
   const [selectedContentForLLM, setSelectedContentForLLM] = useState<Content[]>([]);
@@ -226,6 +238,11 @@ export const ListApp: React.FC = () => {
   // Send to Group modal state
   const [showSendToGroupModal, setShowSendToGroupModal] = useState(false);
   const [isSendingToGroup, setIsSendingToGroup] = useState(false);
+
+  // Move to Parent workflow state
+  const [isSelectingParent, setIsSelectingParent] = useState(false);
+  const [targetParentId, setTargetParentId] = useState<string | null>(null);
+  const [itemsToMove, setItemsToMove] = useState<string[]>([]);
 
   // Spotify Import modal state
   const [showSpotifyModal, setShowSpotifyModal] = useState(false);
@@ -476,6 +493,90 @@ export const ListApp: React.FC = () => {
     } finally {
       setIsSendingToGroup(false);
     }
+  };
+
+  const handleStartMoveToParent = () => {
+    const selectedIds = Array.from(contentSelection.selectedItems);
+
+    if (selectedIds.length === 0) {
+      toast.error('No items selected', 'Please select items to move');
+      return;
+    }
+
+    // Store items to move and enter selection mode
+    setItemsToMove(selectedIds);
+    setIsSelectingParent(true);
+    setTargetParentId(currentParentId); // Default to current location
+
+    // Exit selection mode but keep items visually selected
+    contentSelection.toggleSelectionMode();
+
+    toast.info('Select new parent', 'Click any item to set as parent, or navigate and click "Move Here"');
+  };
+
+  const handleSelectParent = (contentId: string) => {
+    if (!isSelectingParent) return;
+
+    // Validate: can't move to self
+    if (itemsToMove.includes(contentId)) {
+      toast.error('Invalid parent', 'Cannot move item to itself');
+      return;
+    }
+
+    setTargetParentId(contentId);
+  };
+
+  const handleConfirmMove = async () => {
+    if (!currentGroup || itemsToMove.length === 0) return;
+
+    try {
+      // Update each item's parent_content_id
+      const updates = itemsToMove.map(id =>
+        contentRepository.updateContent(id, {
+          parent_content_id: targetParentId
+        })
+      );
+
+      await Promise.all(updates);
+
+      // Get parent name for success message
+      let parentName = 'Root';
+      if (targetParentId) {
+        try {
+          const parentContent = await contentRepository.getContentById(targetParentId);
+          parentName = parentContent.data.substring(0, 30) + (parentContent.data.length > 30 ? '...' : '');
+        } catch (error) {
+          console.error('Failed to get parent name:', error);
+        }
+      }
+
+      toast.success(
+        'Items moved',
+        `Moved ${itemsToMove.length} item${itemsToMove.length > 1 ? 's' : ''} to ${parentName}`
+      );
+
+      // Exit mode and clear state
+      handleCancelMoveToParent();
+
+      // Refresh content
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.contentByParent(currentGroup.id, currentParentId)
+      });
+
+    } catch (error) {
+      console.error('Move failed:', error);
+      toast.error(
+        'Move failed',
+        error instanceof Error ? error.message : 'Failed to move items'
+      );
+    }
+  };
+
+  const handleCancelMoveToParent = () => {
+    setIsSelectingParent(false);
+    setTargetParentId(null);
+    setItemsToMove([]);
+    contentSelection.clearSelection();
   };
 
   const handleCloseSEOProgress = () => {
@@ -1667,6 +1768,66 @@ export const ListApp: React.FC = () => {
     }
   };
 
+  // Bulk Mark as Public handler - marks selected content as public
+  const handleBulkMarkAsPublic = async () => {
+    console.log('🌐 Bulk Mark as Public clicked!');
+
+    const selectedIds = Array.from(contentSelection.selectedItems);
+
+    if (selectedIds.length === 0) {
+      toast.error('No content selected', 'Please select content to mark as public');
+      return;
+    }
+
+    if (!currentGroup) {
+      toast.error('No group selected', 'Please select a group first');
+      return;
+    }
+
+    try {
+      // Fetch full content objects
+      const selectedContent = await Promise.all(
+        selectedIds.map(async (id) => {
+          const content = await contentRepository.getContentById(id);
+          if (!content) {
+            throw new Error(`Content with ID ${id} not found`);
+          }
+          return content;
+        })
+      );
+
+      // Execute bulk marking
+      const result = await bulkMarkAsPublicMutation.mutateAsync({
+        contentItems: selectedContent
+      });
+
+      // Clear selection
+      contentSelection.clearSelection();
+
+      // Show success/failure summary
+      if (result.failureCount === 0) {
+        toast.success(
+          `${result.successCount} item${result.successCount > 1 ? 's' : ''} marked as public`,
+          'Content is now publicly accessible'
+        );
+      } else if (result.successCount === 0) {
+        toast.error(
+          'Failed to mark items as public',
+          `${result.failureCount} item${result.failureCount > 1 ? 's' : ''} failed`
+        );
+      } else {
+        toast.warning(
+          `Partial success: ${result.successCount} succeeded, ${result.failureCount} failed`,
+          'Some items could not be marked as public'
+        );
+      }
+
+    } catch (error) {
+      console.error('Failed to mark items as public:', error);
+      toast.error('Operation Failed', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
   // Define available workflow actions
   const workflowActions = [
     {
@@ -1799,6 +1960,23 @@ export const ListApp: React.FC = () => {
       onClick: () => {
         console.log('📤 WorkflowAction onClick triggered for send to group');
         setShowSendToGroupModal(true);
+      }
+    },
+    {
+      id: 'move-to-parent',
+      name: 'Move to Parent',
+      description: 'Move selected items to a new parent',
+      icon: '📁',
+      onClick: handleStartMoveToParent
+    },
+    {
+      id: 'mark-as-public',
+      name: 'Mark as Public',
+      description: 'Make selected items publicly accessible',
+      icon: '🌐',
+      onClick: () => {
+        console.log('🌐 WorkflowAction onClick triggered for mark as public');
+        handleBulkMarkAsPublic();
       }
     },
     {
@@ -2062,15 +2240,6 @@ export const ListApp: React.FC = () => {
       localStorage.setItem(`displayMode_${currentGroup.id}`, displayMode);
     }
   }, [currentGroup?.id, displayMode]);
-
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-  };
-
   const handleContentAdded = (content: Content) => {
     setNewContent(content);
     // Clear newContent after a brief delay to allow ContentList to process it
@@ -2209,6 +2378,17 @@ export const ListApp: React.FC = () => {
     }
   };
 
+  // Handle focusing content for click-to-create child
+  const handleFocusContent = (contentId: string, contentName: string) => {
+    setFocusedParentId(contentId);
+    setFocusedParentName(contentName);
+  };
+
+  // Handle clearing focused parent
+  const handleClearFocus = () => {
+    setFocusedParentId(null);
+    setFocusedParentName('');
+  };
 
   // Handle search input with debouncing
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2428,8 +2608,36 @@ export const ListApp: React.FC = () => {
         <AppSkeleton />
       )}
 
-      {/* Main App Content */}
-      {appState === 'ready' && user && (currentGroup || (!groupsLoading && groups.length === 0)) && (
+      {/* Onboarding Screen - Show when user has no groups and no pending invite */}
+      {(() => {
+        const shouldShowOnboarding = appState === 'ready' &&
+          user &&
+          !groupsLoading &&
+          groups.length === 0 &&
+          !sessionStorage.getItem('pendingInviteCode');
+
+        return shouldShowOnboarding && (
+          <GroupOnboarding onComplete={() => {
+            // Groups will be refetched automatically via React Query
+            // The main app will render once groups.length > 0
+          }} />
+        );
+      })()}
+
+      {/* Main App Content - Show when not showing onboarding */}
+      {(() => {
+        const shouldShowOnboarding = appState === 'ready' &&
+          user &&
+          !groupsLoading &&
+          groups.length === 0 &&
+          !sessionStorage.getItem('pendingInviteCode');
+
+        const shouldShowMainApp = appState === 'ready' &&
+          user &&
+          !shouldShowOnboarding &&
+          (currentGroup || (!groupsLoading && groups.length >= 0));
+
+        return shouldShowMainApp && (
         <>
           {showYouTubeAnnotator ? (
             // Full-page YouTube Video Annotator
@@ -2590,27 +2798,6 @@ export const ListApp: React.FC = () => {
               {(groupsLoading || createGroupMutation.isPending || joinGroupMutation.isPending) && (
                 <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
               )}
-              {currentGroup && !isSearching && (
-                <button
-                  onClick={contentSelection.toggleSelectionMode}
-                  className={`p-1.5 sm:px-2 sm:py-1 rounded-md transition-colors ${
-                    contentSelection.isSelectionMode
-                      ? 'text-orange-600 bg-orange-50'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                  }`}
-                  title={contentSelection.isSelectionMode ? 'Exit selection mode' : 'Enter selection mode'}
-                >
-                  {contentSelection.isSelectionMode ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  )}
-                </button>
-              )}
               {/* Display Mode Selector */}
               {currentGroup && !isSearching && (
                 <ViewDisplaySelector
@@ -2630,26 +2817,8 @@ export const ListApp: React.FC = () => {
                   </svg>
                 </button>
               )}
-              {/* User info */}
-              <div className="flex items-center space-x-1 sm:space-x-2">
-                {/* User avatar - always shown */}
-                <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center" title={user.email || undefined}>
-                  <span className="text-xs text-white font-medium">
-                    {user.email?.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <button
-                  onClick={handleSignOut}
-                  className="text-gray-500 hover:text-gray-700 p-1"
-                  title="Sign out"
-                >
-                  {/* Icon on mobile, text on desktop */}
-                  <span className="hidden sm:inline text-sm">Sign out</span>
-                  <svg className="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                  </svg>
-                </button>
-              </div>
+              {/* User dropdown */}
+              <UserDropdown user={user} />
             </div>
           </div>
           
@@ -2696,63 +2865,25 @@ export const ListApp: React.FC = () => {
               </div>
             )}
 
-        {/* Selection Header */}
-        {contentSelection.isSelectionMode && currentGroup && (
-          <div className="bg-blue-50 border-b border-blue-200 px-4 py-3">
-            {/* Mobile Layout - Stack vertically */}
-            <div className="sm:hidden">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-blue-900">
-                  {contentSelection.selectedCount} selected
-                </span>
+        {/* Move to Parent Status Banner */}
+        {isSelectingParent && (
+          <div className="bg-orange-100 border-b border-orange-200 px-4 py-3">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">📁</span>
+                  <div>
+                    <p className="font-medium text-orange-900">
+                      Select New Parent
+                    </p>
+                    <p className="text-sm text-orange-700">
+                      Click any item to set as parent for {itemsToMove.length} selected item{itemsToMove.length > 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
                 <button
-                  onClick={contentSelection.toggleSelectionMode}
-                  className="text-xs text-gray-500 hover:text-gray-700 p-2 -m-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => contentSelection.selectAll([])}
-                  className="flex-1 text-xs text-blue-600 hover:text-blue-800 px-3 py-2 rounded-md bg-white border border-blue-200 hover:bg-blue-50 transition-colors"
-                >
-                  All
-                </button>
-                <button
-                  onClick={contentSelection.clearSelection}
-                  className="flex-1 text-xs text-blue-600 hover:text-blue-800 px-3 py-2 rounded-md bg-white border border-blue-200 hover:bg-blue-50 transition-colors"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-            
-            {/* Desktop Layout - Keep original */}
-            <div className="hidden sm:flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <span className="text-sm font-medium text-blue-900">
-                  {contentSelection.selectedCount} item{contentSelection.selectedCount !== 1 ? 's' : ''} selected
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => contentSelection.selectAll([])}
-                  className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded"
-                >
-                  Select All
-                </button>
-                <button
-                  onClick={contentSelection.clearSelection}
-                  className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={contentSelection.toggleSelectionMode}
-                  className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded"
+                  onClick={handleCancelMoveToParent}
+                  className="text-orange-600 hover:text-orange-800 font-medium text-sm"
                 >
                   Cancel
                 </button>
@@ -2784,6 +2915,7 @@ export const ListApp: React.FC = () => {
             newContent={newContent}
             parentContentId={currentParentId}
             onNavigate={handleNavigate}
+            onFocusContent={handleFocusContent}
             searchQuery={searchQuery}
             isSearching={isSearching}
             selection={contentSelection}
@@ -2804,6 +2936,7 @@ export const ListApp: React.FC = () => {
             newContent={newContent}
             parentContentId={currentParentId}
             onNavigate={handleNavigate}
+            onFocusContent={handleFocusContent}
             searchQuery={searchQuery}
             isSearching={isSearching}
             selection={contentSelection}
@@ -2825,6 +2958,7 @@ export const ListApp: React.FC = () => {
             newContent={newContent}
             parentContentId={currentParentId}
             onNavigate={handleNavigate}
+            onFocusContent={handleFocusContent}
             searchQuery={searchQuery}
             isSearching={isSearching}
             selection={contentSelection}
@@ -2838,6 +2972,10 @@ export const ListApp: React.FC = () => {
             onActivateExternalSearch={setActiveExternalSearch}
             onExecuteExternalSearch={handleExecuteExternalSearch}
             selectedTagFilter={selectedTagFilter}
+            isSelectingParent={isSelectingParent}
+            targetParentId={targetParentId}
+            onSelectParent={handleSelectParent}
+            itemsBeingMoved={itemsToMove}
           />
         ) : (
           <ContentList
@@ -2846,6 +2984,7 @@ export const ListApp: React.FC = () => {
             newContent={newContent}
             parentContentId={currentParentId}
             onNavigate={handleNavigate}
+            onFocusContent={handleFocusContent}
             searchQuery={searchQuery}
             isSearching={isSearching}
             selection={contentSelection}
@@ -2859,16 +2998,22 @@ export const ListApp: React.FC = () => {
             onActivateExternalSearch={setActiveExternalSearch}
             onExecuteExternalSearch={handleExecuteExternalSearch}
             selectedTagFilter={selectedTagFilter}
+            isSelectingParent={isSelectingParent}
+            targetParentId={targetParentId}
+            onSelectParent={handleSelectParent}
+            itemsBeingMoved={itemsToMove}
           />
         )}
       </div>
 
       {/* Content Input - Always visible when group is selected and not in JS view */}
-      {currentGroup && !currentJsContent && (
+      {currentGroup && !currentJsContent && !isSelectingParent && (
         <div className="fixed bottom-0 left-0 right-0 z-40">
           <ContentInput
             groupId={currentGroup.id}
-            parentContentId={currentParentId}
+            parentContentId={focusedParentId || currentParentId}
+            focusedParentName={focusedParentName}
+            onClearFocus={handleClearFocus}
             onContentAdded={handleContentAdded}
             onNavigate={handleNavigate}
             onActionSelect={(action) => {
@@ -2876,12 +3021,39 @@ export const ListApp: React.FC = () => {
                 setShowSpotifyModal(true);
               }
             }}
-            workflowActions={workflowActions}
-            selectedCount={contentSelection.selectedCount}
-            isSelectionMode={contentSelection.isSelectionMode}
             availableTags={availableTags}
           />
         </div>
+      )}
+
+      {/* Move to Parent Confirmation Button */}
+      {isSelectingParent && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg">
+          <div className="max-w-md mx-auto p-4 flex gap-3">
+            <button
+              onClick={handleConfirmMove}
+              disabled={!targetParentId}
+              className="flex-1 bg-orange-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              Move Here ({itemsToMove.length} item{itemsToMove.length > 1 ? 's' : ''})
+            </button>
+            <button
+              onClick={handleCancelMoveToParent}
+              className="px-6 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Workflow Actions Drawer */}
+      {!isSelectingParent && (
+        <WorkflowActionsDrawer
+          selectedCount={contentSelection.selectedCount}
+          workflowActions={workflowActions}
+          onClearSelection={contentSelection.clearSelection}
+        />
       )}
 
       {/* Group Modal */}
@@ -2986,6 +3158,16 @@ export const ListApp: React.FC = () => {
         onClose={handleCloseSharingModal}
       />
 
+      {/* Group Chat Drawer */}
+      {currentGroup && user && (
+        <GroupChatDrawer
+          isOpen={isChatDrawerOpen}
+          onOpenChange={setIsChatDrawerOpen}
+          groupId={currentGroup.id}
+          username={user.email || 'Anonymous'}
+        />
+      )}
+
       {/* LLM Prompt Modal */}
       <LLMPromptModal
         isVisible={showLLMPromptModal}
@@ -3021,7 +3203,8 @@ export const ListApp: React.FC = () => {
             </>
           )}
         </>
-      )}
+        );
+      })()}
     </div>
   );
 };

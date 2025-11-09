@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import ReactPlayer from 'react-player/youtube';
+import ReactPlayer from 'react-player';
 import { useUpdateContentMutation } from '../hooks/useContentQueries';
 import { useToast } from './ToastProvider';
 import { formatTime } from '../utils/time';
@@ -167,7 +167,7 @@ export const YouTubeSectionCard: React.FC<YouTubeSectionCardProps> = ({
     // Loop back to start if we've reached the end
     if (relativeTime >= endTime) {
       if (playerRef.current) {
-        playerRef.current.seekTo(startTime, 'seconds');
+        playerRef.current.currentTime = startTime;
       }
     }
   };
@@ -196,12 +196,12 @@ export const YouTubeSectionCard: React.FC<YouTubeSectionCardProps> = ({
         {showPlayer ? (
           <ReactPlayer
             ref={playerRef}
-            url={playerUrl}
+            src={playerUrl}
             width="100%"
             height="100%"
             playing={isPlaying}
             controls={true}
-            onProgress={handleProgress}
+            onTimeUpdate={handleProgress}
             onPause={() => setIsPlaying(false)}
             onPlay={() => setIsPlaying(true)}
             config={{

@@ -38,18 +38,22 @@ export async function generateScreenshot(url: string): Promise<ArrayBuffer> {
   });
 
   // Generate screenshot with wait parameters to ensure page loads fully
-  const screenshot = await client.browserRendering.screenshot.create({
+  // Use .asResponse() to get raw binary data without SDK parsing (which corrupts PNG bytes)
+  const response = await client.browserRendering.screenshot.create({
     account_id: accountId,
     url: url,
-    goto_options: {
-      wait_until: 'networkidle2',  // Wait until network is idle (≤2 connections for 500ms)
-      timeout: 30000                // 30 second timeout for page load
+    gotoOptions: {
+      waitUntil: 'networkidle2',  // Wait until network is idle (≤2 connections for 500ms)
+      timeout: 30000               // 30 second timeout for page load
     },
-    options: {
-      viewport: { width: 1280, height: 720 },  // Consistent viewport size
-      full_page: false                          // Capture viewport only, not full scrollable page
+    viewport: { width: 1280, height: 720 },  // Consistent viewport size
+    screenshotOptions: {
+      fullPage: false  // Capture viewport only, not full scrollable page
     }
-  });
+  }).asResponse();
 
-  return screenshot as unknown as ArrayBuffer;
+  // Get the binary ArrayBuffer from the raw Response
+  const screenshot = await response.arrayBuffer();
+
+  return screenshot;
 }

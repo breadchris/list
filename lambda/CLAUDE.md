@@ -2,6 +2,11 @@
 
 **CRITICAL**: Always test locally with Docker before deploying to AWS
 
+## Quick Links
+
+- **[Streaming Testing Guide](function/STREAMING_TESTING.md)** - How to test AI chat streaming with Docker
+- **[Streaming Implementation](function/STREAMING_IMPLEMENTATION.md)** - Technical details of streaming setup
+
 ## Lambda Endpoint Architecture
 
 **CRITICAL**: The content Lambda has ONE endpoint only: `/content`

@@ -1,4 +1,5 @@
 import type { APIGatewayProxyHandlerV2, APIGatewayProxyEventV2, APIGatewayProxyResultV2, SQSEvent, SQSRecord } from 'aws-lambda';
+import { convertToModelMessages } from 'ai';
 import { SessionManager } from './session-manager.js';
 import { executeClaudeCode } from './claude-executor.js';
 import { getPlaylistVideos } from './youtube-client.js';
@@ -8,6 +9,8 @@ import {
 	handleSEOExtract,
 	handleLLMGenerate,
 	handleChatMessage,
+	handleChatV2Stream,
+	handleChatV2StreamResponse,
 	handleMarkdownExtract,
 	handleYouTubePlaylistExtract,
 	handleYouTubeSubtitleExtract,
@@ -17,6 +20,7 @@ import {
 	handleTSXTranspile,
 	handleTranscribeAudio
 } from './content-handlers.js';
+import { handleMapKitTokenRequest } from './mapkit-token-handler.js';
 import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
 import { writeFileSync } from 'fs';
 
@@ -255,6 +259,49 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 
 						const sessionManager = new SessionManager(bucketName, process.env.AWS_REGION);
 
+						// Fetch conversation context from sibling content
+						let conversationContext = '';
+						if (payload.parent_content_id) {
+							console.log(`[Conversation Context] Fetching siblings for parent: ${payload.parent_content_id}`);
+
+							const { data: siblings, error: siblingsError } = await supabase
+								.from('content')
+								.select('id, type, data, created_at, metadata')
+								.eq('parent_content_id', payload.parent_content_id)
+								.in('type', ['text', 'claude-code'])
+								.order('created_at', { ascending: true });
+
+							if (siblingsError) {
+								console.error('[Conversation Context] Error fetching siblings:', siblingsError);
+							} else if (siblings && siblings.length > 0) {
+								console.log(`[Conversation Context] Found ${siblings.length} sibling messages`);
+
+								// Build conversation history (exclude current message by checking data)
+								const messages = siblings
+									.filter(item => item.data !== payload.prompt) // Skip current message if already saved
+									.map(item => {
+										const timestamp = new Date(item.created_at).toLocaleTimeString();
+										// Truncate long messages for context
+										const messageText = item.data.length > 500
+											? item.data.substring(0, 500) + '...'
+											: item.data;
+										return `[${timestamp}] ${messageText}`;
+									});
+
+								if (messages.length > 0) {
+									conversationContext = `
+<conversation_history>
+Previous messages in this conversation:
+${messages.join('\n')}
+</conversation_history>
+
+Current message:
+`;
+									console.log(`[Conversation Context] Built history with ${messages.length} messages`);
+								}
+							}
+						}
+
 						// Download session files if continuing session
 						let sessionFiles;
 						if (payload.session_id) {
@@ -264,9 +311,12 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 							}
 						}
 
-						// Execute Claude Code with optional GitHub integration
+						// Prepend conversation context to prompt
+						const enhancedPrompt = conversationContext + payload.prompt;
+
+						// Execute Claude Code with conversation context and optional GitHub integration
 						const claudeResult = await executeClaudeCode({
-							prompt: payload.prompt,
+							prompt: enhancedPrompt,
 							sessionFiles,
 							resumeSessionId: payload.session_id,
 							githubRepo: payload.github_repo // Pass GitHub repo info if provided
@@ -416,8 +466,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 	// Handle direct Lambda invocation (testing)
 	if (!isAPIGateway) {
 		process.stderr.write('Direct invocation detected\n');
-		// Check if it's a content request (has action and payload)
-		if (event.action && event.payload) {
+		// Check if it's a content request (has action and payload OR has action and messages/prompt for Vercel AI SDK)
+		if (event.action && (event.payload || event.messages || event.prompt)) {
 			const result = await handleContentRequest(event as ContentRequest);
 			await flushLogs();
 			return result;
@@ -430,6 +480,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 
 	const method = event.requestContext.http.method;
 	const path = event.rawPath;
+
+	console.log(`[ROUTING] Method: ${method}, Path: ${path}`);
 
 	let result: APIGatewayProxyResultV2;
 
@@ -504,6 +556,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 			return result;
 		}
 
+		if (path === '/mapkit/token' || path === '/mapkit/token/') {
+			console.log('[ROUTING] Matched /mapkit/token, calling handler');
+			result = await handleMapKitTokenRequest(event);
+			await flushLogs();
+			return result;
+		}
+
+		console.log('[ROUTING] No route matched, returning 404');
 		result = {
 			statusCode: 404,
 			headers: {
@@ -898,9 +958,45 @@ async function handleCancelJob(jobManager: JobManager, payload: any): Promise<AP
 }
 
 async function handleContentRequest(request: ContentRequest): Promise<APIGatewayProxyResultV2> {
-	const { action, payload } = request;
+	let { action, payload } = request;
 
-	if (!action || !payload) {
+	console.log('[HANDLER] Received request:', JSON.stringify(request, null, 2));
+	console.log('[HANDLER] action:', action);
+	console.log('[HANDLER] payload:', payload);
+	console.log('[HANDLER] messages:', (request as any).messages);
+
+	// Transform Vercel AI SDK format to Lambda format
+	// experimental_useObject sends: { prompt, action }
+	// useChat sends: { id, messages, action }
+	// Lambda needs: { action, payload: { prompt } } or { action, payload: { messages } }
+	if (action === 'chat-v2-stream') {
+		if ((request as any).prompt) {
+			console.log('[HANDLER] Transforming experimental_useObject format to Lambda format');
+			payload = {
+				prompt: (request as any).prompt
+			};
+		} else if ((request as any).messages) {
+			console.log('[HANDLER] Transforming useChat format to Lambda format');
+			payload = {
+				id: (request as any).id,
+				messages: (request as any).messages
+			};
+		} else if (!payload) {
+			return {
+				statusCode: 400,
+				headers: {
+					'Content-Type': 'application/json',
+					...corsHeaders
+				},
+				body: JSON.stringify({
+					success: false,
+					error: 'Missing required parameter: prompt or messages'
+				})
+			};
+		}
+	}
+
+	if (!action) {
 		return {
 			statusCode: 400,
 			headers: {
@@ -909,12 +1005,32 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 			},
 			body: JSON.stringify({
 				success: false,
-				error: 'Missing required parameters: action, payload'
+				error: 'Missing required parameter: action'
+			})
+		};
+	}
+
+	if (!payload && action !== 'chat-v2-stream') {
+		return {
+			statusCode: 400,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders
+			},
+			body: JSON.stringify({
+				success: false,
+				error: 'Missing required parameter: payload'
 			})
 		};
 	}
 
 	try {
+		// Handle chat-v2-stream early since it doesn't need Supabase
+		if (action === 'chat-v2-stream') {
+			// Return Response directly for streaming support
+			return await handleChatV2StreamResponse(payload);
+		}
+
 		const supabase = getSupabaseClient();
 		const queueUrl = process.env.CONTENT_QUEUE_URL;
 		const jobManager = new JobManager(supabase, queueUrl);
@@ -935,8 +1051,16 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 		];
 
 		if (queueableActions.includes(action)) {
-			// Check if synchronous execution is requested
-			if (request.sync === true) {
+			// Auto-detect local mode: no queue URL means local development
+			const isLocalMode = !queueUrl;
+
+			// Force sync mode for claude-code when running locally
+			const shouldRunSync = request.sync === true || (isLocalMode && action === 'claude-code');
+
+			if (shouldRunSync) {
+				if (isLocalMode && action === 'claude-code') {
+					console.log(`[Local Mode] Auto-enabling synchronous execution for claude-code`);
+				}
 				// Execute handler immediately and return results
 				console.log(`Executing ${action} synchronously (immediate mode)`);
 
@@ -982,19 +1106,154 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 						result = await handleTranscribeAudio(supabase, payload);
 						break;
 
-					case 'claude-code':
-						// Claude Code execution requires special handling
-						return {
-							statusCode: 400,
-							headers: {
-								'Content-Type': 'application/json',
-								...corsHeaders
-							},
-							body: JSON.stringify({
-								success: false,
-								error: 'Claude Code execution cannot be run synchronously - it requires job queue'
-							})
+					case 'claude-code': {
+						// Execute Claude Code synchronously (local mode or explicitly requested)
+						const bucketName = process.env.S3_BUCKET_NAME || 'local-test-bucket';
+						const sessionManager = new SessionManager(bucketName, process.env.AWS_REGION);
+
+						// Fetch conversation context from sibling content
+						let conversationContext = '';
+						if (payload.parent_content_id) {
+							console.log(`[Conversation Context] Fetching siblings for parent: ${payload.parent_content_id}`);
+
+							const { data: siblings, error: siblingsError } = await supabase
+								.from('content')
+								.select('id, type, data, created_at, metadata')
+								.eq('parent_content_id', payload.parent_content_id)
+								.in('type', ['text', 'claude-code'])
+								.order('created_at', { ascending: true });
+
+							if (siblingsError) {
+								console.error('[Conversation Context] Error fetching siblings:', siblingsError);
+							} else if (siblings && siblings.length > 0) {
+								console.log(`[Conversation Context] Found ${siblings.length} sibling messages`);
+
+								// Build conversation history (exclude current message by checking data)
+								const messages = siblings
+									.filter(item => item.data !== payload.prompt) // Skip current message if already saved
+									.map(item => {
+										const timestamp = new Date(item.created_at).toLocaleTimeString();
+										// Truncate long messages for context
+										const messageText = item.data.length > 500
+											? item.data.substring(0, 500) + '...'
+											: item.data;
+										return `[${timestamp}] ${messageText}`;
+									});
+
+								if (messages.length > 0) {
+									conversationContext = `
+<conversation_history>
+Previous messages in this conversation:
+${messages.join('\n')}
+</conversation_history>
+
+Current message:
+`;
+									console.log(`[Conversation Context] Built history with ${messages.length} messages`);
+								}
+							}
+						}
+
+						// Download session files if continuing session
+						let sessionFiles;
+						if (payload.session_id) {
+							const exists = await sessionManager.sessionExists(payload.session_id);
+							if (exists) {
+								sessionFiles = await sessionManager.downloadSession(payload.session_id);
+							}
+						}
+
+						// Prepend conversation context to prompt
+						const enhancedPrompt = conversationContext + payload.prompt;
+
+						// Execute Claude Code with conversation context and optional GitHub integration
+						const claudeResult = await executeClaudeCode({
+							prompt: enhancedPrompt,
+							sessionFiles,
+							resumeSessionId: payload.session_id,
+							githubRepo: payload.github_repo // Pass GitHub repo info if provided
+						});
+
+						// Upload output files to S3 (skip in local mode if S3 not configured)
+						let s3_url = '';
+						if (claudeResult.outputFiles?.length > 0 && process.env.S3_BUCKET_NAME) {
+							try {
+								s3_url = await sessionManager.uploadSession(claudeResult.session_id, claudeResult.outputFiles);
+							} catch (s3Error) {
+								console.warn('[Local Mode] S3 upload skipped:', s3Error);
+							}
+						}
+
+						// Create child content items for generated files (v2)
+						const createdContentIds: string[] = [];
+						if (claudeResult.status === 'completed' && payload.parent_content_id) {
+							// Filter out .session/ files (internal Claude CLI data)
+							const workspaceFiles = claudeResult.outputFiles?.filter(
+								file => !file.path.startsWith('.session/')
+							) || [];
+
+							console.log(`[Child Content] Creating ${workspaceFiles.length} items from generated files`);
+
+							for (const file of workspaceFiles) {
+								try {
+									// Determine content type from file extension
+									const fileExtension = file.path.split('.').pop()?.toLowerCase() || 'text';
+									const contentType = getContentTypeFromExtension(fileExtension);
+
+									// Convert Uint8Array to string
+									const fileContent = new TextDecoder().decode(file.content);
+
+									// Create child content item
+									const { data: childContent, error: createError } = await supabase
+										.from('content')
+										.insert({
+											type: contentType,
+											data: fileContent,
+											group_id: payload.group_id,
+											user_id: payload.user_id,
+											parent_content_id: payload.parent_content_id,
+											metadata: {
+												filename: file.path,
+												generated_by_claude_code: true,
+												session_id: claudeResult.session_id
+											}
+										})
+										.select()
+										.single();
+
+									if (createError) {
+										console.error(`Error creating child content for ${file.path}:`, createError);
+										continue;
+									}
+
+									if (childContent) {
+										createdContentIds.push(childContent.id);
+										console.log(`Created child content ${childContent.id} for file: ${file.path}`);
+									}
+								} catch (fileError) {
+									console.error(`Error processing file ${file.path}:`, fileError);
+								}
+							}
+
+							console.log(`Successfully created ${createdContentIds.length} child content items`);
+						}
+
+						result = {
+							success: claudeResult.status === 'completed',
+							session_id: claudeResult.session_id,
+							messages: claudeResult.messages,
+							s3_url,
+							error: claudeResult.error,
+							stdout: claudeResult.stdout,
+							stderr: claudeResult.stderr,
+							exitCode: claudeResult.exitCode,
+							file_count: claudeResult.outputFiles?.length || 0,
+							child_content_count: createdContentIds.length,
+							git_commit_sha: claudeResult.git_commit_sha,
+							git_commit_url: claudeResult.git_commit_url
 						};
+						break;
+					}
 
 					default:
 						return {
@@ -1224,3 +1483,147 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 		};
 	}
 }
+
+// =============================================================================
+// STREAMING HANDLER
+// =============================================================================
+
+/**
+ * Streaming handler for chat-v2-stream action
+ * Uses awslambda.streamifyResponse for true streaming support with CORS headers
+ *
+ * This handler works for both local Docker testing and production Lambda Function URLs.
+ */
+export const streamingHandler = awslambda.streamifyResponse(
+	async (
+		event: APIGatewayProxyEventV2 | ContentRequest | any,
+		responseStream: awslambda.ResponseStream,
+		_context: any
+	) => {
+		try {
+			// Handle OPTIONS preflight request (Lambda Function URL format)
+			// Note: event.httpMethod is set by Lambda Function URLs, not Lambda Runtime Interface Emulator
+			if (event.httpMethod === 'OPTIONS' || event.requestContext?.http?.method === 'OPTIONS') {
+				console.log('[STREAMING] Handling OPTIONS preflight');
+				// Return plain object for OPTIONS (don't use HttpResponseStream)
+				return {
+					statusCode: 200,
+					headers: corsHeaders,
+					body: JSON.stringify('Preflight request successful')
+				};
+			}
+
+			// Parse request based on invocation type
+			let request: ContentRequest;
+
+			// Direct invocation (local Docker testing)
+			if (event.action && event.payload) {
+				request = event as ContentRequest;
+			}
+			// Direct invocation with experimental_useObject format: { action, prompt }
+			else if (event.action && event.prompt) {
+				request = {
+					action: event.action,
+					payload: {
+						prompt: event.prompt
+					}
+				};
+			}
+			// API Gateway or Function URL invocation
+			else if (event.body) {
+				const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+				request = body as ContentRequest;
+			}
+			// Vercel AI SDK useChat format: { id, messages }
+			else if (event.messages) {
+				request = {
+					action: 'chat-v2-stream',
+					payload: {
+						id: event.id,
+						messages: event.messages
+					}
+				};
+			}
+			else {
+				throw new Error('Invalid request format - expected action/payload, prompt, or messages');
+			}
+
+			const { action, payload } = request;
+
+			if (action !== 'chat-v2-stream') {
+				throw new Error(`Streaming handler only supports chat-v2-stream, got: ${action}`);
+			}
+
+			if (!payload) {
+				throw new Error('Missing payload');
+			}
+
+			// Convert UIMessages to ModelMessages if needed
+			let convertedPayload = payload;
+			if (payload.messages && payload.messages.length > 0) {
+				const firstMessage = payload.messages[0];
+				// Check if messages are in UIMessage format (have 'parts' property)
+				if ('parts' in firstMessage) {
+					console.log('[HANDLER] Converting UIMessages to ModelMessages');
+					try {
+						const modelMessages = convertToModelMessages(payload.messages as any);
+						convertedPayload = {
+							...payload,
+							messages: modelMessages
+						};
+						console.log('[HANDLER] Conversion successful');
+					} catch (error) {
+						console.error('[HANDLER] Message conversion failed:', error);
+						throw new Error('Invalid message format');
+					}
+				}
+			}
+
+			// Wrap response stream with CORS headers and content type
+			const metadata = {
+				statusCode: 200,
+				headers: {
+					'Content-Type': 'text/plain; charset=utf-8',
+					'Access-Control-Allow-Origin': '*',
+					'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+					'Access-Control-Allow-Headers': 'Content-Type',
+					'Cache-Control': 'no-cache',
+					'Connection': 'keep-alive',
+					'X-Accel-Buffering': 'no', // Disable nginx buffering
+				}
+			};
+			responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+
+			// Get the stream from handleChatV2Stream with converted messages
+			const stream = await handleChatV2Stream(convertedPayload);
+
+			// Stream chunks to response
+			for await (const chunk of stream) {
+				responseStream.write(chunk);
+			}
+
+			responseStream.end();
+		} catch (error) {
+			console.error('Streaming handler error:', error);
+
+			// Wrap error response with proper headers
+			const metadata = {
+				statusCode: 500,
+				headers: {
+					'Content-Type': 'application/json',
+					...corsHeaders
+				}
+			};
+			responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+
+			// Write error as JSON
+			const errorResponse = JSON.stringify({
+				success: false,
+				error: error instanceof Error ? error.message : 'Streaming error'
+			});
+
+			responseStream.write(errorResponse);
+			responseStream.end();
+		}
+	}
+);

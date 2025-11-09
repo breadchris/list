@@ -795,14 +795,14 @@ export function HorizontalTimeline({
               id="horizontal-loop-mode"
               checked={isLooping}
               onCheckedChange={toggleLooping}
-              disabled={selectionStart === null && selectionEnd === null}
+              disabled={!isLooping && selectionStart === null && selectionEnd === null}
               className="scale-75"
             />
-            <Label 
-              htmlFor="horizontal-loop-mode" 
-              className={`text-xs flex items-center ${isLooping ? 'text-green-700 font-medium' : 'text-gray-600'} ${(selectionStart === null && selectionEnd === null) ? 'opacity-50' : ''}`}
+            <Label
+              htmlFor="horizontal-loop-mode"
+              className={`text-xs flex items-center ${isLooping ? 'text-green-700 font-medium' : 'text-gray-600'} ${(!isLooping && selectionStart === null && selectionEnd === null) ? 'opacity-50' : ''}`}
             >
-              <Repeat className={`w-3 h-3 mr-1 ${isLooping ? 'text-green-600' : ''}`} /> 
+              <Repeat className={`w-3 h-3 mr-1 ${isLooping ? 'text-green-600' : ''}`} />
               {isLooping ? "Looping" : "Loop"}
             </Label>
           </div>

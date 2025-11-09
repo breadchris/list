@@ -2,6 +2,7 @@
   "port": "3002",
   "supabase_url": "https://zazsrepfnamdmibcyenx.supabase.co",
   "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM",
+  "lambda_endpoint": "http://localhost:9001",
   "database_url": "postgresql://postgres:lut0ykW3xOMt0QXF@db.zazsrepfnamdmibcyenx.supabase.co:5432/postgres",
   "deepgram_api_key": "9527c489cc0c9fd8b5f045f542fb175e6d4a10b7"
 }

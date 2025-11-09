@@ -8,6 +8,7 @@ import { UrlPreviewCard } from './UrlPreviewCard';
 import { YouTubeVideoCard } from './YouTubeVideoCard';
 import { YouTubeSectionCard } from './YouTubeSectionCard';
 import { ImageDisplay } from './ImageDisplay';
+import { MapDisplay, type MapData } from './MapDisplay';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useInfiniteContentByTag, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -23,6 +24,7 @@ interface ContentDeckProps {
   newContent?: Content;
   parentContentId?: string | null;
   onNavigate?: (parentId: string | null) => void;
+  onFocusContent?: (contentId: string, contentName: string) => void;
   searchQuery: string;
   isSearching: boolean;
   selection: ContentSelectionState;
@@ -37,6 +39,10 @@ interface ContentDeckProps {
   onActivateExternalSearch?: (workflowId: string) => void;
   onExecuteExternalSearch?: () => void;
   selectedTagFilter?: TagFilter[];
+  isSelectingParent?: boolean;
+  targetParentId?: string | null;
+  onSelectParent?: (contentId: string) => void;
+  itemsBeingMoved?: string[];
 }
 
 interface TagDisplayProps {
@@ -96,6 +102,7 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
   newContent,
   parentContentId = null,
   onNavigate,
+  onFocusContent,
   searchQuery,
   isSearching,
   selection,
@@ -109,14 +116,21 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
   activeExternalSearch = null,
   onActivateExternalSearch = () => {},
   onExecuteExternalSearch = () => {},
-  selectedTagFilter = []
+  selectedTagFilter = [],
+  isSelectingParent = false,
+  targetParentId = null,
+  onSelectParent = () => {},
+  itemsBeingMoved = []
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const deleteContentMutation = useDeleteContentMutation();
   const toast = useToast();
-  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+  // Removed hoveredItemId state - using CSS group-hover instead for better performance
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // Double-click tracking for selection + navigation
+  const lastClickRef = useRef<{ itemId: string; timestamp: number } | null>(null);
 
   // Drag state management
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
@@ -301,18 +315,39 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
     }
   };
 
+  // Handle content click - double-click detection for selection + navigation
   const handleContentClick = (contentItem: Content) => {
+    // Parent selection mode - select this item as the new parent
+    if (isSelectingParent) {
+      onSelectParent(contentItem.id);
+      return;
+    }
+
     // Prevent click if we just finished dragging
     if (preventClick) {
       return;
     }
 
-    if (selection.isSelectionMode) {
-      selection.toggleItem(contentItem.id);
-    } else {
+    const now = Date.now();
+    const lastClick = lastClickRef.current;
+
+    // Check if this is a second click on the same item within 300ms
+    const isDoubleClick = lastClick &&
+      lastClick.itemId === contentItem.id &&
+      (now - lastClick.timestamp) < 300;
+
+    if (isDoubleClick) {
+      // Second click: navigate to content page
       if (onNavigate) {
         onNavigate(contentItem.id);
       }
+      // Reset click tracking
+      lastClickRef.current = null;
+    } else {
+      // First click: toggle selection
+      selection.toggleItem(contentItem.id);
+      // Track this click
+      lastClickRef.current = { itemId: contentItem.id, timestamp: now };
     }
   };
 
@@ -604,6 +639,8 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
   const renderContentItem = (item: Content, index: number, total: number) => {
     const isSelected = selection.selectedItems.has(item.id);
     const isDragging = draggedCardId === item.id;
+    const isTargetParent = isSelectingParent && targetParentId === item.id;
+    const isBeingMoved = itemsBeingMoved.includes(item.id);
 
     // Check if card has custom position, otherwise use calculated position
     const hasCustomPosition = customPositions[item.id];
@@ -650,16 +687,28 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
       <div
         key={item.id}
         style={cardStyle}
-        className={`bg-white rounded-lg shadow-md border p-3 sm:p-4 hover:shadow-xl w-72 sm:w-80 ${
-          isSelected
+        className={`group bg-white rounded-lg shadow-md border p-3 sm:p-4 hover:shadow-xl w-72 sm:w-80 ${
+          isTargetParent
+            ? 'border-orange-500 border-2 ring-2 ring-orange-300'
+            : isSelected
             ? 'border-blue-500 border-2 bg-blue-50'
             : 'border-gray-200'
-        } ${isDragging ? 'shadow-2xl scale-105' : ''}`}
-        onClick={() => handleContentClick(item)}
+        } ${isDragging ? 'shadow-2xl scale-105' : ''} ${
+          isBeingMoved ? 'opacity-50' : ''
+        }`}
+        onClick={(e) => {
+          // Prevent triggering on button/link clicks
+          const target = e.target as HTMLElement;
+          if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.closest('button') || target.closest('a')) {
+            return;
+          }
+          // Truncate content name for display
+          const displayName = item.data.substring(0, 30);
+          onFocusContent?.(item.id, displayName);
+          handleContentClick(item);
+        }}
         onMouseDown={(e) => handleMouseDown(e, item.id, currentX, currentY, currentRotation)}
         onTouchStart={(e) => handleTouchStart(e, item.id, currentX, currentY, currentRotation)}
-        onMouseEnter={() => setHoveredItemId(item.id)}
-        onMouseLeave={() => setHoveredItemId(null)}
       >
         {selection.isSelectionMode && (
           <div className="absolute top-3 right-3 z-10">
@@ -740,29 +789,29 @@ export const ContentDeck: React.FC<ContentDeckProps> = ({
                 </div>
               )}
 
-              {hoveredItemId === item.id && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!selection.isSelectionMode) {
-                      selection.toggleSelectionMode();
-                    }
-                    selection.toggleItem(item.id);
-                  }}
-                  className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
-                  title="Select for workflow"
-                >
-                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </button>
-              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!selection.isSelectionMode) {
+                    selection.toggleSelectionMode();
+                  }
+                  selection.toggleItem(item.id);
+                }}
+                className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
+                title="Select for workflow"
+              >
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
 
-              <TagButton
-                contentId={item.id}
-                existingTags={item.tags || []}
-                isVisible={hoveredItemId === item.id}
-              />
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <TagButton
+                  contentId={item.id}
+                  existingTags={item.tags || []}
+                  isVisible={true}
+                />
+              </div>
             </div>
           )}
         </div>

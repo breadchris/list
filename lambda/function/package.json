@@ -5,31 +5,52 @@
   "main": "dist/index.cjs",
   "scripts": {
     "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs --external:@anthropic-ai/claude-code --external:esbuild --tree-shaking=false --keep-names",
+    "dev:local": "npx tsx watch local-server.ts",
     "test:docker:build": "docker build -t lambda-test .",
     "test:docker:run": "docker run --rm -p 9000:8080 -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -e SUPABASE_URL=$SUPABASE_URL -e SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY -e OPENAI_API_KEY=$OPENAI_API_KEY -e CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID -e CLOUDFLARE_API_KEY=$CLOUDFLARE_API_KEY -e TMDB_API_KEY=$TMDB_API_KEY -e DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY lambda-test",
     "test:docker:invoke": "curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json'",
     "test:docker:cleanup": "docker ps -a -q --filter ancestor=lambda-test | xargs -r docker stop && docker ps -a -q --filter ancestor=lambda-test | xargs -r docker rm",
-    "test:docker:full": "npm run test:docker:cleanup && npm run test:docker:build && docker run --rm -d -p 9000:8080 --name lambda-test-instance -e SUPABASE_URL=$SUPABASE_URL -e SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY lambda-test && sleep 3 && (curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json' --data-binary @test-payload-simple.json -w '\\n%{http_code}' | grep -E '^(200|400)$' || (echo 'Handler failed to load (502 error)' && exit 1)) && docker stop lambda-test-instance"
+    "test:docker:full": "npm run test:docker:cleanup && npm run test:docker:build && docker run --rm -d -p 9000:8080 --name lambda-test-instance -e SUPABASE_URL=$SUPABASE_URL -e SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY lambda-test && sleep 3 && (curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json' --data-binary @test-payload-simple.json -w '\\n%{http_code}' | grep -E '^(200|400)$' || (echo 'Handler failed to load (502 error)' && exit 1)) && docker stop lambda-test-instance",
+    "test:chat-v2": "curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json' --data-binary @test-chat-v2-stream.json",
+    "test:chat-v2:multiturn": "curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json' --data-binary @test-chat-v2-multiturn.json",
+    "test:streaming:build": "docker build -t lambda-test-streaming -f Dockerfile.streaming .",
+    "test:streaming:run": "docker run --rm -d -p 9000:8080 --name lambda-streaming -e OPENAI_API_KEY=$OPENAI_API_KEY -e SUPABASE_URL=$SUPABASE_URL -e SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY lambda-test-streaming",
+    "test:streaming:stop": "docker stop lambda-streaming 2>/dev/null || true",
+    "test:streaming:test": "curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -H 'Content-Type: application/json' --data-binary @test-chat-v2-stream.json",
+    "test:streaming:full": "npm run test:streaming:stop && npm run test:streaming:build && npm run test:streaming:run && sleep 4 && npm run test:streaming:test && npm run test:streaming:stop",
+    "test:chat:local": "npx tsx test-chat-local.ts",
+    "proxy": "node lambda-proxy.js 9001 http://localhost:9000/2015-03-31/functions/function/invocations",
+    "test:browser": "echo 'Start Lambda: npm run test:docker:run' && echo 'Start Proxy: npm run proxy' && echo 'Browser URL: http://localhost:9001'",
+    "test:pulumi:full": "./test-with-pulumi-secrets.sh",
+    "test:pulumi:load": "source ./load-pulumi-secrets.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
     "@types/aws-lambda": "^8.10.145",
     "@types/cheerio": "^0.22.35",
+    "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^20.0.0",
     "typescript": "^5.7.2"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^2.0.0",
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
     "@aws-sdk/client-s3": "^3.698.0",
     "@aws-sdk/client-secrets-manager": "^3.698.0",
     "@aws-sdk/client-sqs": "^3.698.0",
     "@deepgram/sdk": "^3.9.0",
     "@supabase/supabase-js": "^2.47.10",
+    "ai": "^5.0.0",
     "cheerio": "^1.0.0",
     "cloudflare": "^5.0.0",
+    "dotenv": "^17.2.3",
     "esbuild": "^0.25.10",
+    "jose": "^5.9.6",
+    "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "node-fetch": "^3.3.2",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zod": "^3.25.76"
   }
 }

@@ -1889,34 +1889,38 @@ export class ContentRepository {
   // Get public content children (accessible to anonymous users)
   async getPublicContentChildren(parentId: string): Promise<Content[]> {
     try {
+      // Query from content_relationships join table
+      // Join to content table (not public_content view) to leverage RLS policy
       const { data, error } = await supabase
-        .from("public_content")
+        .from("content_relationships")
         .select(
           `
-          id,
-          created_at,
-          updated_at,
-          type,
-          data,
-          metadata,
-          parent_content_id,
-          shared_at,
-          shared_by
+          display_order,
+          child:content!inner!to_content_id (
+            id,
+            created_at,
+            updated_at,
+            type,
+            data,
+            metadata,
+            parent_content_id,
+            group_id,
+            user_id
+          )
         `,
         )
-        .eq("parent_content_id", parentId)
-        .order("created_at", { ascending: false });
+        .eq("from_content_id", parentId)
+        .order("child(created_at)", { ascending: false });
 
       if (error) {
         console.error("Error fetching public content children:", error);
         throw new Error(error.message);
       }
 
-      return (data || []).map((item) => ({
-        ...item,
-        group_id: "", // Not exposed for public content
-        user_id: item.shared_by || "", // Use shared_by as user_id
-        parent_content_id: item.parent_content_id || null,
+      // Extract child content from relationship records
+      // RLS policy filters to only public content
+      return (data || []).map((item: any) => ({
+        ...item.child,
         tags: [], // Tags not exposed for public content
       }));
     } catch (error) {

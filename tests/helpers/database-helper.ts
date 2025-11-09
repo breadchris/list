@@ -29,11 +29,17 @@ export class DatabaseHelper {
    */
   async createTestUser(user: TestUserWithInvites): Promise<string> {
     console.log(`Creating test user: ${user.email}`);
+    console.log(`Using password: ${user.password.substring(0, 4)}***`);
 
-    // Sign up the user
+    // Use signUp for local Supabase (which has auto-confirm enabled)
     const { data: authData, error: authError } = await this.supabase.auth.signUp({
       email: user.email,
       password: user.password,
+      options: {
+        data: {
+          username: user.username || null
+        }
+      }
     });
 
     if (authError) {
@@ -47,36 +53,47 @@ export class DatabaseHelper {
 
     console.log(`User created with ID: ${userId}`);
 
-    // For local development, manually confirm the user's email
-    // This bypasses the email confirmation requirement
-    try {
-      const { error: confirmError } = await this.adminClient.auth.admin.updateUserById(userId, {
-        email_confirmed_at: new Date().toISOString()
-      });
+    // Wait for user to be confirmed and ready
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-      if (confirmError) {
-        console.warn('Failed to confirm user email:', confirmError);
-      } else {
-        console.log(`User email confirmed for: ${user.email}`);
-      }
-    } catch (error) {
-      console.warn('Admin API not available, user may need manual confirmation:', error);
+    // Verify user is confirmed via admin API
+    const { data: adminUserData, error: adminError } = await this.adminClient.auth.admin.getUserById(userId);
+    if (adminError) {
+      console.warn('Could not verify user via admin API:', adminError);
+    } else {
+      console.log(`User email confirmed: ${!!adminUserData.user.email_confirmed_at}`);
     }
 
-    // Update user record with username if provided
-    if (user.username) {
-      const { error: updateError } = await this.supabase
-        .from('users')
-        .update({ username: user.username })
-        .eq('id', userId);
+    // Test if we can sign in with this user
+    const { data: signInData, error: signInError } = await this.supabase.auth.signInWithPassword({
+      email: user.email,
+      password: user.password
+    });
 
-      if (updateError) {
-        console.warn('Failed to update username:', updateError);
-      }
+    if (signInError) {
+      console.warn(`⚠️ Cannot sign in with created user: ${signInError.message}`);
+    } else {
+      console.log(`✅ Successfully verified sign in for: ${user.email}`);
+      // Sign out immediately
+      await this.supabase.auth.signOut();
     }
 
-    // Wait a moment for the user to be fully processed
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Create public.users record using admin client (bypasses RLS)
+    const { error: insertError } = await this.adminClient
+      .from('users')
+      .insert([{
+        id: userId,
+        username: user.username || null
+      }]);
+
+    if (insertError) {
+      // Ignore duplicate key errors - record may already exist
+      if (!insertError.message.includes('duplicate key')) {
+        console.warn('Failed to create public.users record:', insertError);
+      }
+    } else {
+      console.log(`Public users record created for: ${userId}`);
+    }
 
     return userId;
   }
@@ -113,7 +130,8 @@ export class DatabaseHelper {
    * Create test group in database
    */
   async createTestGroup(group: TestGroupWithInvites, createdBy?: string): Promise<string> {
-    const { data, error } = await this.supabase
+    // Use admin client to bypass RLS policies
+    const { data, error } = await this.adminClient
       .from('groups')
       .insert([{
         name: group.name,
@@ -126,6 +144,7 @@ export class DatabaseHelper {
       throw new Error(`Failed to create test group: ${error.message}`);
     }
 
+    console.log(`Created test group: ${data.id}`);
     return data.id;
   }
 
@@ -133,7 +152,8 @@ export class DatabaseHelper {
    * Add user to group membership
    */
   async addGroupMember(userId: string, groupId: string, role: string = 'member'): Promise<void> {
-    const { error } = await this.supabase
+    // Use admin client to bypass RLS policies
+    const { error } = await this.adminClient
       .from('group_memberships')
       .insert([{
         user_id: userId,
@@ -610,5 +630,136 @@ export class DatabaseHelper {
     }
 
     return data;
+  }
+
+  /**
+   * Get chat messages (content with role metadata) for a chat container
+   */
+  async getChatMessages(chatId: string): Promise<any[]> {
+    const { data, error} = await this.adminClient
+      .from('content')
+      .select('*')
+      .eq('parent_content_id', chatId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to get chat messages: ${error.message}`);
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get the last assistant message in a chat
+   */
+  async getLastAssistantMessage(chatId: string): Promise<any | null> {
+    const messages = await this.getChatMessages(chatId);
+    const assistantMessages = messages.filter(m => m.metadata?.role === 'assistant');
+
+    if (assistantMessages.length === 0) {
+      return null;
+    }
+
+    return assistantMessages[assistantMessages.length - 1];
+  }
+
+  /**
+   * Count messages with a specific role in a chat
+   */
+  async countMessagesByRole(chatId: string, role: 'user' | 'assistant'): Promise<number> {
+    const messages = await this.getChatMessages(chatId);
+    return messages.filter(m => m.metadata?.role === role).length;
+  }
+
+  /**
+   * Wait for assistant message to be created and contain content
+   * Polls the database until a non-empty assistant message appears
+   */
+  async waitForAssistantResponse(
+    chatId: string,
+    timeoutMs: number = 30000,
+    pollIntervalMs: number = 1000
+  ): Promise<any> {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeoutMs) {
+      const assistantMessage = await this.getLastAssistantMessage(chatId);
+
+      if (assistantMessage && assistantMessage.data && assistantMessage.data.length > 0) {
+        // Found a non-empty assistant message
+        return assistantMessage;
+      }
+
+      // Wait before polling again
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+    }
+
+    throw new Error(`Timeout waiting for assistant response in chat ${chatId}`);
+  }
+
+  /**
+   * Verify chat structure is correct
+   */
+  async verifyChatStructure(chatId: string): Promise<{
+    isValid: boolean;
+    errors: string[];
+    chatContainer: any;
+    messages: any[];
+    userMessages: any[];
+    assistantMessages: any[];
+  }> {
+    const errors: string[] = [];
+
+    // Get chat container
+    const chatContainer = await this.getContentById(chatId);
+    if (!chatContainer) {
+      errors.push('Chat container not found');
+      return {
+        isValid: false,
+        errors,
+        chatContainer: null,
+        messages: [],
+        userMessages: [],
+        assistantMessages: []
+      };
+    }
+
+    if (chatContainer.type !== 'chat') {
+      errors.push(`Expected type 'chat', got '${chatContainer.type}'`);
+    }
+
+    // Get messages
+    const messages = await this.getChatMessages(chatId);
+    const userMessages = messages.filter(m => m.metadata?.role === 'user');
+    const assistantMessages = messages.filter(m => m.metadata?.role === 'assistant');
+
+    // Validation
+    if (messages.length === 0) {
+      errors.push('No messages found in chat');
+    }
+
+    if (userMessages.length === 0) {
+      errors.push('No user messages found');
+    }
+
+    if (assistantMessages.length === 0) {
+      errors.push('No assistant messages found');
+    }
+
+    // Check metadata
+    for (const msg of messages) {
+      if (!msg.metadata || !msg.metadata.role) {
+        errors.push(`Message ${msg.id} missing role in metadata`);
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      chatContainer,
+      messages,
+      userMessages,
+      assistantMessages
+    };
   }
 }

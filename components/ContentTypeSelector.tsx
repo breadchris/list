@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type ContentType = 'text' | 'ai-chat' | 'search' | 'image' | 'epub' | 'audio';
+export type ContentType = 'text' | 'ai-chat' | 'search' | 'image' | 'epub' | 'audio' | 'map';
 
 interface ContentTypeSelectorProps {
   selectedType: ContentType;
@@ -100,6 +100,20 @@ export const ContentTypeSelector: React.FC<ContentTypeSelectorProps> = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
           <span className="text-sm font-medium">Audio</span>
+        </button>
+
+        <button
+          onClick={() => onSelectType('map')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors flex-shrink-0 ${
+            selectedType === 'map'
+              ? 'bg-red-50 border-red-300 text-red-700'
+              : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 0c-4.198 0-8 3.403-8 7.602 0 4.198 3.469 9.21 8 16.398 4.531-7.188 8-12.2 8-16.398 0-4.199-3.801-7.602-8-7.602zm0 11c-1.657 0-3-1.343-3-3s1.343-3 3-3 3 1.343 3 3-1.343 3-3 3z" />
+          </svg>
+          <span className="text-sm font-medium">Map</span>
         </button>
       </div>
     </div>

@@ -15,24 +15,41 @@ import type {
   TranscribeAudioPayload,
   TranscribeAudioResult,
   ContentItem,
-  OpenAIMessage
-} from './types.js';
-import { extractUrls, extractYouTubePlaylistUrls, fetchSEOMetadata } from './utils.js';
-import { callOpenAI, callOpenAIChat, formatContentForContext } from './openai-client.js';
-import { fetchMarkdownFromCloudflare, generateScreenshot } from './cloudflare-client.js';
-import { processTMDbSearchForContent } from './tmdb-client.js';
-import { searchLibgen, type BookInfo } from './libgen-client.js';
-import { createClient } from '@deepgram/sdk';
-import { executeGo } from './go-executor.js';
-import type { SubtitleRequest } from './go-client.js';
-import { isSubtitleResponse } from './go-client.js';
-import { executeYouTubeTranscript } from './python-client.js';
+  OpenAIMessage,
+} from "./types.js";
+import {
+  extractUrls,
+  extractYouTubePlaylistUrls,
+  fetchSEOMetadata,
+} from "./utils.js";
+import {
+  callOpenAI,
+  callOpenAIChat,
+  formatContentForContext,
+} from "./openai-client.js";
+import {
+  fetchMarkdownFromCloudflare,
+  generateScreenshot,
+} from "./cloudflare-client.js";
+import { processTMDbSearchForContent } from "./tmdb-client.js";
+import { searchLibgen, type BookInfo } from "./libgen-client.js";
+import { createClient } from "@deepgram/sdk";
+import { executeGo } from "./go-executor.js";
+import type { SubtitleRequest } from "./go-client.js";
+import { isSubtitleResponse } from "./go-client.js";
+import { executeYouTubeTranscript } from "./python-client.js";
+import { streamText, streamObject, convertToModelMessages } from "ai";
+import { openai, createOpenAI } from "@ai-sdk/openai";
+import { z } from "zod";
 
 // =============================================================================
 // SEO EXTRACTION
 // =============================================================================
 
-export async function handleSEOExtract(supabase: any, payload: SEOExtractPayload): Promise<ContentResponse> {
+export async function handleSEOExtract(
+  supabase: any,
+  payload: SEOExtractPayload,
+): Promise<ContentResponse> {
   const results = [];
 
   for (const contentItem of payload.selectedContent) {
@@ -40,25 +57,31 @@ export async function handleSEOExtract(supabase: any, payload: SEOExtractPayload
       const result = await processSEOForContent(supabase, contentItem);
       results.push(result);
     } catch (error: any) {
-      console.error(`Error processing SEO for content ${contentItem.id}:`, error);
+      console.error(
+        `Error processing SEO for content ${contentItem.id}:`,
+        error,
+      );
       results.push({
         content_id: contentItem.id,
         success: false,
         error: error.message,
         total_urls_found: 0,
         urls_processed: 0,
-        seo_children: []
+        seo_children: [],
       });
     }
   }
 
   return {
     success: true,
-    data: results
+    data: results,
   };
 }
 
-export async function processSEOForContent(supabase: any, contentItem: ContentItem) {
+export async function processSEOForContent(
+  supabase: any,
+  contentItem: ContentItem,
+) {
   // Extract URLs from content data
   const urls = extractUrls(contentItem.data);
 
@@ -68,7 +91,7 @@ export async function processSEOForContent(supabase: any, contentItem: ContentIt
       success: true,
       total_urls_found: 0,
       urls_processed: 0,
-      seo_children: []
+      seo_children: [],
     };
   }
 
@@ -80,24 +103,28 @@ export async function processSEOForContent(supabase: any, contentItem: ContentIt
   for (const url of urls) {
     try {
       // Check if SEO content already exists for this URL
-      const { data: existingSEO, error: seoError } = await supabase
-        .rpc('find_seo_content_by_url', {
+      const { data: existingSEO, error: seoError } = await supabase.rpc(
+        "find_seo_content_by_url",
+        {
           parent_id: contentItem.id,
-          url: url
-        });
+          url: url,
+        },
+      );
 
       if (seoError) {
-        console.error('Error checking existing SEO:', seoError);
-        errors.push(`Error checking existing SEO for ${url}: ${seoError.message}`);
+        console.error("Error checking existing SEO:", seoError);
+        errors.push(
+          `Error checking existing SEO for ${url}: ${seoError.message}`,
+        );
         continue;
       }
 
       if (existingSEO) {
         // Get the existing SEO content
         const { data: existingContent } = await supabase
-          .from('content')
-          .select('*')
-          .eq('id', existingSEO)
+          .from("content")
+          .select("*")
+          .eq("id", existingSEO)
           .single();
 
         if (existingContent) {
@@ -111,26 +138,30 @@ export async function processSEOForContent(supabase: any, contentItem: ContentIt
       const seoMetadata = await fetchSEOMetadata(url);
 
       // Create or update SEO content
-      const { data: seoContentId, error: upsertError } = await supabase
-        .rpc('upsert_seo_content', {
+      const { data: seoContentId, error: upsertError } = await supabase.rpc(
+        "upsert_seo_content",
+        {
           parent_id: contentItem.id,
           user_id: contentItem.user_id,
           group_id: contentItem.group_id,
           url: url,
-          seo_metadata: seoMetadata
-        });
+          seo_metadata: seoMetadata,
+        },
+      );
 
       if (upsertError) {
-        console.error('Error creating SEO content:', upsertError);
-        errors.push(`Error creating SEO content for ${url}: ${upsertError.message}`);
+        console.error("Error creating SEO content:", upsertError);
+        errors.push(
+          `Error creating SEO content for ${url}: ${upsertError.message}`,
+        );
         continue;
       }
 
       // Get the created content
       const { data: newSEOContent } = await supabase
-        .from('content')
-        .select('*')
-        .eq('id', seoContentId)
+        .from("content")
+        .select("*")
+        .eq("id", seoContentId)
         .single();
 
       if (newSEOContent) {
@@ -138,7 +169,6 @@ export async function processSEOForContent(supabase: any, contentItem: ContentIt
       }
 
       urlsProcessed++;
-
     } catch (error: any) {
       console.error(`Error processing URL ${url}:`, error);
       errors.push(`Error processing ${url}: ${error.message}`);
@@ -151,7 +181,7 @@ export async function processSEOForContent(supabase: any, contentItem: ContentIt
     total_urls_found: urls.length,
     urls_processed: urlsProcessed,
     seo_children: seoChildren,
-    errors: errors.length > 0 ? errors : undefined
+    errors: errors.length > 0 ? errors : undefined,
   };
 }
 
@@ -159,13 +189,23 @@ export async function processSEOForContent(supabase: any, contentItem: ContentIt
 // LLM GENERATION
 // =============================================================================
 
-export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePayload): Promise<ContentResponse> {
-  const { system_prompt, selected_content, group_id, parent_content_id } = payload;
+export async function handleLLMGenerate(
+  supabase: any,
+  payload: LLMGeneratePayload,
+): Promise<ContentResponse> {
+  const { system_prompt, selected_content, group_id, parent_content_id } =
+    payload;
 
-  if (!system_prompt || !selected_content || !Array.isArray(selected_content) || selected_content.length === 0) {
+  if (
+    !system_prompt ||
+    !selected_content ||
+    !Array.isArray(selected_content) ||
+    selected_content.length === 0
+  ) {
     return {
       success: false,
-      error: 'Missing or invalid required fields: system_prompt, selected_content'
+      error:
+        "Missing or invalid required fields: system_prompt, selected_content",
     };
   }
 
@@ -173,7 +213,7 @@ export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePaylo
   if (!user_id) {
     return {
       success: false,
-      error: 'Unable to determine user_id from selected content'
+      error: "Unable to determine user_id from selected content",
     };
   }
 
@@ -186,15 +226,15 @@ export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePaylo
   if (!generatedContent || generatedContent.length === 0) {
     return {
       success: false,
-      error: 'No content was generated by the LLM'
+      error: "No content was generated by the LLM",
     };
   }
 
   // Create the prompt content item first
   const { data: promptContent, error: promptError } = await supabase
-    .from('content')
+    .from("content")
     .insert({
-      type: 'prompt',
+      type: "prompt",
       data: system_prompt,
       group_id: group_id,
       user_id: user_id,
@@ -202,8 +242,8 @@ export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePaylo
       metadata: {
         selected_content_ids: selected_content.map((c: ContentItem) => c.id),
         generated_count: generatedContent.length,
-        created_by_llm: true
-      }
+        created_by_llm: true,
+      },
     })
     .select()
     .single();
@@ -213,7 +253,7 @@ export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePaylo
   }
 
   // Create the generated content items as children of the prompt
-  const contentToInsert = generatedContent.map(item => ({
+  const contentToInsert = generatedContent.map((item) => ({
     type: item.type,
     data: item.data,
     group_id: group_id,
@@ -222,19 +262,21 @@ export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePaylo
     metadata: {
       generated_by_llm: true,
       prompt_content_id: promptContent.id,
-      source_content_ids: selected_content.map((c: ContentItem) => c.id)
-    }
+      source_content_ids: selected_content.map((c: ContentItem) => c.id),
+    },
   }));
 
   const { data: createdContent, error: createError } = await supabase
-    .from('content')
+    .from("content")
     .insert(contentToInsert)
     .select();
 
   if (createError) {
     // If content creation fails, try to delete the prompt to avoid orphaned prompts
-    await supabase.from('content').delete().eq('id', promptContent.id);
-    throw new Error(`Failed to create generated content: ${createError.message}`);
+    await supabase.from("content").delete().eq("id", promptContent.id);
+    throw new Error(
+      `Failed to create generated content: ${createError.message}`,
+    );
   }
 
   return {
@@ -242,8 +284,8 @@ export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePaylo
     data: {
       generated_content: generatedContent,
       prompt_content_id: promptContent.id,
-      created_content: createdContent
-    }
+      created_content: createdContent,
+    },
   };
 }
 
@@ -251,29 +293,32 @@ export async function handleLLMGenerate(supabase: any, payload: LLMGeneratePaylo
 // CHAT
 // =============================================================================
 
-export async function handleChatMessage(supabase: any, payload: ChatMessagePayload): Promise<ContentResponse> {
+export async function handleChatMessage(
+  supabase: any,
+  payload: ChatMessagePayload,
+): Promise<ContentResponse> {
   const { chat_content_id, message, group_id } = payload;
 
   // Validate payload
   if (!chat_content_id || !message || !group_id) {
     return {
       success: false,
-      error: 'Missing required fields: chat_content_id, message, group_id'
+      error: "Missing required fields: chat_content_id, message, group_id",
     };
   }
 
   // 1. Get the chat content to verify it exists and get user_id
   const { data: chatContent, error: chatError } = await supabase
-    .from('content')
-    .select('*')
-    .eq('id', chat_content_id)
-    .eq('type', 'chat')
+    .from("content")
+    .select("*")
+    .eq("id", chat_content_id)
+    .eq("type", "chat")
     .single();
 
   if (chatError || !chatContent) {
     return {
       success: false,
-      error: 'Chat not found or invalid chat_content_id'
+      error: "Chat not found or invalid chat_content_id",
     };
   }
 
@@ -281,45 +326,45 @@ export async function handleChatMessage(supabase: any, payload: ChatMessagePaylo
 
   // 2. Get conversation history (all children of chat, ordered by creation)
   const { data: conversationHistory, error: historyError } = await supabase
-    .from('content')
-    .select('*')
-    .eq('parent_content_id', chat_content_id)
-    .order('created_at', { ascending: true });
+    .from("content")
+    .select("*")
+    .eq("parent_content_id", chat_content_id)
+    .order("created_at", { ascending: true });
 
   if (historyError) {
     return {
       success: false,
-      error: `Failed to load conversation history: ${historyError.message}`
+      error: `Failed to load conversation history: ${historyError.message}`,
     };
   }
 
-  // 3. Build OpenAI messages array from conversation history
-  const openAIMessages: OpenAIMessage[] = (conversationHistory || []).map((msg: any) => ({
-    role: msg.metadata?.role === 'assistant' ? 'assistant' : 'user',
-    content: msg.data
+  // 3. Build AI SDK messages array from conversation history
+  const messages = (conversationHistory || []).map((msg: any) => ({
+    role: msg.metadata?.role === "assistant" ? "assistant" : "user",
+    content: msg.data,
   }));
 
   // Add current message
-  openAIMessages.push({
-    role: 'user',
-    content: message
+  messages.push({
+    role: "user",
+    content: message,
   });
 
   // 4. Create empty assistant message immediately
   const { data: assistantContent, error: assistantError } = await supabase
-    .from('content')
+    .from("content")
     .insert({
-      type: 'text',
-      data: '', // Start with empty message
+      type: "text",
+      data: "", // Start with empty message
       group_id: group_id,
       user_id: user_id,
       parent_content_id: chat_content_id,
       metadata: {
-        role: 'assistant',
-        model: 'gpt-4',
+        role: "assistant",
+        model: "gpt-4",
         created_by_chat: true,
-        streaming: true
-      }
+        streaming: true,
+      },
     })
     .select()
     .single();
@@ -327,73 +372,91 @@ export async function handleChatMessage(supabase: any, payload: ChatMessagePaylo
   if (assistantError) {
     return {
       success: false,
-      error: `Failed to create assistant message: ${assistantError.message}`
+      error: `Failed to create assistant message: ${assistantError.message}`,
     };
   }
 
-  // 5. Stream OpenAI response and update content in real-time
+  // 5. Stream AI response using Vercel AI SDK
   try {
-    let fullMessage = '';
+    const { streamText } = await import("ai");
+    const { openai } = await import("@ai-sdk/openai");
 
-    // Import the streaming function
-    const { callOpenAIChatStream } = await import('./openai-client.js');
+    let fullMessage = "";
 
-    for await (const chunk of callOpenAIChatStream(openAIMessages)) {
+    // Get API key from environment
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    if (!openaiApiKey) {
+      throw new Error("OpenAI API key not configured");
+    }
+
+    // Create OpenAI provider with API key
+    const { createOpenAI } = await import("@ai-sdk/openai");
+    const openaiProvider = createOpenAI({
+      apiKey: openaiApiKey,
+    });
+
+    const result = streamText({
+      model: openaiProvider("gpt-4"),
+      messages: messages as any,
+    });
+
+    // Stream chunks and update database in real-time
+    for await (const chunk of result.textStream) {
       fullMessage += chunk;
 
       // Update the assistant message content with accumulated text
       const { error: updateError } = await supabase
-        .from('content')
+        .from("content")
         .update({
           data: fullMessage,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
-        .eq('id', assistantContent.id);
+        .eq("id", assistantContent.id);
 
       if (updateError) {
-        console.error('Error updating message during stream:', updateError);
+        console.error("Error updating message during stream:", updateError);
       }
     }
 
     // Mark streaming as complete
     await supabase
-      .from('content')
+      .from("content")
       .update({
         metadata: {
-          role: 'assistant',
-          model: 'gpt-4',
+          role: "assistant",
+          model: "gpt-4",
           created_by_chat: true,
-          streaming: false
-        }
+          streaming: false,
+        },
       })
-      .eq('id', assistantContent.id);
+      .eq("id", assistantContent.id);
 
     return {
       success: true,
       data: {
         assistant_message: fullMessage,
-        assistant_content_id: assistantContent.id
-      }
+        assistant_content_id: assistantContent.id,
+      },
     };
   } catch (error: any) {
     // If streaming fails, update the message with error
     await supabase
-      .from('content')
+      .from("content")
       .update({
         data: `Error generating response: ${error.message}`,
         metadata: {
-          role: 'assistant',
-          model: 'gpt-4',
+          role: "assistant",
+          model: "gpt-4",
           created_by_chat: true,
           streaming: false,
-          error: true
-        }
+          error: true,
+        },
       })
-      .eq('id', assistantContent.id);
+      .eq("id", assistantContent.id);
 
     return {
       success: false,
-      error: `Streaming failed: ${error.message}`
+      error: `Streaming failed: ${error.message}`,
     };
   }
 }
@@ -402,7 +465,10 @@ export async function handleChatMessage(supabase: any, payload: ChatMessagePaylo
 // MARKDOWN EXTRACTION
 // =============================================================================
 
-export async function handleMarkdownExtract(supabase: any, payload: MarkdownExtractPayload): Promise<ContentResponse> {
+export async function handleMarkdownExtract(
+  supabase: any,
+  payload: MarkdownExtractPayload,
+): Promise<ContentResponse> {
   const results = [];
 
   for (const contentItem of payload.selectedContent) {
@@ -410,25 +476,31 @@ export async function handleMarkdownExtract(supabase: any, payload: MarkdownExtr
       const result = await processMarkdownForContent(supabase, contentItem);
       results.push(result);
     } catch (error: any) {
-      console.error(`Error processing markdown for content ${contentItem.id}:`, error);
+      console.error(
+        `Error processing markdown for content ${contentItem.id}:`,
+        error,
+      );
       results.push({
         content_id: contentItem.id,
         success: false,
         error: error.message,
         total_urls_found: 0,
         urls_processed: 0,
-        markdown_children: []
+        markdown_children: [],
       });
     }
   }
 
   return {
     success: true,
-    data: results
+    data: results,
   };
 }
 
-export async function processMarkdownForContent(supabase: any, contentItem: ContentItem) {
+export async function processMarkdownForContent(
+  supabase: any,
+  contentItem: ContentItem,
+) {
   // Extract URLs from content data
   const urls = extractUrls(contentItem.data);
 
@@ -438,7 +510,7 @@ export async function processMarkdownForContent(supabase: any, contentItem: Cont
       success: true,
       total_urls_found: 0,
       urls_processed: 0,
-      markdown_children: []
+      markdown_children: [],
     };
   }
 
@@ -454,9 +526,9 @@ export async function processMarkdownForContent(supabase: any, contentItem: Cont
 
       // Create markdown content as child of the requesting content
       const { data: markdownContent, error: createError } = await supabase
-        .from('content')
+        .from("content")
         .insert({
-          type: 'markdown',
+          type: "markdown",
           data: markdown,
           group_id: contentItem.group_id,
           user_id: contentItem.user_id,
@@ -465,15 +537,17 @@ export async function processMarkdownForContent(supabase: any, contentItem: Cont
             source_url: url,
             extracted_at: new Date().toISOString(),
             cloudflare_markdown: true,
-            source_content_id: contentItem.id
-          }
+            source_content_id: contentItem.id,
+          },
         })
         .select()
         .single();
 
       if (createError) {
-        console.error('Error creating markdown content:', createError);
-        errors.push(`Error creating markdown content for ${url}: ${createError.message}`);
+        console.error("Error creating markdown content:", createError);
+        errors.push(
+          `Error creating markdown content for ${url}: ${createError.message}`,
+        );
         continue;
       }
 
@@ -482,7 +556,6 @@ export async function processMarkdownForContent(supabase: any, contentItem: Cont
       }
 
       urlsProcessed++;
-
     } catch (error: any) {
       console.error(`Error processing URL ${url}:`, error);
       errors.push(`Error processing ${url}: ${error.message}`);
@@ -495,7 +568,7 @@ export async function processMarkdownForContent(supabase: any, contentItem: Cont
     total_urls_found: urls.length,
     urls_processed: urlsProcessed,
     markdown_children: markdownChildren,
-    errors: errors.length > 0 ? errors : undefined
+    errors: errors.length > 0 ? errors : undefined,
   };
 }
 
@@ -503,32 +576,44 @@ export async function processMarkdownForContent(supabase: any, contentItem: Cont
 // YOUTUBE PLAYLIST
 // =============================================================================
 
-export async function handleYouTubePlaylistExtract(supabase: any, payload: YouTubePlaylistPayload): Promise<ContentResponse> {
+export async function handleYouTubePlaylistExtract(
+  supabase: any,
+  payload: YouTubePlaylistPayload,
+): Promise<ContentResponse> {
   const results = [];
 
   for (const contentItem of payload.selectedContent) {
     try {
-      const result = await processYouTubePlaylistForContent(supabase, contentItem);
+      const result = await processYouTubePlaylistForContent(
+        supabase,
+        contentItem,
+      );
       results.push(result);
     } catch (error: any) {
-      console.error(`Error processing YouTube playlist for content ${contentItem.id}:`, error);
+      console.error(
+        `Error processing YouTube playlist for content ${contentItem.id}:`,
+        error,
+      );
       results.push({
         content_id: contentItem.id,
         success: false,
         error: error.message,
         playlist_urls_found: 0,
-        videos_created: 0
+        videos_created: 0,
       });
     }
   }
 
   return {
     success: true,
-    data: results
+    data: results,
   };
 }
 
-export async function processYouTubePlaylistForContent(supabase: any, contentItem: ContentItem) {
+export async function processYouTubePlaylistForContent(
+  supabase: any,
+  contentItem: ContentItem,
+) {
   // Extract YouTube playlist URLs from content data
   const playlistUrls = extractYouTubePlaylistUrls(contentItem.data);
 
@@ -538,7 +623,7 @@ export async function processYouTubePlaylistForContent(supabase: any, contentIte
       success: true,
       playlist_urls_found: 0,
       videos_created: 0,
-      playlist_children: []
+      playlist_children: [],
     };
   }
 
@@ -549,27 +634,29 @@ export async function processYouTubePlaylistForContent(supabase: any, contentIte
   for (const playlistUrl of playlistUrls) {
     try {
       // Call Lambda to fetch playlist videos
-      const lambdaEndpoint = process.env.LAMBDA_ENDPOINT || 'https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com';
+      const lambdaEndpoint =
+        process.env.LAMBDA_ENDPOINT ||
+        "https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com";
       const response = await fetch(`${lambdaEndpoint}/youtube/playlist`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: playlistUrl })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: playlistUrl }),
       });
 
       if (!response.ok) {
         throw new Error(`Lambda API error: ${response.status}`);
       }
 
-      const data = await response.json() as { videos: any[] };
+      const data = (await response.json()) as { videos: any[] };
       const { videos } = data;
 
       // Create content items for each video
       for (const video of videos) {
         const videoData = `${video.title}\n${video.url}`;
         const { data: videoContent, error: createError } = await supabase
-          .from('content')
+          .from("content")
           .insert({
-            type: 'text',
+            type: "text",
             data: videoData,
             group_id: contentItem.group_id,
             user_id: contentItem.user_id,
@@ -580,14 +667,14 @@ export async function processYouTubePlaylistForContent(supabase: any, contentIte
               youtube_url: video.url,
               youtube_thumbnail: video.thumbnail,
               playlist_url: playlistUrl,
-              extracted_from_playlist: true
-            }
+              extracted_from_playlist: true,
+            },
           })
           .select()
           .single();
 
         if (createError) {
-          console.error('Error creating video content:', createError);
+          console.error("Error creating video content:", createError);
           errors.push(`Error creating video content: ${createError.message}`);
           continue;
         }
@@ -596,7 +683,6 @@ export async function processYouTubePlaylistForContent(supabase: any, contentIte
           playlistChildren.push(videoContent as ContentItem);
         }
       }
-
     } catch (error: any) {
       console.error(`Error processing playlist ${playlistUrl}:`, error);
       errors.push(`Error processing playlist: ${error.message}`);
@@ -609,7 +695,7 @@ export async function processYouTubePlaylistForContent(supabase: any, contentIte
     playlist_urls_found: playlistUrls.length,
     videos_created: playlistChildren.length,
     playlist_children: playlistChildren,
-    errors: errors.length > 0 ? errors : undefined
+    errors: errors.length > 0 ? errors : undefined,
   };
 }
 
@@ -617,7 +703,10 @@ export async function processYouTubePlaylistForContent(supabase: any, contentIte
 // TMDB SEARCH
 // =============================================================================
 
-export async function handleTMDbSearch(supabase: any, payload: TMDbSearchPayload): Promise<ContentResponse> {
+export async function handleTMDbSearch(
+  supabase: any,
+  payload: TMDbSearchPayload,
+): Promise<ContentResponse> {
   const results = [];
 
   for (const contentItem of payload.selectedContent) {
@@ -625,26 +714,29 @@ export async function handleTMDbSearch(supabase: any, payload: TMDbSearchPayload
       const result = await processTMDbSearchForContent(
         supabase,
         contentItem,
-        payload.searchType || 'multi',
+        payload.searchType || "multi",
         payload.mode,
-        payload.selectedResults
+        payload.selectedResults,
       );
       results.push(result);
     } catch (error: any) {
-      console.error(`Error processing TMDb search for content ${contentItem.id}:`, error);
+      console.error(
+        `Error processing TMDb search for content ${contentItem.id}:`,
+        error,
+      );
       results.push({
         content_id: contentItem.id,
         success: false,
         error: error.message,
         queries_found: 0,
-        results_created: 0
+        results_created: 0,
       });
     }
   }
 
   return {
     success: true,
-    data: results
+    data: results,
   };
 }
 
@@ -652,7 +744,10 @@ export async function handleTMDbSearch(supabase: any, payload: TMDbSearchPayload
 // LIBGEN BOOK SEARCH
 // =============================================================================
 
-export async function handleLibgenSearch(supabase: any, payload: LibgenSearchPayload): Promise<ContentResponse> {
+export async function handleLibgenSearch(
+  supabase: any,
+  payload: LibgenSearchPayload,
+): Promise<ContentResponse> {
   const results = [];
   const autoCreate = payload.autoCreate !== false; // Default to true for backward compatibility
 
@@ -661,39 +756,42 @@ export async function handleLibgenSearch(supabase: any, payload: LibgenSearchPay
       const result = await processLibgenSearchForContent(
         supabase,
         contentItem,
-        payload.searchType || 'default',
-        payload.topics || ['libgen'],
+        payload.searchType || "default",
+        payload.topics || ["libgen"],
         payload.filters,
         payload.maxResults || 10,
-        autoCreate
+        autoCreate,
       );
       results.push(result);
     } catch (error: any) {
-      console.error(`Error processing Libgen search for content ${contentItem.id}:`, error);
+      console.error(
+        `Error processing Libgen search for content ${contentItem.id}:`,
+        error,
+      );
       results.push({
         content_id: contentItem.id,
         success: false,
         error: error.message,
         books_found: 0,
-        books_created: 0
+        books_created: 0,
       });
     }
   }
 
   return {
     success: true,
-    data: results
+    data: results,
   };
 }
 
 async function processLibgenSearchForContent(
   supabase: any,
   contentItem: ContentItem,
-  searchType: 'default' | 'title' | 'author',
+  searchType: "default" | "title" | "author",
   topics: string[],
   filters?: Record<string, string>,
   maxResults: number = 10,
-  autoCreate: boolean = true
+  autoCreate: boolean = true,
 ) {
   // Use content data as search query
   const query = contentItem.data.trim();
@@ -704,7 +802,7 @@ async function processLibgenSearchForContent(
       success: true,
       books_found: 0,
       books_created: 0,
-      book_children: []
+      book_children: [],
     };
   }
 
@@ -713,7 +811,7 @@ async function processLibgenSearchForContent(
     query,
     search_type: searchType,
     topics,
-    filters
+    filters,
   });
 
   const bookChildren: any[] = [];
@@ -740,27 +838,27 @@ async function processLibgenSearchForContent(
           extension: book.extension,
           mirrors: book.mirrors,
           search_query: query,
-          search_type: searchType
-        }
+          search_type: searchType,
+        },
       };
 
       if (autoCreate) {
         // Insert book as child content
         const { data: bookContent, error: insertError } = await supabase
-          .from('content')
+          .from("content")
           .insert({
-            type: 'text',
+            type: "text",
             data: bookData,
             metadata: bookMetadata,
             group_id: contentItem.group_id,
             user_id: contentItem.user_id,
-            parent_content_id: contentItem.id
+            parent_content_id: contentItem.id,
           })
           .select()
           .single();
 
         if (insertError) {
-          console.error('Error inserting book content:', insertError);
+          console.error("Error inserting book content:", insertError);
           continue;
         }
 
@@ -771,7 +869,7 @@ async function processLibgenSearchForContent(
         // Create a mock Content object with a temporary ID
         const mockContent = {
           id: `temp-${book.md5 || book.id}`, // Temporary ID for frontend use
-          type: 'text',
+          type: "text",
           data: bookData,
           metadata: bookMetadata,
           group_id: contentItem.group_id,
@@ -782,7 +880,7 @@ async function processLibgenSearchForContent(
           search_vector: null,
           path: null,
           child_count: 0,
-          tags: []
+          tags: [],
         };
         bookChildren.push(mockContent);
       }
@@ -796,7 +894,7 @@ async function processLibgenSearchForContent(
     success: true,
     books_found: books.length,
     books_created: booksCreated,
-    book_children: bookChildren
+    book_children: bookChildren,
   };
 }
 
@@ -820,43 +918,59 @@ function formatBookData(book: BookInfo): string {
   if (book.extension) details.push(book.extension.toUpperCase());
 
   if (details.length > 0) {
-    parts.push(details.join(' • '));
+    parts.push(details.join(" • "));
   }
 
-  return parts.join('\n');
+  return parts.join("\n");
 }
 
 // =============================================================================
 // SCREENSHOT GENERATION
 // =============================================================================
 
-export async function handleScreenshotQueue(supabase: any, payload: ScreenshotQueuePayload): Promise<ContentResponse> {
+export async function handleScreenshotQueue(
+  supabase: any,
+  payload: ScreenshotQueuePayload,
+): Promise<ContentResponse> {
   const results = [];
 
   for (const job of payload.jobs) {
     try {
-      const result = await processScreenshotForContent(supabase, job.contentId, job.url);
+      const result = await processScreenshotForContent(
+        supabase,
+        job.contentId,
+        job.url,
+      );
       results.push(result);
     } catch (error: any) {
-      console.error(`Error processing screenshot for content ${job.contentId}:`, error);
+      console.error(
+        `Error processing screenshot for content ${job.contentId}:`,
+        error,
+      );
       results.push({
         content_id: job.contentId,
         url: job.url,
         success: false,
-        error: error.message
+        error: error.message,
       });
     }
   }
 
   return {
     success: true,
-    data: results
+    data: results,
   };
 }
 
-async function processScreenshotForContent(supabase: any, contentId: string, url: string) {
+async function processScreenshotForContent(
+  supabase: any,
+  contentId: string,
+  url: string,
+) {
   try {
-    console.log(`Generating screenshot for content ${contentId} with URL: ${url}`);
+    console.log(
+      `Generating screenshot for content ${contentId} with URL: ${url}`,
+    );
 
     // Generate screenshot using Cloudflare Browser Rendering
     const screenshotBuffer = await generateScreenshot(url);
@@ -871,13 +985,12 @@ async function processScreenshotForContent(supabase: any, contentId: string, url
     console.log(`Uploading screenshot to storage: ${filename}`);
 
     // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase
-      .storage
-      .from('content')
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("content")
       .upload(filename, buffer, {
-        contentType: 'image/png',
-        cacheControl: '3600',
-        upsert: false
+        contentType: "image/png",
+        cacheControl: "3600",
+        upsert: false,
       });
 
     if (uploadError) {
@@ -885,9 +998,8 @@ async function processScreenshotForContent(supabase: any, contentId: string, url
     }
 
     // Get public URL
-    const { data: publicUrlData } = supabase
-      .storage
-      .from('content')
+    const { data: publicUrlData } = supabase.storage
+      .from("content")
       .getPublicUrl(filename);
 
     const publicUrl = publicUrlData.publicUrl;
@@ -896,25 +1008,27 @@ async function processScreenshotForContent(supabase: any, contentId: string, url
 
     // Update content metadata with url_preview
     const { data: content, error: fetchError } = await supabase
-      .from('content')
-      .select('metadata')
-      .eq('id', contentId)
+      .from("content")
+      .select("metadata")
+      .eq("id", contentId)
       .single();
 
     if (fetchError) {
-      throw new Error(`Failed to fetch content metadata: ${fetchError.message}`);
+      throw new Error(
+        `Failed to fetch content metadata: ${fetchError.message}`,
+      );
     }
 
     // Update metadata with url_preview
     const updatedMetadata = {
       ...content.metadata,
-      url_preview: publicUrl
+      url_preview: publicUrl,
     };
 
     const { error: updateError } = await supabase
-      .from('content')
+      .from("content")
       .update({ metadata: updatedMetadata })
-      .eq('id', contentId);
+      .eq("id", contentId);
 
     if (updateError) {
       throw new Error(`Failed to update metadata: ${updateError.message}`);
@@ -926,9 +1040,8 @@ async function processScreenshotForContent(supabase: any, contentId: string, url
       content_id: contentId,
       url: url,
       success: true,
-      screenshot_url: publicUrl
+      screenshot_url: publicUrl,
     };
-
   } catch (error: any) {
     console.error(`Error processing screenshot for ${url}:`, error);
     throw error;
@@ -939,19 +1052,22 @@ async function processScreenshotForContent(supabase: any, contentId: string, url
 // TSX TRANSPILATION
 // =============================================================================
 
-import { transpileTSX, validateTSXSource } from './tsx-transpiler.js';
+import { transpileTSX, validateTSXSource } from "./tsx-transpiler.js";
 
 /**
  * Handle TSX transpilation
  * Transpiles TSX source code to JavaScript ES module
  */
-export async function handleTSXTranspile(supabase: any, payload: TSXTranspilePayload): Promise<TSXTranspileResponse> {
+export async function handleTSXTranspile(
+  supabase: any,
+  payload: TSXTranspilePayload,
+): Promise<TSXTranspileResponse> {
   try {
     // Validate input
     if (!payload.tsx_code) {
       return {
         success: false,
-        error: 'tsx_code is required'
+        error: "tsx_code is required",
       };
     }
 
@@ -960,13 +1076,15 @@ export async function handleTSXTranspile(supabase: any, payload: TSXTranspilePay
     if (!validation.valid) {
       return {
         success: false,
-        error: validation.error
+        error: validation.error,
       };
     }
 
-    const filename = payload.filename || 'component.tsx';
+    const filename = payload.filename || "component.tsx";
 
-    console.log(`Transpiling TSX: ${filename} (${payload.tsx_code.length} bytes)`);
+    console.log(
+      `Transpiling TSX: ${filename} (${payload.tsx_code.length} bytes)`,
+    );
 
     // Transpile using esbuild
     const result = await transpileTSX(payload.tsx_code, filename);
@@ -977,23 +1095,24 @@ export async function handleTSXTranspile(supabase: any, payload: TSXTranspilePay
         success: false,
         error: result.error,
         errors: result.errors,
-        warnings: result.warnings
+        warnings: result.warnings,
       };
     }
 
-    console.log(`TSX transpilation completed for ${filename} (${result.compiledJS?.length || 0} bytes)`);
+    console.log(
+      `TSX transpilation completed for ${filename} (${result.compiledJS?.length || 0} bytes)`,
+    );
 
     return {
       success: true,
       compiled_js: result.compiledJS,
-      warnings: result.warnings
+      warnings: result.warnings,
     };
-
   } catch (error: any) {
-    console.error('TSX transpilation handler error:', error);
+    console.error("TSX transpilation handler error:", error);
     return {
       success: false,
-      error: error.message || 'Unknown transpilation error'
+      error: error.message || "Unknown transpilation error",
     };
   }
 }
@@ -1006,12 +1125,18 @@ export async function handleTSXTranspile(supabase: any, payload: TSXTranspilePay
  * Handle audio transcription using Deepgram API
  * Creates a child content item with type='transcript' containing the Deepgram response
  */
-export async function handleTranscribeAudio(supabase: any, payload: TranscribeAudioPayload): Promise<ContentResponse> {
+export async function handleTranscribeAudio(
+  supabase: any,
+  payload: TranscribeAudioPayload,
+): Promise<ContentResponse> {
   const results: TranscribeAudioResult[] = [];
 
   for (const contentItem of payload.selectedContent) {
     try {
-      const result = await processTranscribeAudioForContent(supabase, contentItem);
+      const result = await processTranscribeAudioForContent(
+        supabase,
+        contentItem,
+      );
       results.push(result);
 
       // Call progress callback if provided
@@ -1019,31 +1144,37 @@ export async function handleTranscribeAudio(supabase: any, payload: TranscribeAu
         payload.onProgress(result);
       }
     } catch (error: any) {
-      console.error(`Error transcribing audio for content ${contentItem.id}:`, error);
+      console.error(
+        `Error transcribing audio for content ${contentItem.id}:`,
+        error,
+      );
       results.push({
         content_id: contentItem.id,
         success: false,
-        error: error.message
+        error: error.message,
       });
     }
   }
 
   return {
     success: true,
-    data: results
+    data: results,
   };
 }
 
-async function processTranscribeAudioForContent(supabase: any, contentItem: ContentItem): Promise<TranscribeAudioResult> {
+async function processTranscribeAudioForContent(
+  supabase: any,
+  contentItem: ContentItem,
+): Promise<TranscribeAudioResult> {
   // Validate content type
-  if (contentItem.type !== 'audio') {
+  if (contentItem.type !== "audio") {
     throw new Error('Content item must be of type "audio"');
   }
 
   // Extract audio URL from metadata
   const audioUrl = contentItem.metadata?.audio_url;
   if (!audioUrl) {
-    throw new Error('No audio_url found in content metadata');
+    throw new Error("No audio_url found in content metadata");
   }
 
   console.log(`Transcribing audio for content ${contentItem.id}: ${audioUrl}`);
@@ -1051,7 +1182,7 @@ async function processTranscribeAudioForContent(supabase: any, contentItem: Cont
   // Get Deepgram API key from environment
   const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
   if (!deepgramApiKey) {
-    throw new Error('DEEPGRAM_API_KEY environment variable not set');
+    throw new Error("DEEPGRAM_API_KEY environment variable not set");
   }
 
   // Initialize Deepgram client
@@ -1060,16 +1191,16 @@ async function processTranscribeAudioForContent(supabase: any, contentItem: Cont
   // Transcribe audio using Deepgram
   const { result, error } = await deepgram.listen.prerecorded.transcribeUrl(
     {
-      url: audioUrl
+      url: audioUrl,
     },
     {
-      model: 'nova-2',
+      model: "nova-2",
       smart_format: true,
       punctuate: true,
       paragraphs: true,
       utterances: true,
-      diarize: true
-    }
+      diarize: true,
+    },
   );
 
   if (error) {
@@ -1080,33 +1211,37 @@ async function processTranscribeAudioForContent(supabase: any, contentItem: Cont
 
   // Create transcript content as child
   const { data: transcriptContent, error: insertError } = await supabase
-    .from('content')
+    .from("content")
     .insert({
-      type: 'transcript',
-      data: result.results.channels[0]?.alternatives[0]?.transcript || '',
+      type: "transcript",
+      data: result.results.channels[0]?.alternatives[0]?.transcript || "",
       metadata: {
         deepgram_response: result,
         source_audio_url: audioUrl,
         source_content_id: contentItem.id,
-        transcribed_at: new Date().toISOString()
+        transcribed_at: new Date().toISOString(),
       },
       group_id: contentItem.group_id,
       user_id: contentItem.user_id,
-      parent_content_id: contentItem.id
+      parent_content_id: contentItem.id,
     })
     .select()
     .single();
 
   if (insertError) {
-    throw new Error(`Failed to create transcript content: ${insertError.message}`);
+    throw new Error(
+      `Failed to create transcript content: ${insertError.message}`,
+    );
   }
 
-  console.log(`Created transcript content ${transcriptContent.id} for audio ${contentItem.id}`);
+  console.log(
+    `Created transcript content ${transcriptContent.id} for audio ${contentItem.id}`,
+  );
 
   return {
     content_id: contentItem.id,
     success: true,
-    transcript_content_id: transcriptContent.id
+    transcript_content_id: transcriptContent.id,
   };
 }
 
@@ -1118,30 +1253,42 @@ async function processTranscribeAudioForContent(supabase: any, contentItem: Cont
  * Extract YouTube subtitles/captions for selected content items
  * Creates child content items with type='transcript' for each subtitle track
  */
-export async function handleYouTubeSubtitleExtract(supabase: any, payload: YouTubeSubtitlePayload): Promise<ContentResponse> {
+export async function handleYouTubeSubtitleExtract(
+  supabase: any,
+  payload: YouTubeSubtitlePayload,
+): Promise<ContentResponse> {
   const results: YouTubeSubtitleResult[] = [];
 
   for (const contentItem of payload.selectedContent) {
     try {
-      const result = await processYouTubeSubtitlesForContent(supabase, contentItem);
+      const result = await processYouTubeSubtitlesForContent(
+        supabase,
+        contentItem,
+      );
       results.push(result);
     } catch (error: any) {
-      console.error(`Error extracting subtitles for content ${contentItem.id}:`, error);
+      console.error(
+        `Error extracting subtitles for content ${contentItem.id}:`,
+        error,
+      );
       results.push({
         content_id: contentItem.id,
         success: false,
-        error: error.message
+        error: error.message,
       });
     }
   }
 
   return {
     success: true,
-    data: results
+    data: results,
   };
 }
 
-async function processYouTubeSubtitlesForContent(supabase: any, contentItem: ContentItem): Promise<YouTubeSubtitleResult> {
+async function processYouTubeSubtitlesForContent(
+  supabase: any,
+  contentItem: ContentItem,
+): Promise<YouTubeSubtitleResult> {
   // Extract YouTube video ID from content
   let videoId: string | null = null;
 
@@ -1154,7 +1301,7 @@ async function processYouTubeSubtitlesForContent(supabase: any, contentItem: Con
   }
 
   if (!videoId) {
-    throw new Error('No YouTube video ID found in content');
+    throw new Error("No YouTube video ID found in content");
   }
 
   console.log(`Extracting transcript for video ID: ${videoId} using yt-dlp`);
@@ -1165,19 +1312,21 @@ async function processYouTubeSubtitlesForContent(supabase: any, contentItem: Con
   // Call Python script to extract transcript using yt-dlp
   const transcriptData = await executeYouTubeTranscript(videoUrl);
 
-  console.log(`Successfully extracted transcript for "${transcriptData.title}" (${transcriptData.channel})`);
+  console.log(
+    `Successfully extracted transcript for "${transcriptData.title}" (${transcriptData.channel})`,
+  );
   console.log(`Transcript has ${transcriptData.transcript.length} segments`);
 
   // Convert transcript segments to full text
   const transcriptText = transcriptData.transcript
-    .map(segment => segment.text)
-    .join(' ');
+    .map((segment) => segment.text)
+    .join(" ");
 
   // Create transcript content as child
   const { data: transcriptContent, error: insertError } = await supabase
-    .from('content')
+    .from("content")
     .insert({
-      type: 'transcript',
+      type: "transcript",
       data: transcriptText,
       metadata: {
         youtube_video_id: videoId,
@@ -1187,31 +1336,35 @@ async function processYouTubeSubtitlesForContent(supabase: any, contentItem: Con
         subtitle_extracted_at: new Date().toISOString(),
         // Store word-level timing data for future features (video player sync, etc.)
         segments: transcriptData.transcript,
-        segment_count: transcriptData.transcript.length
+        segment_count: transcriptData.transcript.length,
       },
       group_id: contentItem.group_id,
       user_id: contentItem.user_id,
-      parent_content_id: contentItem.id
+      parent_content_id: contentItem.id,
     })
     .select()
     .single();
 
   if (insertError) {
-    throw new Error(`Failed to create transcript content: ${insertError.message}`);
+    throw new Error(
+      `Failed to create transcript content: ${insertError.message}`,
+    );
   }
 
   if (!transcriptContent) {
-    throw new Error('No transcript content returned from insert');
+    throw new Error("No transcript content returned from insert");
   }
 
-  console.log(`Created transcript content ${transcriptContent.id} for video "${transcriptData.title}"`);
+  console.log(
+    `Created transcript content ${transcriptContent.id} for video "${transcriptData.title}"`,
+  );
 
   return {
     content_id: contentItem.id,
     success: true,
     video_id: videoId,
     tracks_found: 1,
-    transcript_content_ids: [transcriptContent.id]
+    transcript_content_ids: [transcriptContent.id],
   };
 }
 
@@ -1230,7 +1383,7 @@ function extractYouTubeVideoId(text: string): string | null {
     // Short URLs: youtu.be/VIDEO_ID
     /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
     // Embed URLs: youtube.com/embed/VIDEO_ID
-    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/
+    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
   ];
 
   for (const pattern of patterns) {
@@ -1241,4 +1394,146 @@ function extractYouTubeVideoId(text: string): string | null {
   }
 
   return null;
+}
+
+// =============================================================================
+// AI CHAT V2 - STREAMING
+// =============================================================================
+
+// Zod schema for structured AI chat response with follow-up questions
+const chatResponseSchema = z.object({
+  answer: z.string().describe("The AI assistant response to the user message"),
+  follow_up_questions: z
+    .array(z.string())
+    .describe(
+      "3-5 relevant follow-up questions the user might want to ask next",
+    ),
+});
+
+export interface ChatV2StreamPayload {
+  prompt?: string; // For experimental_useObject
+  messages?: Array<{ role: "user" | "assistant"; content: string }>; // For useChat
+}
+
+/**
+ * Stream AI chat responses with follow-up questions using Vercel AI SDK
+ * Compatible with both `experimental_useObject` and `useChat` hooks on frontend
+ *
+ * Returns an async iterable stream of chunks for use with awslambda.streamifyResponse()
+ */
+export async function handleChatV2Stream(payload: ChatV2StreamPayload) {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!openaiApiKey) {
+    throw new Error("OpenAI API key not configured");
+  }
+
+  // Normalize payload to messages format
+  let messages: Array<{ role: "user" | "assistant"; content: string }>;
+
+  if (payload.prompt) {
+    // experimental_useObject format: convert prompt to messages
+    messages = [{ role: "user" as const, content: payload.prompt }];
+  } else if (payload.messages) {
+    // useChat format: check if UIMessage format (has 'parts' property) and convert
+    const firstMessage = payload.messages[0];
+    if (firstMessage && 'parts' in firstMessage) {
+      console.log('[CHAT] Converting UIMessages to ModelMessages');
+      messages = convertToModelMessages(payload.messages as any);
+    } else {
+      messages = payload.messages;
+    }
+  } else {
+    throw new Error("Missing required parameter: prompt or messages");
+  }
+
+  // Create OpenAI provider instance with API key
+  const openaiProvider = createOpenAI({
+    apiKey: openaiApiKey,
+  });
+
+  // System prompt to instruct model to generate follow-up questions
+  const systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+
+  // Prepend system message to conversation
+  const messagesWithSystem = [
+    { role: "system" as const, content: systemPrompt },
+    ...messages,
+  ];
+
+  // Use Vercel AI SDK streamObject for structured streaming
+  const result = streamObject({
+    model: openaiProvider("gpt-4o"),
+    messages: messagesWithSystem,
+    schema: chatResponseSchema,
+    temperature: 0.7,
+    maxTokens: 1500, // Increased for answer + follow-up questions
+  });
+
+  // Return async iterable stream for experimental_useObject hook
+  // Note: fullStream provides structured data events
+  return result.fullStream;
+}
+
+/**
+ * Stream AI chat responses with follow-up questions using Vercel AI SDK with CORS headers
+ * Returns a Response object compatible with API Gateway
+ *
+ * This version is for local testing and API Gateway deployments that need CORS support.
+ * Use handleChatV2Stream() with awslambda.streamifyResponse() for Lambda Function URLs.
+ */
+export async function handleChatV2StreamResponse(payload: ChatV2StreamPayload) {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!openaiApiKey) {
+    throw new Error("OpenAI API key not configured");
+  }
+
+  // Normalize payload to messages format
+  let messages: Array<{ role: "user" | "assistant"; content: string }>;
+
+  if (payload.prompt) {
+    // experimental_useObject format: convert prompt to messages
+    messages = [{ role: "user" as const, content: payload.prompt }];
+  } else if (payload.messages) {
+    // useChat format: check if UIMessage format (has 'parts' property) and convert
+    const firstMessage = payload.messages[0];
+    if (firstMessage && 'parts' in firstMessage) {
+      console.log('[CHAT] Converting UIMessages to ModelMessages');
+      messages = convertToModelMessages(payload.messages as any);
+    } else {
+      messages = payload.messages;
+    }
+  } else {
+    throw new Error("Missing required parameter: prompt or messages");
+  }
+
+  // Create OpenAI provider instance with API key
+  const openaiProvider = createOpenAI({
+    apiKey: openaiApiKey,
+  });
+
+  // System prompt to instruct model to generate follow-up questions
+  const systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+
+  // Prepend system message to conversation
+  const messagesWithSystem = [
+    { role: "system" as const, content: systemPrompt },
+    ...messages,
+  ];
+
+  // Use Vercel AI SDK streamObject for structured streaming
+  const result = streamObject({
+    model: openaiProvider("gpt-4o"),
+    messages: messagesWithSystem,
+    schema: chatResponseSchema,
+    temperature: 0.7,
+    maxTokens: 1500, // Increased for answer + follow-up questions
+  });
+
+  // Return Response object with data stream for experimental_useObject
+  return result.toTextStreamResponse({
+    headers: {
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
 }

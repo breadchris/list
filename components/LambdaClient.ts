@@ -1,7 +1,25 @@
 // Lambda client for calling the content API
 // Replaces Supabase Edge Function calls with Lambda endpoint
 
-const LAMBDA_ENDPOINT = 'https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com/content';
+// Build-time constant (injected by esbuild Define)
+const BUILD_TIME_LAMBDA_ENDPOINT = LAMBDA_ENDPOINT || undefined;
+
+// Config cache (for runtime override in development)
+let configCache: { lambda_endpoint?: string } | null = null;
+
+async function getConfig() {
+  if (configCache) return configCache;
+
+  try {
+    const response = await fetch("/api/config");
+    configCache = await response.json();
+    return configCache;
+  } catch (error) {
+    console.error("Failed to load config:", error);
+    // Fallback to build-time constant if available
+    return { lambda_endpoint: BUILD_TIME_LAMBDA_ENDPOINT };
+  }
+}
 
 export interface LambdaRequest {
   action: string;
@@ -23,25 +41,33 @@ export class LambdaClient {
    */
   static async invoke(request: LambdaRequest): Promise<LambdaResponse> {
     try {
-      const response = await fetch(LAMBDA_ENDPOINT, {
-        method: 'POST',
+      const config = await getConfig();
+      // Priority: runtime config > build-time constant
+      const endpoint = config.lambda_endpoint || BUILD_TIME_LAMBDA_ENDPOINT;
+
+      const response = await fetch(endpoint, {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(request),
       });
 
       if (!response.ok) {
-        throw new Error(`Lambda request failed: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(
+          `Lambda request failed: ${response.status} ${response.statusText} - ${errorText}`,
+        );
       }
 
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error('Lambda client error:', error);
+      console.error("Lambda client error:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
+        error:
+          error instanceof Error ? error.message : "Unknown error occurred",
       };
     }
   }
@@ -51,21 +77,25 @@ export class LambdaClient {
    */
   static async testConnection(): Promise<boolean> {
     try {
-      const response = await fetch(LAMBDA_ENDPOINT, {
-        method: 'POST',
+      const config = await getConfig();
+      // Priority: runtime config > build-time constant
+      const endpoint = config.lambda_endpoint || BUILD_TIME_LAMBDA_ENDPOINT;
+
+      const response = await fetch(endpoint, {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          action: 'seo-extract',
-          payload: { selectedContent: [] }
+          action: "seo-extract",
+          payload: { selectedContent: [] },
         }),
       });
 
       // If we get any response (even an error), the endpoint is accessible
       return response.status < 500;
     } catch (error) {
-      console.error('Lambda connection test failed:', error);
+      console.error("Lambda connection test failed:", error);
       return false;
     }
   }

@@ -180,9 +180,21 @@ USER REQUEST:
 						{
 							hooks: [
 								async (input: any) => {
-									capturedSessionId = input.session_id;
-									process.stderr.write(`Session ID captured: ${input.session_id}\n`);
-									return {};
+									try {
+										// Validate session_id from Claude CLI
+										if (!input.session_id || typeof input.session_id !== 'string' || input.session_id.trim() === '') {
+											process.stderr.write(`❌ ERROR: Invalid session_id in SessionStart hook: ${JSON.stringify(input)}\n`);
+											throw new Error(`SessionStart hook received invalid session_id: ${JSON.stringify(input)}`);
+										}
+
+										capturedSessionId = input.session_id;
+										const source = input.source || 'unknown';
+										process.stderr.write(`✓ Session ID captured: ${input.session_id} (source: ${source})\n`);
+										return {};
+									} catch (error) {
+										process.stderr.write(`❌ ERROR in SessionStart hook: ${error}\n`);
+										throw error; // Re-throw to fail the entire operation
+									}
 								}
 							]
 						}
@@ -197,13 +209,21 @@ USER REQUEST:
 		for await (const message of resultStream) {
 			messages.push(message);
 			process.stderr.write(`Message received: ${JSON.stringify(message).substring(0, 200)}\n`);
+
+			// Extract session_id from init message if SessionStart hook didn't capture it
+			if (!capturedSessionId && message.type === 'system' && message.subtype === 'init' && message.session_id) {
+				capturedSessionId = message.session_id;
+				process.stderr.write(`✓ Session ID extracted from init message: ${message.session_id}\n`);
+			}
 		}
 
 		process.stderr.write('Message stream completed\n');
 
-		// Generate session ID if not captured
+		// Session ID must be captured - either from SessionStart hook or init message
 		if (!capturedSessionId) {
-			capturedSessionId = generateSessionId();
+			const errorMsg = 'CRITICAL ERROR: No session_id found in SessionStart hook or init message. Claude CLI may have failed to start or create a session. Check Claude CLI logs and ANTHROPIC_API_KEY.';
+			process.stderr.write(`❌ ${errorMsg}\n`);
+			throw new Error(errorMsg);
 		}
 
 		// Capture all files written to workspace

@@ -41,9 +41,16 @@ struct ContentView: View {
                 .onAppear {
                     loadListApp()
                     setupNotificationObserver()
-                    
-                    // Check for shared URLs when the app appears
-                    sharedURLManager.checkForSharedURLs()
+
+                    // Drain inbox when app appears (process any pending share extension URLs)
+                    print("🔄 ContentView: App appeared, draining inbox...")
+                    InboxDrainer.shared.drainInbox { success in
+                        if success {
+                            print("✅ ContentView: Inbox drained successfully on app appear")
+                        } else {
+                            print("⚠️ ContentView: Inbox draining had some failures on app appear")
+                        }
+                    }
                 }
                 .alert("API Key", isPresented: $showingAPIKeyAlert) {
                     Button("OK") { }
@@ -695,10 +702,60 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
                 sharedContainer.set(userId, forKey: "user_id")
                 sharedContainer.synchronize()
                 print("✅ Session: User ID saved to shared container")
+
+                // Fetch and cache the default group_id for share extension use
+                fetchAndCacheGroupId(userId: userId, accessToken: accessToken)
+            }
+
+            // Drain inbox after session is established
+            print("🔄 Session: Session established, draining inbox...")
+            InboxDrainer.shared.drainInbox { success in
+                if success {
+                    print("✅ Session: Inbox drained successfully after auth")
+                } else {
+                    print("⚠️ Session: Inbox draining had some failures after auth")
+                }
             }
         } catch {
             print("❌ Session: Failed to save token: \(error)")
         }
+    }
+
+    private func fetchAndCacheGroupId(userId: String, accessToken: String) {
+        let supabaseUrl = "https://zazsrepfnamdmibcyenx.supabase.co"
+        guard let url = URL(string: "\(supabaseUrl)/rest/v1/group_memberships?user_id=eq.\(userId)&select=group_id&limit=1") else {
+            print("❌ Session: Failed to construct group membership URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("public", forHTTPHeaderField: "apikey")
+
+        print("🔍 Session: Fetching default group for user \(userId)...")
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Session: Failed to fetch group: \(error.localizedDescription)")
+                return
+            }
+
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let firstGroup = json.first,
+                  let groupId = firstGroup["group_id"] as? String else {
+                print("⚠️ Session: No group found for user, user may need to create/join a group")
+                return
+            }
+
+            if let sharedContainer = UserDefaults(suiteName: "group.com.breadchris.share") {
+                sharedContainer.set(groupId, forKey: "default_group_id")
+                sharedContainer.synchronize()
+                print("✅ Session: Cached default group_id: \(groupId)")
+            }
+        }.resume()
     }
 
     private func storeAPIKeyInKeychain(token: String, name: String) -> Bool {

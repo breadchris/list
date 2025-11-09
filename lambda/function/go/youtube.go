@@ -7,11 +7,43 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/kkdai/youtube/v2"
 )
+
+// normalizePlaylistURL extracts the playlist ID from various YouTube URL formats
+// and returns a clean playlist URL that the kkdai/youtube library can handle
+func normalizePlaylistURL(inputURL string) (string, error) {
+	// Parse the URL
+	parsedURL, err := url.Parse(inputURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// Extract playlist ID from query parameters
+	queryParams := parsedURL.Query()
+	playlistID := queryParams.Get("list")
+
+	if playlistID == "" {
+		// Try regex fallback for edge cases
+		playlistRegex := regexp.MustCompile(`[?&]list=([a-zA-Z0-9_-]+)`)
+		matches := playlistRegex.FindStringSubmatch(inputURL)
+		if len(matches) > 1 {
+			playlistID = matches[1]
+		}
+	}
+
+	if playlistID == "" {
+		return "", fmt.Errorf("no playlist ID found in URL")
+	}
+
+	// Return clean playlist URL format
+	return fmt.Sprintf("https://www.youtube.com/playlist?list=%s", playlistID), nil
+}
 
 // handlePlaylist fetches videos from a YouTube playlist
 func handlePlaylist(params json.RawMessage) (*PlaylistResponse, error) {
@@ -27,11 +59,19 @@ func handlePlaylist(params json.RawMessage) (*PlaylistResponse, error) {
 	// Debug: Print the URL being processed
 	fmt.Fprintf(os.Stderr, "DEBUG: Received YouTube URL: %s\n", req.URL)
 
+	// Normalize the URL to extract playlist ID
+	normalizedURL, err := normalizePlaylistURL(req.URL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid playlist URL: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "DEBUG: Normalized to: %s\n", normalizedURL)
+
 	client := youtube.Client{}
 	ctx := context.Background()
 
-	// Get playlist from URL
-	playlist, err := client.GetPlaylistContext(ctx, req.URL)
+	// Get playlist from normalized URL
+	playlist, err := client.GetPlaylistContext(ctx, normalizedURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get playlist: %w", err)
 	}

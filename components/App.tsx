@@ -11,6 +11,9 @@ import { PrivacyPolicy } from './PrivacyPolicy';
 import { RefundPolicy } from './RefundPolicy';
 import { PricingPage } from './PricingPage';
 import { AdminPage } from './AdminPage';
+import { AIChatV2Page } from './AIChatV2Page';
+import { UserSettingsPage } from './UserSettingsPage';
+import BranchingChatPage from './BranchingChatPage';
 
 /**
  * Main App component that wraps the application with providers and React Router
@@ -28,6 +31,8 @@ export const App: React.FC = () => {
               <Route path="/group/:groupId" element={<ListApp />} />
               <Route path="/group/:groupId/content/:contentId" element={<ListApp />} />
               <Route path="/group/:groupId/settings" element={<GroupSettingsPage />} />
+              <Route path="/group/:groupId/ai-chat" element={<AIChatV2Page />} />
+              <Route path="/group/:groupId/chat" element={<BranchingChatPage />} />
               <Route path="/invite/:joinCode" element={<ListApp />} />
 
               {/* Public content route */}
@@ -38,6 +43,9 @@ export const App: React.FC = () => {
 
               {/* Pricing page */}
               <Route path="/pricing" element={<PricingPage />} />
+
+              {/* User settings page */}
+              <Route path="/settings" element={<UserSettingsPage />} />
 
               {/* Legal pages */}
               <Route path="/terms-of-service" element={<TermsOfService />} />

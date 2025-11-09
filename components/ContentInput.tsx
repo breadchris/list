@@ -1,8 +1,10 @@
 import React, { useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Content, Tag, contentRepository } from './ContentRepository';
 import { useCreateContentMutation } from '../hooks/useContentQueries';
 import { useAddTagToContentMutation, useCreateTagMutation } from '../hooks/useTagMutations';
 import { LexicalContentInput, LexicalContentInputRef } from './LexicalContentInput';
+import { LexicalRichEditor, LexicalRichEditorRef } from './LexicalRichEditor';
 import { ChatService } from './ChatService';
 import { ClaudeCodeService } from './ClaudeCodeService';
 import { useToast } from './ToastProvider';
@@ -10,44 +12,53 @@ import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from '../hooks/queryKeys';
 import { ImageUploadInput } from './ImageUploadInput';
 import { EpubUploadInput } from './EpubUploadInput';
+import { MapInput } from './MapInput';
+import { MapData } from './MapDisplay';
 import { PluginLoader } from './PluginLoader';
 import { PluginEditor } from './PluginEditor';
-import { ContentPieMenu, ContentAction } from './ContentPieMenu';
-import { WorkflowActionsMenu } from './WorkflowActionsMenu';
+import { ContentActionsDrawer, ContentAction } from './ContentActionsDrawer';
 import { WorkflowAction } from './WorkflowFAB';
 
 interface ContentInputProps {
   groupId: string;
   parentContentId?: string | null;
+  focusedParentName?: string;
+  onClearFocus?: () => void;
   onContentAdded: (content: Content) => void;
   onNavigate?: (contentId: string) => void;
   onActionSelect?: (action: ContentAction) => void;
-  // Workflow props
-  workflowActions?: WorkflowAction[];
-  selectedCount?: number;
-  isSelectionMode?: boolean;
   availableTags?: Tag[];
 }
 
 export const ContentInput: React.FC<ContentInputProps> = ({
   groupId,
   parentContentId = null,
+  focusedParentName,
+  onClearFocus,
   onContentAdded,
   onNavigate,
   onActionSelect,
-  workflowActions = [],
-  selectedCount = 0,
-  isSelectionMode = false,
   availableTags = []
 }) => {
   // Internal state for active content action
   const [activeAction, setActiveAction] = useState<ContentAction | null>(null);
+  const navigate = useNavigate();
 
   // Handle action selection
   const handleActionSelect = (action: ContentAction) => {
     // If import action and parent wants to handle it, delegate to parent
     if (action === 'import' && onActionSelect) {
       onActionSelect(action);
+      return;
+    }
+    // Navigate to AI Chat V2 page
+    if (action === 'ai-chat-v2') {
+      navigate(`/group/${groupId}/ai-chat`);
+      return;
+    }
+    // Open modal for rich text editor
+    if (action === 'rich-text') {
+      setShowRichTextModal(true);
       return;
     }
     // Otherwise handle internally
@@ -57,9 +68,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   const addTagMutation = useAddTagToContentMutation();
   const createTagMutation = useCreateTagMutation();
   const lexicalInputRef = useRef<LexicalContentInputRef>(null);
+  const richEditorRef = useRef<LexicalRichEditorRef>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [showPluginEditor, setShowPluginEditor] = useState(false);
   const [pluginContentId, setPluginContentId] = useState<string | null>(null);
+  const [showRichTextModal, setShowRichTextModal] = useState(false);
   const pendingAISubmitRef = useRef(false);
   const hasCreatedPluginRef = useRef(false);
   const toast = useToast();
@@ -145,6 +158,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       console.error('Error creating content:', error);
       // Error is already handled by the mutation
     }
+  };
+
+  const handleRichTextSubmit = async (text: string, mentions: string[] = []) => {
+    await handleSubmit(text, mentions);
+    setShowRichTextModal(false);
   };
 
   const handleChatSubmit = async (text: string, chatContentId: string) => {
@@ -239,12 +257,55 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         });
       }
 
-      toast.success('Claude Code Complete', 'New iteration generated successfully');
+      // Force refetch to get new components immediately
+      toast.success('Claude Code Complete', 'Refreshing components...');
 
-      // Invalidate cache to show new results
-      queryClient.invalidateQueries({
+      // Invalidate and refetch to ensure we get the latest data
+      await queryClient.invalidateQueries({
         queryKey: QueryKeys.contentByParent(groupId, claudeCodeContentId)
       });
+
+      // Wait a moment for Lambda to finish creating child components
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Refetch to get updated component list
+      await queryClient.refetchQueries({
+        queryKey: QueryKeys.contentByParent(groupId, claudeCodeContentId)
+      });
+
+      // Get the updated content to count new components
+      const queryData = queryClient.getQueryData<any>(
+        QueryKeys.contentByParent(groupId, claudeCodeContentId)
+      );
+
+      // Count newly generated components (those with generated_by_claude_code metadata and matching session)
+      const newComponents = queryData?.pages
+        ?.flatMap((page: any) => page.items || [])
+        ?.filter((item: Content) =>
+          item.metadata?.generated_by_claude_code &&
+          item.metadata?.session_id === response.session_id &&
+          item.type !== 'text' // Exclude text prompts
+        ) || [];
+
+      // Show specific feedback about generated components
+      if (newComponents.length > 0) {
+        const fileNames = newComponents
+          .map((c: Content) => c.metadata?.filename)
+          .filter(Boolean)
+          .slice(0, 3);
+
+        const countText = `${newComponents.length} component${newComponents.length !== 1 ? 's' : ''}`;
+        const filesText = fileNames.length > 0 ? fileNames.join(', ') : '';
+        const moreText = newComponents.length > 3 ? `, +${newComponents.length - 3} more` : '';
+
+        toast.success(
+          `Generated ${countText}`,
+          filesText ? `${filesText}${moreText}` : 'Components created successfully'
+        );
+      } else {
+        // No new components found yet - might still be processing
+        toast.success('Claude Code Complete', 'Session updated successfully');
+      }
 
       onContentAdded(userPrompt);
       setActiveAction(null);
@@ -428,6 +489,28 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     }
   };
 
+  const handleMapSaved = async (mapData: MapData, placeName: string) => {
+    try {
+      // Create map content with rich metadata
+      const newContent = await createContentMutation.mutateAsync({
+        type: 'map',
+        data: placeName,
+        groupId: groupId,
+        parent_content_id: parentContentId,
+        metadata: {
+          map_data: mapData,
+        },
+      });
+
+      onContentAdded(newContent);
+      toast.success('Map Saved', `Location "${placeName}" has been saved`);
+      setActiveAction(null);
+    } catch (error) {
+      console.error('Error saving map:', error);
+      toast.error('Error', 'Failed to save map location');
+    }
+  };
+
   // Auto-create plugin content when plugin action is selected
   React.useEffect(() => {
     // Reset flag when action changes away from plugin
@@ -488,31 +571,17 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   // Always show the new content input UI
   return (
     <>
-      {/* Floating Action Button (FAB) - centered above input bar */}
-      {!isSelectionMode && (
-        <ContentPieMenu
-          onActionSelect={handleActionSelect}
-        />
-      )}
-
       <div className="bg-gray-800 px-4 py-3">
         <div className="flex items-center space-x-3 max-w-4xl mx-auto">
-          {/* Workflow Actions Menu (shown when items are selected) */}
-          {isSelectionMode && selectedCount > 0 && (
-            <WorkflowActionsMenu
-              actions={workflowActions}
-              selectedCount={selectedCount}
-              onActionSelect={(action) => action.onClick()}
-            />
-          )}
-
-          {/* Text Input - full width when not in selection mode */}
+          {/* Text Input */}
           <div className="flex-1">
             <LexicalContentInput
               ref={lexicalInputRef}
               onSubmit={handleSubmit}
               disabled={createContentMutation.isPending || isGeneratingAI}
               parentContentId={parentContentId}
+              focusedParentName={focusedParentName}
+              onClearFocus={onClearFocus}
               availableTags={availableTags}
               activeAction={activeAction}
             />
@@ -546,6 +615,49 @@ export const ContentInput: React.FC<ContentInputProps> = ({
           </div>
         </div>
       )}
+
+      {activeAction === 'map' && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-auto">
+            <MapInput
+              onSave={handleMapSaved}
+              onCancel={() => setActiveAction(null)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Rich Text Editor Modal */}
+      {showRichTextModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white">Rich Text Editor</h2>
+              <button
+                onClick={() => setShowRichTextModal(false)}
+                className="text-gray-400 hover:text-white text-2xl font-bold w-8 h-8 flex items-center justify-center"
+              >
+                ✕
+              </button>
+            </div>
+            <LexicalRichEditor
+              ref={richEditorRef}
+              onSubmit={handleRichTextSubmit}
+              disabled={createContentMutation.isPending || isGeneratingAI}
+              availableTags={availableTags}
+              showSubmitButton={true}
+              submitButtonText="Submit"
+              placeholder="Start writing..."
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Content Actions Drawer */}
+      <ContentActionsDrawer
+        onActionSelect={handleActionSelect}
+        activeAction={activeAction}
+      />
     </>
   );
 };

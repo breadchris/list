@@ -20,16 +20,21 @@ import { ContentSelectionState } from '../hooks/useContentSelection';
 import { ContentListSkeleton } from './SkeletonComponents';
 import { ContentInput } from './ContentInput';
 import { TagButton } from './TagButton';
+import { VoteButtons } from './VoteButtons';
 import { TruncatedContent } from './TruncatedContent';
 import { SearchWorkflowSelector } from './SearchWorkflowSelector';
 import { WorkflowAction } from './WorkflowFAB';
 import { ContentJobsIndicator } from './ContentJobsIndicator';
 import { useActiveJobs } from '../hooks/useJobsQueries';
+import { useBatchUserVotes, useBatchContentVotes, calculateVoteScoresFromBatch } from '../hooks/useContentVotes';
 import { UserAvatar } from './UserAvatar';
 import { supabase } from './SupabaseClient';
 import { QueryInvalidation } from '../hooks/queryKeys';
 import { PieMenu } from './pie/PieMenu';
 import { useContentPieMenu } from '../hooks/useContentPieMenu';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useContentFocus } from '../hooks/useContentFocus';
+import { FocusActionBar } from './FocusActionBar';
 
 interface ContentListProps {
   groupId: string;
@@ -37,6 +42,7 @@ interface ContentListProps {
   newContent?: Content;
   parentContentId?: string | null;
   onNavigate?: (parentId: string | null) => void;
+  onFocusContent?: (contentId: string, contentName: string) => void;
   searchQuery: string;
   isSearching: boolean;
   selection: ContentSelectionState;
@@ -159,7 +165,7 @@ export const ContentList: React.FC<ContentListProps> = ({
   const [loadedTsxComponents, setLoadedTsxComponents] = useState<Set<string>>(new Set());
 
   // Hover state for tag button visibility
-  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+  // Removed hoveredItemId state - using CSS group-hover instead for better performance
 
   // Pie menu for tag application
   const {
@@ -169,6 +175,9 @@ export const ContentList: React.FC<ContentListProps> = ({
     handleContextMenu,
     closePieMenu
   } = useContentPieMenu(groupId);
+
+  // Focus mode for single-click content focusing
+  const focus = useContentFocus();
 
   // Split tag filters into include and exclude arrays
   const includeTagIds = useMemo(() =>
@@ -490,15 +499,21 @@ export const ContentList: React.FC<ContentListProps> = ({
   };
 
   // Handle content click - either navigate or toggle selection
-  const handleContentClick = (contentItem: Content) => {
+  const handleContentClick = (contentItem: Content, e?: React.MouseEvent) => {
+    // Don't trigger focus if clicking on interactive elements
+    if (e) {
+      const target = e.target as HTMLElement;
+      if (target.closest('button, a, input, textarea, [role="button"]')) {
+        return;
+      }
+    }
+
     if (selection.isSelectionMode) {
       // In selection mode, toggle item selection
       selection.toggleItem(contentItem.id);
     } else {
-      // Normal mode, navigate to content
-      if (onNavigate) {
-        onNavigate(contentItem.id);
-      }
+      // Normal mode: toggle focus for this item
+      focus.toggleFocus(contentItem.id);
     }
   };
 
@@ -510,6 +525,12 @@ export const ContentList: React.FC<ContentListProps> = ({
     }
   };
 
+  // Navigate to nested content (for focus mode)
+  const handleNavigate = (contentId: string) => {
+    if (onNavigate) {
+      onNavigate(contentId);
+    }
+  };
 
   const formatRelativeTime = (dateString: string): string => {
     const date = new Date(dateString);
@@ -583,32 +604,47 @@ export const ContentList: React.FC<ContentListProps> = ({
     return sharingData?.isPublic || false;
   };
 
-  if (!groupId) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">
-        <div className="text-center">
-          <p className="text-lg">No group selected</p>
-          <p className="text-sm">Create or join a group to start adding content</p>
-        </div>
-      </div>
-    );
-  }
+  // Flatten the paginated data (memoized to prevent infinite render loops)
+  const contentItems = useMemo(
+    () => contentData?.pages.flatMap(page => page.items) ?? [],
+    [contentData?.pages]
+  );
+  const tagItems = useMemo(
+    () => tagData?.pages.flatMap(page => page.items) ?? [],
+    [tagData?.pages]
+  );
+  const searchItems = useMemo(
+    () => searchData?.pages.flatMap(page => page.items) ?? [],
+    [searchData?.pages]
+  );
 
-  // Flatten the paginated data
-  const contentItems = contentData?.pages.flatMap(page => page.items) ?? [];
-  const tagItems = tagData?.pages.flatMap(page => page.items) ?? [];
-  const searchItems = searchData?.pages.flatMap(page => page.items) ?? [];
-
-  // Determine which data to use based on active mode
-  const currentItems = isSearching ? searchItems : (isTagFilterActive ? tagItems : contentItems);
+  // Determine which data to use based on active mode (memoized to prevent infinite render loops)
+  const currentItems = useMemo(
+    () => isSearching ? searchItems : (isTagFilterActive ? tagItems : contentItems),
+    [isSearching, isTagFilterActive, searchItems, tagItems, contentItems]
+  );
   const currentLoading = isSearching ? searchLoading : (isTagFilterActive ? tagLoading : contentLoading);
   // Use persistent items during loading to avoid clearing content immediately
-  const displayItems = currentLoading && persistentItems.length > 0 ? persistentItems : currentItems;
+  const displayItems = useMemo(
+    () => currentLoading && persistentItems.length > 0 ? persistentItems : currentItems,
+    [currentLoading, persistentItems, currentItems]
+  );
   const currentFetching = isSearching ? searchFetching : (isTagFilterActive ? tagFetching : contentFetching);
   const currentFetchingNext = isSearching ? searchFetchingNext : (isTagFilterActive ? tagFetchingNext : contentFetchingNext);
   const currentHasMore = isSearching ? searchHasMore : (isTagFilterActive ? tagHasMore : contentHasMore);
   const currentError = isSearching ? searchError : (isTagFilterActive ? tagError : contentError);
   const currentStatus = isSearching ? searchStatus : (isTagFilterActive ? tagStatus : contentStatus);
+
+  // Batch fetch all votes for visible content items to reduce N+1 queries
+  const contentIds = useMemo(() => displayItems.map(item => item.id), [displayItems]);
+  const { data: batchUserVotesMap } = useBatchUserVotes(contentIds, userId);
+  const { data: batchContentVotesMap } = useBatchContentVotes(contentIds);
+
+  // Calculate vote scores for all content items
+  const batchVoteScoresMap = useMemo(
+    () => batchContentVotesMap ? calculateVoteScoresFromBatch(batchContentVotesMap) : new Map(),
+    [batchContentVotesMap]
+  );
 
   // Group content by date
   const groupedContent = useMemo(() => {
@@ -628,6 +664,18 @@ export const ContentList: React.FC<ContentListProps> = ({
       return new Date(b[0]).getTime() - new Date(a[0]).getTime();
     });
   }, [displayItems]);
+
+  // Early return if no group is selected (after all hooks to satisfy Rules of Hooks)
+  if (!groupId) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-gray-500">
+        <div className="text-center">
+          <p className="text-lg">No group selected</p>
+          <p className="text-sm">Create or join a group to start adding content</p>
+        </div>
+      </div>
+    );
+  }
 
   // Skeleton delay effect to prevent flashing
   // useEffect(() => {
@@ -824,42 +872,20 @@ export const ContentList: React.FC<ContentListProps> = ({
                   <DateDivider date={dateKey} />
                   {items.map((item) => {
               const isSelected = selection.selectedItems.has(item.id);
-              return (
-                <div
-                  key={item.id}
-                  className={`bg-white rounded-lg shadow-sm border p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer relative ${
-                    isSelected
-                      ? 'border-blue-500 border-2 bg-blue-50'
-                      : 'border-gray-200'
-                  }`}
-                  onClick={() => handleContentClick(item)}
-                  onMouseEnter={() => setHoveredItemId(item.id)}
-                  onMouseLeave={() => setHoveredItemId(null)}
-                  onContextMenu={(e) => {
-                    if (!selection.isSelectionMode) {
-                      handleContextMenu(e, item);
-                    }
-                  }}
-                >
-                  {/* Selection indicator - better mobile positioning */}
-                  {selection.isSelectionMode && (
-                    <div className="absolute top-3 right-3 z-10">
-                      <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 flex items-center justify-center touch-manipulation ${
-                        isSelected
-                          ? 'bg-blue-500 border-blue-500'
-                          : 'border-gray-300 bg-white'
-                      }`}>
-                        {isSelected && (
-                          <svg className="w-3 h-3 sm:w-4 sm:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                <div className="flex items-start gap-2">
-                  {/* Main content area */}
+              const ItemContent = () => {
+                // Use batch vote data instead of individual query
+                const isDownvoted = batchVoteScoresMap?.get(item.id)?.isDownvoted || false;
+
+                return (
                   <div className={`flex-1 min-w-0 ${selection.isSelectionMode ? 'pr-8 sm:pr-10' : ''}`}>
+                    {isDownvoted ? (
+                      // Compact view for downvoted content
+                      <div className="text-sm text-gray-400 truncate opacity-60">
+                        {item.data}
+                      </div>
+                    ) : (
+                      // Normal full content view
+                      <div>
                     {item.type === 'seo' ? (
                       <div>
                         <SEOCard
@@ -1383,6 +1409,51 @@ export const ContentList: React.FC<ContentListProps> = ({
                       </div>
                     )}
                   </div>
+                    )}
+                  </div>
+                );
+              };
+
+              return (
+                <motion.div
+                  key={item.id}
+                  animate={focus.isFocused(item.id) ? { scale: 1.01 } : undefined}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className={`group bg-white rounded-lg shadow-sm border p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer relative my-2 ${
+                    focus.isFocused(item.id)
+                      ? 'ring-2 ring-blue-400 shadow-lg'
+                      : ''
+                  } ${
+                    isSelected
+                      ? 'border-blue-500 border-2 bg-blue-50'
+                      : 'border-gray-200'
+                  }`}
+                  onClick={(e) => handleContentClick(item, e)}
+                  onContextMenu={(e) => {
+                    if (!selection.isSelectionMode) {
+                      handleContextMenu(e, item);
+                    }
+                  }}
+                >
+                  {/* Selection indicator - better mobile positioning */}
+                  {selection.isSelectionMode && (
+                    <div className="absolute top-3 right-3 z-10">
+                      <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 flex items-center justify-center touch-manipulation ${
+                        isSelected
+                          ? 'bg-blue-500 border-blue-500'
+                          : 'border-gray-300 bg-white'
+                      }`}>
+                        {isSelected && (
+                          <svg className="w-3 h-3 sm:w-4 sm:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2">
+                    {/* Main content area */}
+                    <ItemContent />
 
                   {/* Right gutter for icons and actions */}
                   {!selection.isSelectionMode && (
@@ -1396,35 +1467,62 @@ export const ContentList: React.FC<ContentListProps> = ({
                         </div>
                       )}
 
+                      {/* Vote buttons */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <VoteButtons
+                          contentId={item.id}
+                          groupId={groupId}
+                          isVisible={true}
+                          userId={userId}
+                          useBatchQueries={true}
+                          userVote={batchUserVotesMap?.get(item.id)}
+                          voteScore={batchVoteScoresMap?.get(item.id)}
+                        />
+                      </div>
+
                       {/* Selection button */}
-                      {hoveredItemId === item.id && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!selection.isSelectionMode) {
-                              selection.toggleSelectionMode();
-                            }
-                            selection.toggleItem(item.id);
-                          }}
-                          className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
-                          title="Select for workflow"
-                        >
-                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        </button>
-                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!selection.isSelectionMode) {
+                            selection.toggleSelectionMode();
+                          }
+                          selection.toggleItem(item.id);
+                        }}
+                        className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        title="Select for workflow"
+                      >
+                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </button>
 
                       {/* Tag button */}
-                      <TagButton
-                        contentId={item.id}
-                        existingTags={item.tags || []}
-                        isVisible={hoveredItemId === item.id}
-                      />
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <TagButton
+                          contentId={item.id}
+                          existingTags={item.tags || []}
+                          isVisible={true}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
+
+                {/* Focus mode action bar */}
+                <AnimatePresence mode="wait">
+                  {focus.isFocused(item.id) && (
+                    <FocusActionBar
+                      contentItem={item}
+                      groupId={groupId}
+                      selection={selection}
+                      onNavigate={handleNavigate}
+                      hasChildren={!!item.child_count && item.child_count > 0}
+                      userId={userId}
+                    />
+                  )}
+                </AnimatePresence>
+              </motion.div>
               );
             })}
                 </React.Fragment>

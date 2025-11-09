@@ -12,6 +12,9 @@ const cloudflareApiKey = config.requireSecret('cloudflare_api_key');
 const cloudflareAccountId = config.require('cloudflare_account_id');
 const tmdbApiKey = config.requireSecret('tmdb_api_key');
 const deepgramApiKey = config.requireSecret('deepgram_api_key');
+const mapkitTeamId = config.require('mapkit_team_id');
+const mapkitKeyId = config.require('mapkit_key_id');
+const mapkitPrivateKey = config.requireSecret('mapkit_private_key');
 
 // Create S3 bucket for Claude Code sessions
 const sessionBucket = new aws.s3.Bucket('claude-code-sessions', {
@@ -181,6 +184,9 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			CLOUDFLARE_ACCOUNT_ID: cloudflareAccountId,
 			TMDB_API_KEY: tmdbApiKey,
 			DEEPGRAM_API_KEY: deepgramApiKey,
+			MAPKIT_TEAM_ID: mapkitTeamId,
+			MAPKIT_KEY_ID: mapkitKeyId,
+			MAPKIT_PRIVATE_KEY: mapkitPrivateKey,
 			HOME: '/tmp', // Claude CLI needs a HOME directory for config
 			IS_SANDBOX: '1' // Enable bypassPermissions mode for Claude CLI
 		}
@@ -225,6 +231,13 @@ const contentRoute = new aws.apigatewayv2.Route('content-route', {
 const healthRoute = new aws.apigatewayv2.Route('health-route', {
 	apiId: api.id,
 	routeKey: 'GET /health',
+	target: pulumi.interpolate`integrations/${integration.id}`
+});
+
+// Create route for /mapkit/token (MapKit JWT token generation)
+const mapkitTokenRoute = new aws.apigatewayv2.Route('mapkit-token-route', {
+	apiId: api.id,
+	routeKey: 'POST /mapkit/token',
 	target: pulumi.interpolate`integrations/${integration.id}`
 });
 

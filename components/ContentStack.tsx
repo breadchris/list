@@ -19,6 +19,7 @@ interface ContentStackProps {
   newContent?: Content;
   parentContentId?: string | null;
   onNavigate?: (parentId: string | null) => void;
+  onFocusContent?: (contentId: string, contentName: string) => void;
   searchQuery: string;
   isSearching: boolean;
   selection: ContentSelectionState;
@@ -39,6 +40,7 @@ export const ContentStack: React.FC<ContentStackProps> = ({
   newContent,
   parentContentId = null,
   onNavigate,
+  onFocusContent,
   searchQuery,
   isSearching,
   selection,
@@ -58,6 +60,9 @@ export const ContentStack: React.FC<ContentStackProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
+
+  // Double-click tracking for selection + navigation
+  const lastClickRef = React.useRef<{ itemId: string; timestamp: number } | null>(null);
 
   // Regular content query for non-search mode
   const {
@@ -153,6 +158,31 @@ export const ContentStack: React.FC<ContentStackProps> = ({
     }
   };
 
+  // Handle content click - double-click detection for selection + navigation
+  const handleContentClick = (contentItem: Content) => {
+    const now = Date.now();
+    const lastClick = lastClickRef.current;
+
+    // Check if this is a second click on the same item within 300ms
+    const isDoubleClick = lastClick &&
+      lastClick.itemId === contentItem.id &&
+      (now - lastClick.timestamp) < 300;
+
+    if (isDoubleClick) {
+      // Second click: navigate to content page
+      if (onNavigate) {
+        onNavigate(contentItem.id);
+      }
+      // Reset click tracking
+      lastClickRef.current = null;
+    } else {
+      // First click: toggle selection
+      selection.toggleItem(contentItem.id);
+      // Track this click
+      lastClickRef.current = { itemId: contentItem.id, timestamp: now };
+    }
+  };
+
   // Swipe gesture handlers
   const swipeHandlers = useSwipeable({
     onSwipedLeft: () => {
@@ -210,11 +240,22 @@ export const ContentStack: React.FC<ContentStackProps> = ({
             {/* Card Container */}
             <div
               {...swipeHandlers}
-              className={`w-full max-w-2xl bg-white rounded-lg shadow-lg p-6 relative transition-all duration-200 ${
+              onClick={(e) => {
+                // Prevent triggering on button/link clicks
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.closest('button') || target.closest('a')) {
+                  return;
+                }
+                // Truncate content name for display
+                const displayName = currentItem.data.substring(0, 30);
+                onFocusContent?.(currentItem.id, displayName);
+                handleContentClick(currentItem);
+              }}
+              className={`w-full max-w-2xl bg-white rounded-lg shadow-lg p-6 relative transition-all duration-200 cursor-pointer ${
                 swipeDirection === 'left' ? 'translate-x-[-20px] opacity-70 scale-95' :
                 swipeDirection === 'right' ? 'translate-x-[20px] opacity-70 scale-95' :
                 'translate-x-0 opacity-100 scale-100'
-              }`}
+              } ${selection.selectedItems.has(currentItem.id) ? 'ring-2 ring-blue-500' : ''}`}
               style={{ touchAction: 'pan-y pinch-zoom' }}
             >
               {/* Selection Checkbox */}
@@ -280,14 +321,20 @@ export const ContentStack: React.FC<ContentStackProps> = ({
                   <div className="flex space-x-2">
                     {currentItem.has_children && onNavigate && (
                       <button
-                        onClick={() => onNavigate(currentItem.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNavigate(currentItem.id);
+                        }}
                         className="text-blue-600 hover:text-blue-800 text-sm px-3 py-1 rounded-md hover:bg-blue-50"
                       >
                         Open
                       </button>
                     )}
                     <button
-                      onClick={() => handleDelete(currentItem.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(currentItem.id);
+                      }}
                       className="text-red-600 hover:text-red-800 text-sm px-3 py-1 rounded-md hover:bg-red-50"
                     >
                       Delete

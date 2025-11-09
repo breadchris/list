@@ -16,7 +16,15 @@ struct shareApp: App {
             ContentView()
                 .onOpenURL { url in
                     // Handle URL schemes from share extension
-                    SharedURLManager.shared.handleURLScheme(url)
+                    print("🔗 shareApp: Received URL scheme: \(url)")
+                    // Trigger inbox draining when app is opened via share extension
+                    InboxDrainer.shared.drainInbox { success in
+                        if success {
+                            print("✅ shareApp: Inbox drained successfully")
+                        } else {
+                            print("⚠️ shareApp: Inbox draining completed with some failures")
+                        }
+                    }
                 }
         }
     }

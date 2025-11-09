@@ -1,0 +1,10 @@
+{
+  "action": "screenshot-queue",
+  "payload": {
+    "jobs": [{
+      "contentId": "test-production-123",
+      "url": "https://en.wikipedia.org/wiki/Main_Page"
+    }]
+  },
+  "sync": true
+}

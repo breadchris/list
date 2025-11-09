@@ -21,8 +21,9 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Copy source code
+# Copy source code and types
 COPY src/ ./src/
+COPY types/ ./types/
 
 # Bundle with esbuild (no tree-shaking to preserve handler)
 RUN npm run build

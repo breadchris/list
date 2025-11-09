@@ -1,0 +1,11 @@
+{
+  "action": "chat-v2-stream",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is 2+2? Please explain your answer."
+      }
+    ]
+  }
+}
