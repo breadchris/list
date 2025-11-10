@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { useAIChatV2, ChatHistory } from '../hooks/useAIChatV2';
+import React, { useRef, useEffect } from 'react';
+import { ChatHistory } from '../hooks/useAIChatV2';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -22,7 +22,11 @@ interface AIChatV2SidebarProps {
   onClose: () => void;
   chatContent: Content;
   groupId: string;
-  onHistoryUpdate: (history: ChatHistory) => void;
+  history: ChatHistory;
+  currentResponse: any;
+  isLoading: boolean;
+  error: any;
+  onFollowUpClick: (question: string) => void;
 }
 
 export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
@@ -30,40 +34,13 @@ export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
   onClose,
   chatContent,
   groupId,
-  onHistoryUpdate,
+  history,
+  currentResponse,
+  isLoading,
+  error,
+  onFollowUpClick,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [initialHistory] = useState<ChatHistory>(
-    chatContent.metadata?.chat_history || []
-  );
-
-  // Debounced history update callback
-  const debouncedHistoryUpdate = useCallback(
-    (() => {
-      let timeoutId: NodeJS.Timeout;
-      return (history: ChatHistory) => {
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-          onHistoryUpdate(history);
-        }, 2000); // 2 second debounce
-      };
-    })(),
-    [onHistoryUpdate]
-  );
-
-  const {
-    input,
-    handleInputChange,
-    handleSubmit,
-    handleFollowUpClick,
-    history,
-    currentResponse,
-    isLoading,
-    error,
-  } = useAIChatV2({
-    initialHistory,
-    onHistoryChange: debouncedHistoryUpdate,
-  });
 
   // Auto-scroll to bottom when history or currentResponse updates
   useEffect(() => {
@@ -91,7 +68,7 @@ export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
           {history.length === 0 && !currentResponse ? (
             <div className="text-center text-gray-500 py-8">
               Start a conversation with AI...
@@ -127,7 +104,7 @@ export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
                           {message.followUpQuestions.map((question, qIdx) => (
                             <button
                               key={qIdx}
-                              onClick={() => handleFollowUpClick(question)}
+                              onClick={() => onFollowUpClick(question)}
                               className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors border border-gray-300"
                             >
                               {question}
@@ -166,7 +143,7 @@ export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
                           {currentResponse.follow_up_questions.map((question, qIdx) => (
                             <button
                               key={qIdx}
-                              onClick={() => handleFollowUpClick(question)}
+                              onClick={() => onFollowUpClick(question)}
                               className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors border border-gray-300"
                             >
                               {question}
@@ -181,35 +158,6 @@ export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
             </>
           )}
           <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="bg-white border-t shadow-sm">
-          <form onSubmit={handleSubmit} className="p-4">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                name="message"
-                value={input}
-                onChange={handleInputChange}
-                placeholder="Type your message..."
-                disabled={isLoading}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-gray-100"
-              />
-              <button
-                type="submit"
-                disabled={isLoading || !input?.trim()}
-                className="px-6 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                Send
-              </button>
-            </div>
-            {error && (
-              <div className="mt-2 text-sm text-red-600">
-                Error: {error.message || 'An error occurred'}
-              </div>
-            )}
-          </form>
         </div>
     </div>
   );

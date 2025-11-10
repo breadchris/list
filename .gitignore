@@ -4,6 +4,10 @@ public/styles.css
 .mcp.json
 data/
 extension/background.js
+extension/sidebar.js
+extension/styles.css
+extension/*.js.map
+extension/*.css.map
 
 # Environment variables (security)
 .env

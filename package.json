@@ -51,6 +51,7 @@
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "esbuild": "^0.24.2",
     "typescript": "^5.0.0"
   },
   "scripts": {
@@ -64,7 +65,9 @@
     "local:stop": "go run . local stop",
     "local:logs": "go run . local logs",
     "local:reset": "go run . local reset",
-    "build:extension:sidebar": "cd extension && node build-sidebar.js",
+    "local:cleanup": "bash scripts/cleanup-local-stack.sh",
+    "build:extension": "cd extension && node build-extension.js",
+    "build:extension:watch": "cd extension && node build-extension.js --watch",
     "test:e2e": "NODE_ENV=test playwright test",
     "test:e2e:headed": "NODE_ENV=test playwright test --headed",
     "test:e2e:ui": "NODE_ENV=test playwright test --ui"

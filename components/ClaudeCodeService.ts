@@ -235,7 +235,7 @@ ${jsonContent}
         payload: requestPayload
       });
 
-      if (!jobResponse.success && !jobResponse.job_id) {
+      if (!jobResponse.success || !jobResponse.job_id) {
         throw new Error(jobResponse.error || 'Failed to submit Claude Code job');
       }
 

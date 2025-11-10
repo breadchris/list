@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -212,7 +215,45 @@ func serveCommand(c *cli.Context) error {
 	}
 
 	fmt.Println()
-	return http.ListenAndServe(":"+config.Port, mux)
+
+	// Create server with graceful shutdown support
+	server := &http.Server{
+		Addr:    ":" + config.Port,
+		Handler: mux,
+	}
+
+	// Channel for shutdown signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Channel to signal server started successfully
+	serverErr := make(chan error, 1)
+
+	// Start server in goroutine
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- fmt.Errorf("HTTP server error: %w", err)
+		}
+	}()
+
+	// Wait for either shutdown signal or server error
+	select {
+	case err := <-serverErr:
+		return err
+	case <-sigChan:
+		fmt.Println("\n🛑 Shutting down server...")
+
+		// Graceful shutdown with 5-second timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			return fmt.Errorf("server shutdown failed: %w", err)
+		}
+
+		fmt.Println("✅ Server stopped gracefully")
+		return nil
+	}
 }
 
 // buildCommand builds the application for production

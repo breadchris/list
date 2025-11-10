@@ -1,4 +1,4 @@
-/* Sidebar Chat Styles */
+/* Sidebar Styles */
 /* Most styling is handled by Tailwind CDN, this file is for any custom styles */
 
 * {
@@ -86,4 +86,24 @@ button:focus-visible,
 input:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
+}
+
+/* Tab Manager Styles */
+.tab-item {
+  position: relative;
+}
+
+.tab-item:hover .tab-close-button {
+  opacity: 1;
+}
+
+.tab-close-button {
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+}
+
+/* Show close button on hover or when tab is active */
+.tab-item:hover .tab-close-button,
+.tab-item.active .tab-close-button {
+  opacity: 1;
 }

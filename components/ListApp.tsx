@@ -34,11 +34,13 @@ import { LLMPromptModal } from './LLMPromptModal';
 import { ClaudeCodePromptModal } from './ClaudeCodePromptModal';
 import { ClaudeCodeService } from './ClaudeCodeService';
 import { AIChatV2Sidebar } from './AIChatV2Sidebar';
-import { ChatHistory } from '../hooks/useAIChatV2';
+import { ChatHistory, useAIChatV2 } from '../hooks/useAIChatV2';
 import { Group, Content, Tag, TagFilter, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
 import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
 import { useContentSelection } from '../hooks/useContentSelection';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from '../hooks/queryKeys';
 import { useSEOExtraction } from '../hooks/useSEOExtraction';
 import { useBulkMarkAsPublic } from '../hooks/useBulkMarkAsPublic';
 import { useMarkdownExtraction, MarkdownProgressItem } from '../hooks/useMarkdownExtraction';
@@ -98,6 +100,7 @@ export const ListApp: React.FC = () => {
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
   const bulkDeleteMutation = useBulkDeleteContentMutation();
+  const queryClient = useQueryClient();
 
   // Store joinGroupMutation in a ref to avoid dependency issues
   const joinGroupMutationRef = useRef(joinGroupMutation);
@@ -2262,7 +2265,7 @@ export const ListApp: React.FC = () => {
     setActiveChatContent(null);
   };
 
-  const handleChatHistoryUpdate = async (history: ChatHistory) => {
+  const handleChatHistoryUpdate = useCallback(async (history: ChatHistory) => {
     if (!activeChatContent) return;
 
     try {
@@ -2277,7 +2280,13 @@ export const ListApp: React.FC = () => {
       console.error('Failed to save chat history:', error);
       toast.error('Failed to save chat history', error instanceof Error ? error.message : 'Unknown error');
     }
-  };
+  }, [activeChatContent]);
+
+  // AI Chat V2 hook - manages chat state when sidebar is open
+  const chatHook = useAIChatV2({
+    initialHistory: activeChatContent?.metadata?.chat_history || [],
+    onHistoryChange: handleChatHistoryUpdate,
+  });
 
   const handleInputClose = () => {
     setShowInput(false);
@@ -2387,6 +2396,10 @@ export const ListApp: React.FC = () => {
           if (parentContent.type === 'js') {
             setCurrentJsContent(parentContent);
             setCurrentParentId(parentId);
+          } else if (parentContent.type === 'ai-chat' || parentContent.type === 'chat') {
+            // Open AI chat sidebar with existing chat history
+            handleAIChatV2Open(parentContent);
+            return; // Don't navigate to children
           } else {
             // Regular content navigation
             setCurrentJsContent(null);
@@ -2454,10 +2467,22 @@ export const ListApp: React.FC = () => {
         if (content.type === 'js') {
           setCurrentJsContent(content);
           setCurrentParentId(contentId);
+        } else if (content.type === 'ai-chat' || content.type === 'chat') {
+          // Open AI chat sidebar instead of navigating
+          handleAIChatV2Open(content);
+          // Navigate back to parent view without contentId in URL
+          if (currentGroup) {
+            navigate(`/group/${currentGroup.id}`);
+          }
+          return;
         } else {
           // Regular content navigation
           setCurrentJsContent(null);
           setCurrentParentId(contentId);
+          // Close sidebar if open when viewing non-chat content
+          if (showAIChatSidebar) {
+            handleAIChatV2Close();
+          }
         }
         
         // Update navigation stack
@@ -2608,7 +2633,7 @@ export const ListApp: React.FC = () => {
 
   // Stable container pattern - always return same structure, conditionally show content
   return (
-    <div data-testid="main-app" className="bg-gray-50 flex flex-col transition-all duration-200 ease-in-out overflow-hidden">
+    <div data-testid="main-app" className="bg-gray-50 flex flex-col h-screen overflow-hidden">
       
       {/* Error State */}
       {appState === 'error' && (
@@ -2865,14 +2890,14 @@ export const ListApp: React.FC = () => {
           </header>
 
           {/* Main Content Area with Chat Sidebar */}
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex overflow-hidden pt-16">
             {/* Content List Area */}
-            <div className={`flex flex-col transition-all duration-300 ease-in-out ${
+            <div className={`flex flex-col h-full transition-all duration-300 ease-in-out ${
               showAIChatSidebar
                 ? 'hidden md:flex md:w-1/5 md:min-w-[250px]'
                 : 'w-full'
             } overflow-y-auto`}>
-              <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full shadow-sm">
+              <div className="px-4 pt-4 pb-24 flex-1 flex flex-col max-w-4xl mx-auto w-full">
                 {/* Back Button Navigation */}
                 {currentGroup && navigationStack.length > 1 && (
               <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2 flex items-center justify-between">
@@ -3058,13 +3083,18 @@ export const ListApp: React.FC = () => {
 
             {/* AI Chat V2 Sidebar */}
             {showAIChatSidebar && activeChatContent && currentGroup && (
-              <div className="w-full md:w-4/5 border-l border-gray-200 overflow-hidden">
+              <div className="w-full md:w-4/5 h-full border-l border-gray-200 overflow-hidden">
                 <AIChatV2Sidebar
+                  key={activeChatContent.id}
                   isOpen={showAIChatSidebar}
                   onClose={handleAIChatV2Close}
                   chatContent={activeChatContent}
                   groupId={currentGroup.id}
-                  onHistoryUpdate={handleChatHistoryUpdate}
+                  history={chatHook.history}
+                  currentResponse={chatHook.currentResponse}
+                  isLoading={chatHook.isLoading}
+                  error={chatHook.error}
+                  onFollowUpClick={chatHook.handleFollowUpClick}
                 />
               </div>
             )}
@@ -3072,7 +3102,7 @@ export const ListApp: React.FC = () => {
 
       {/* Content Input - Always visible when group is selected and not in JS view */}
       {currentGroup && !currentJsContent && !isSelectingParent && (
-        <div className="fixed bottom-0 left-0 right-0 z-40">
+        <div className="fixed bottom-0 left-0 right-0 z-50">
           <ContentInput
             groupId={currentGroup.id}
             parentContentId={focusedParentId || currentParentId}
@@ -3087,6 +3117,11 @@ export const ListApp: React.FC = () => {
             }}
             onAIChatV2Open={handleAIChatV2Open}
             availableTags={availableTags}
+            isChatSidebarOpen={showAIChatSidebar}
+            chatInput={chatHook.input}
+            chatIsLoading={chatHook.isLoading}
+            onChatInputChange={chatHook.handleInputChange}
+            onChatSubmit={chatHook.handleSubmit}
           />
         </div>
       )}
@@ -3263,7 +3298,7 @@ export const ListApp: React.FC = () => {
       )}
 
           {/* Footer */}
-          <Footer />
+          {/* <Footer /> */}
             </>
           )}
         </>

@@ -64,6 +64,40 @@ async function getFilesRecursive(dir: string, baseDir: string = dir): Promise<Se
 	return files;
 }
 
+/**
+ * Get the path to the Claude Code executable
+ * Detects environment and returns appropriate path:
+ * - AWS Lambda: /var/lang/bin/claude
+ * - Docker (IS_SANDBOX): /var/lang/bin/claude
+ * - Local development: Uses 'which claude' to find in PATH
+ */
+function getClaudeCodePath(): string {
+	// Check if running in AWS Lambda
+	if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+		return '/var/lang/bin/claude';
+	}
+
+	// Check if running in Docker with IS_SANDBOX
+	if (process.env.IS_SANDBOX === '1') {
+		return '/var/lang/bin/claude';
+	}
+
+	// Local development - use 'which claude' command
+	try {
+		const claudePath = execSync('which claude', { encoding: 'utf-8' }).trim();
+		if (claudePath) {
+			console.log(`[Local Mode] Using Claude Code at: ${claudePath}`);
+			return claudePath;
+		}
+	} catch (error) {
+		console.error(`[Local Mode] Failed to find Claude Code in PATH`);
+	}
+
+	// Fallback to Lambda path
+	console.warn('[Local Mode] Could not find Claude Code, using Lambda path');
+	return '/var/lang/bin/claude';
+}
+
 export async function executeClaudeCode(
 	options: ClaudeExecutionOptions
 ): Promise<ClaudeExecutionResult> {
@@ -172,7 +206,7 @@ USER REQUEST:
 				model: 'claude-sonnet-4-5-20250929',
 				permissionMode: 'bypassPermissions', // Allow automated file operations
 				includePartialMessages: false,
-				pathToClaudeCodeExecutable: '/var/lang/bin/claude',
+				pathToClaudeCodeExecutable: getClaudeCodePath(),
 				cwd: workDir, // Use dedicated workspace directory
 				resume: resumeSessionId, // Resume previous session if provided
 				hooks: {

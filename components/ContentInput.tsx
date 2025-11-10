@@ -29,6 +29,12 @@ interface ContentInputProps {
   onActionSelect?: (action: ContentAction) => void;
   onAIChatV2Open?: (content: Content) => void;
   availableTags?: Tag[];
+  // Chat mode props
+  isChatSidebarOpen?: boolean;
+  chatInput?: string;
+  chatIsLoading?: boolean;
+  onChatInputChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onChatSubmit?: (e: React.FormEvent) => void;
 }
 
 export const ContentInput: React.FC<ContentInputProps> = ({
@@ -40,7 +46,12 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   onNavigate,
   onActionSelect,
   onAIChatV2Open,
-  availableTags = []
+  availableTags = [],
+  isChatSidebarOpen = false,
+  chatInput,
+  chatIsLoading = false,
+  onChatInputChange,
+  onChatSubmit
 }) => {
   // Internal state for active content action
   const [activeAction, setActiveAction] = useState<ContentAction | null>(null);
@@ -102,7 +113,19 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   const handleSubmit = async (text: string, mentions: string[] = []) => {
     if (!text || (createContentMutation.isPending && !pendingAISubmitRef.current)) return;
 
-    console.log('Submitting content:', { text, mentions, activeAction, parentContentId });
+    console.log('Submitting content:', { text, mentions, activeAction, parentContentId, isChatSidebarOpen });
+
+    // If in chat mode, delegate to chat handler
+    if (isChatSidebarOpen && onChatSubmit) {
+      // Create synthetic form event
+      const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
+      onChatSubmit(syntheticEvent);
+      // Clear the input via ref if available
+      if (lexicalInputRef.current) {
+        lexicalInputRef.current.clear();
+      }
+      return;
+    }
 
     // If active action is AI chat, route to AI handler
     if (activeAction === 'ai-chat') {
@@ -599,12 +622,15 @@ export const ContentInput: React.FC<ContentInputProps> = ({
             <LexicalContentInput
               ref={lexicalInputRef}
               onSubmit={handleSubmit}
-              disabled={createContentMutation.isPending || isGeneratingAI}
+              disabled={createContentMutation.isPending || isGeneratingAI || chatIsLoading}
               parentContentId={parentContentId}
               focusedParentName={focusedParentName}
               onClearFocus={onClearFocus}
               availableTags={availableTags}
               activeAction={activeAction}
+              chatMode={isChatSidebarOpen}
+              chatValue={chatInput}
+              onChatChange={onChatInputChange}
             />
           </div>
         </div>

@@ -140,7 +140,12 @@ export const FocusActionBar: React.FC<FocusActionBarProps> = ({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            navigate(`/group/${groupId}/content/${contentItem.id}`);
+            // Check if this is ai-chat content - use onNavigate which has type logic
+            if (contentItem.type === 'ai-chat' || contentItem.type === 'chat') {
+              onNavigate(contentItem.id);
+            } else {
+              navigate(`/group/${groupId}/content/${contentItem.id}`);
+            }
           }}
           className="
             flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium
