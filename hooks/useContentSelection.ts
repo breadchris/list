@@ -8,6 +8,7 @@ export interface ContentSelectionState {
   clearSelection: () => void;
   toggleItem: (itemId: string) => void;
   toggleSelectionMode: () => void;
+  setIsSelectionMode: (value: boolean) => void;
   getSelectedItems: (items: Content[]) => Content[];
   selectedCount: number;
 }
@@ -72,6 +73,7 @@ export const useContentSelection = (): ContentSelectionState => {
     clearSelection,
     toggleItem,
     toggleSelectionMode,
+    setIsSelectionMode,
     getSelectedItems,
     selectedCount: selectedItems.size
   }), [

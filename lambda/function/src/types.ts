@@ -16,6 +16,7 @@ export interface ContentRequest {
 	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio';
 	payload: any;
 	sync?: boolean; // When true, execute immediately and return results. When false/omitted, queue job (default)
+	headers?: Record<string, string>; // Optional HTTP headers (e.g., If-None-Match for caching)
 }
 
 export interface ContentResponse {
@@ -345,6 +346,8 @@ export interface TSXTranspileResponse {
 			lineText?: string;
 		};
 	}>;
+	etag?: string; // ETag header value for caching
+	cache_hit?: boolean; // True if request was a cache hit (304)
 }
 
 // Deepgram Transcription Types

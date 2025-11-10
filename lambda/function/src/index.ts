@@ -238,7 +238,7 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 						break;
 
 					case 'tsx-transpile':
-						result = await handleTSXTranspile(supabase, payload);
+						result = await handleTSXTranspile(supabase, payload, headers);
 						break;
 
 					case 'transcribe-audio':
@@ -468,7 +468,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 		process.stderr.write('Direct invocation detected\n');
 		// Check if it's a content request (has action and payload OR has action and messages/prompt for Vercel AI SDK)
 		if (event.action && (event.payload || event.messages || event.prompt)) {
-			const result = await handleContentRequest(event as ContentRequest);
+			const result = await handleContentRequest(event as ContentRequest, event.headers);
 			await flushLogs();
 			return result;
 		}
@@ -551,7 +551,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (
 		}
 
 		if (path === '/content' || path === '/content/') {
-			result = await handleContentRequest(body as ContentRequest);
+			result = await handleContentRequest(body as ContentRequest, event.headers);
 			await flushLogs();
 			return result;
 		}
@@ -957,7 +957,7 @@ async function handleCancelJob(jobManager: JobManager, payload: any): Promise<AP
 	}
 }
 
-async function handleContentRequest(request: ContentRequest): Promise<APIGatewayProxyResultV2> {
+async function handleContentRequest(request: ContentRequest, headers?: Record<string, string>): Promise<APIGatewayProxyResultV2> {
 	let { action, payload } = request;
 
 	console.log('[HANDLER] Received request:', JSON.stringify(request, null, 2));
@@ -1099,7 +1099,7 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 						break;
 
 					case 'tsx-transpile':
-						result = await handleTSXTranspile(supabase, payload);
+						result = await handleTSXTranspile(supabase, payload, headers);
 						break;
 
 					case 'transcribe-audio':
@@ -1459,6 +1459,34 @@ Current message:
 				};
 		}
 
+		// Handle cache hit for tsx-transpile (304 Not Modified)
+		if (action === 'tsx-transpile' && result.cache_hit && result.etag) {
+			return {
+				statusCode: 304,
+				headers: {
+					'ETag': result.etag,
+					'Cache-Control': 'public, max-age=86400, immutable',
+					...corsHeaders
+				}
+				// No body for 304 responses
+			};
+		}
+
+		// Handle successful response with ETag (tsx-transpile cache miss)
+		if (action === 'tsx-transpile' && result.etag) {
+			return {
+				statusCode: 200,
+				headers: {
+					'Content-Type': 'application/json',
+					'ETag': result.etag,
+					'Cache-Control': 'public, max-age=86400, immutable',
+					...corsHeaders
+				},
+				body: JSON.stringify(result)
+			};
+		}
+
+		// Default response for all other actions
 		return {
 			statusCode: 200,
 			headers: {

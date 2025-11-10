@@ -244,6 +244,13 @@ chrome.runtime.onStartup.addListener(async () => {
 function createContextMenus() {
   // Remove existing menus first
   chrome.contextMenus.removeAll(() => {
+    // Create AI chat sidebar context menu
+    chrome.contextMenus.create({
+      id: 'openAIChat',
+      title: 'Chat with AI about this page',
+      contexts: ['page']
+    });
+
     // Create share page context menu
     chrome.contextMenus.create({
       id: 'sharePage',
@@ -265,8 +272,15 @@ function createContextMenus() {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   console.log('Context menu clicked:', info.menuItemId);
-  
+
   switch (info.menuItemId) {
+    case 'openAIChat':
+      // Open side panel for AI chat
+      if (tab?.windowId) {
+        chrome.sidePanel.open({ windowId: tab.windowId });
+        console.log('AI chat sidebar opened');
+      }
+      break;
     case 'sharePage':
       shareCurrentPage();
       break;

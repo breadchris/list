@@ -1,5 +1,5 @@
 import { experimental_useObject as useObject } from "@ai-sdk/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 
 // Build-time constant (injected by esbuild Define)
@@ -17,11 +17,17 @@ const chatResponseSchema = z.object({
     ),
 });
 
-type ChatHistory = Array<{
+export type ChatHistory = Array<{
   role: "user" | "assistant";
   content: string;
   followUpQuestions?: string[];
+  timestamp?: string;
 }>;
+
+export interface UseAIChatV2Options {
+  initialHistory?: ChatHistory;
+  onHistoryChange?: (history: ChatHistory) => void;
+}
 
 /**
  * Hook for AI Chat V2 with streaming support via Vercel AI SDK
@@ -39,9 +45,11 @@ type ChatHistory = Array<{
  * 2. Lambda runs on http://localhost:9001
  * 3. Frontend sends to http://localhost:3002/lambda-proxy which proxies to Lambda
  */
-export function useAIChatV2() {
+export function useAIChatV2(options?: UseAIChatV2Options) {
   const [input, setInput] = useState("");
-  const [history, setHistory] = useState<ChatHistory>([]);
+  const [history, setHistory] = useState<ChatHistory>(
+    options?.initialHistory || []
+  );
 
   const { object, submit, isLoading, error } = useObject({
     api: `${BUILD_TIME_LAMBDA_ENDPOINT}/content`,
@@ -58,11 +66,19 @@ export function useAIChatV2() {
             role: "assistant",
             content: finishedObject.answer,
             followUpQuestions: finishedObject.follow_up_questions,
+            timestamp: new Date().toISOString(),
           },
         ]);
       }
     },
   });
+
+  // Notify parent of history changes
+  useEffect(() => {
+    if (options?.onHistoryChange && history.length > 0) {
+      options.onHistoryChange(history);
+    }
+  }, [history, options]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
@@ -77,7 +93,11 @@ export function useAIChatV2() {
     // Add user message to history immediately for optimistic display
     setHistory((prev) => [
       ...prev,
-      { role: "user", content: userMessage },
+      {
+        role: "user",
+        content: userMessage,
+        timestamp: new Date().toISOString(),
+      },
     ]);
 
     // Build messages array from history + current message
@@ -99,7 +119,11 @@ export function useAIChatV2() {
     // Add user message to history immediately for optimistic display
     setHistory((prev) => [
       ...prev,
-      { role: "user", content: question },
+      {
+        role: "user",
+        content: question,
+        timestamp: new Date().toISOString(),
+      },
     ]);
 
     // Build messages array from history + follow-up question

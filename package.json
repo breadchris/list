@@ -64,6 +64,7 @@
     "local:stop": "go run . local stop",
     "local:logs": "go run . local logs",
     "local:reset": "go run . local reset",
+    "build:extension:sidebar": "cd extension && node build-sidebar.js",
     "test:e2e": "NODE_ENV=test playwright test",
     "test:e2e:headed": "NODE_ENV=test playwright test --headed",
     "test:e2e:ui": "NODE_ENV=test playwright test --ui"

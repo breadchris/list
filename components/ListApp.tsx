@@ -33,6 +33,8 @@ import { Footer } from './Footer';
 import { LLMPromptModal } from './LLMPromptModal';
 import { ClaudeCodePromptModal } from './ClaudeCodePromptModal';
 import { ClaudeCodeService } from './ClaudeCodeService';
+import { AIChatV2Sidebar } from './AIChatV2Sidebar';
+import { ChatHistory } from '../hooks/useAIChatV2';
 import { Group, Content, Tag, TagFilter, contentRepository } from './ContentRepository';
 import { useGroupsQuery, useCreateGroupMutation, useJoinGroupMutation } from '../hooks/useGroupQueries';
 import { useBulkDeleteContentMutation } from '../hooks/useContentQueries';
@@ -84,6 +86,10 @@ export const ListApp: React.FC = () => {
   // Focused parent for click-to-focus child creation
   const [focusedParentId, setFocusedParentId] = useState<string | null>(null);
   const [focusedParentName, setFocusedParentName] = useState<string>('');
+
+  // AI Chat V2 sidebar state
+  const [showAIChatSidebar, setShowAIChatSidebar] = useState(false);
+  const [activeChatContent, setActiveChatContent] = useState<Content | null>(null);
 
   // React Query hooks - only enable when we have user and app is ready for data loading
   const { data: groups = [], isLoading: groupsLoading, error: groupsError } = useGroupsQuery({ 
@@ -509,7 +515,7 @@ export const ListApp: React.FC = () => {
     setTargetParentId(currentParentId); // Default to current location
 
     // Exit selection mode but keep items visually selected
-    contentSelection.toggleSelectionMode();
+    contentSelection.setIsSelectionMode(false);
 
     toast.info('Select new parent', 'Click any item to set as parent, or navigate and click "Move Here"');
   };
@@ -2246,6 +2252,33 @@ export const ListApp: React.FC = () => {
     setTimeout(() => setNewContent(undefined), 100);
   };
 
+  const handleAIChatV2Open = (chatContent: Content) => {
+    setActiveChatContent(chatContent);
+    setShowAIChatSidebar(true);
+  };
+
+  const handleAIChatV2Close = () => {
+    setShowAIChatSidebar(false);
+    setActiveChatContent(null);
+  };
+
+  const handleChatHistoryUpdate = async (history: ChatHistory) => {
+    if (!activeChatContent) return;
+
+    try {
+      await contentRepository.updateContent(activeChatContent.id, {
+        metadata: {
+          ...activeChatContent.metadata,
+          chat_history: history,
+          last_updated: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save chat history:', error);
+      toast.error('Failed to save chat history', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
   const handleInputClose = () => {
     setShowInput(false);
   };
@@ -2831,9 +2864,17 @@ export const ListApp: React.FC = () => {
             </div>
           </header>
 
-          <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full shadow-sm transition-all duration-200 ease-in-out">
-            {/* Back Button Navigation */}
-            {currentGroup && navigationStack.length > 1 && (
+          {/* Main Content Area with Chat Sidebar */}
+          <div className="flex-1 flex overflow-hidden">
+            {/* Content List Area */}
+            <div className={`flex flex-col transition-all duration-300 ease-in-out ${
+              showAIChatSidebar
+                ? 'hidden md:flex md:w-1/5 md:min-w-[250px]'
+                : 'w-full'
+            } overflow-y-auto`}>
+              <div className="m-14 flex-1 flex flex-col max-w-4xl mx-auto w-full shadow-sm">
+                {/* Back Button Navigation */}
+                {currentGroup && navigationStack.length > 1 && (
               <div className="bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2 flex items-center justify-between">
                 <button
                   onClick={() => handleNavigate(navigationStack[navigationStack.length - 2]?.id || null)}
@@ -2928,6 +2969,10 @@ export const ListApp: React.FC = () => {
             activeExternalSearch={activeExternalSearch}
             onActivateExternalSearch={setActiveExternalSearch}
             onExecuteExternalSearch={handleExecuteExternalSearch}
+            isSelectingParent={isSelectingParent}
+            targetParentId={targetParentId}
+            onSelectParent={handleSelectParent}
+            itemsBeingMoved={itemsToMove}
           />
         ) : displayMode === 'masonry' ? (
           <ContentMasonry
@@ -2950,6 +2995,10 @@ export const ListApp: React.FC = () => {
             onActivateExternalSearch={setActiveExternalSearch}
             onExecuteExternalSearch={handleExecuteExternalSearch}
             selectedTagFilter={selectedTagFilter}
+            isSelectingParent={isSelectingParent}
+            targetParentId={targetParentId}
+            onSelectParent={handleSelectParent}
+            itemsBeingMoved={itemsToMove}
           />
         ) : displayMode === 'deck' ? (
           <ContentDeck
@@ -3004,7 +3053,22 @@ export const ListApp: React.FC = () => {
             itemsBeingMoved={itemsToMove}
           />
         )}
-      </div>
+              </div>
+            </div>
+
+            {/* AI Chat V2 Sidebar */}
+            {showAIChatSidebar && activeChatContent && currentGroup && (
+              <div className="w-full md:w-4/5 border-l border-gray-200 overflow-hidden">
+                <AIChatV2Sidebar
+                  isOpen={showAIChatSidebar}
+                  onClose={handleAIChatV2Close}
+                  chatContent={activeChatContent}
+                  groupId={currentGroup.id}
+                  onHistoryUpdate={handleChatHistoryUpdate}
+                />
+              </div>
+            )}
+          </div>
 
       {/* Content Input - Always visible when group is selected and not in JS view */}
       {currentGroup && !currentJsContent && !isSelectingParent && (
@@ -3021,6 +3085,7 @@ export const ListApp: React.FC = () => {
                 setShowSpotifyModal(true);
               }
             }}
+            onAIChatV2Open={handleAIChatV2Open}
             availableTags={availableTags}
           />
         </div>
@@ -3032,8 +3097,7 @@ export const ListApp: React.FC = () => {
           <div className="max-w-md mx-auto p-4 flex gap-3">
             <button
               onClick={handleConfirmMove}
-              disabled={!targetParentId}
-              className="flex-1 bg-orange-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 bg-orange-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-orange-600 transition-colors"
             >
               Move Here ({itemsToMove.length} item{itemsToMove.length > 1 ? 's' : ''})
             </button>

@@ -33,6 +33,10 @@ interface ContentStackProps {
   activeExternalSearch?: string | null;
   onActivateExternalSearch?: (workflowId: string) => void;
   onExecuteExternalSearch?: () => void;
+  isSelectingParent?: boolean;
+  targetParentId?: string | null;
+  onSelectParent?: (contentId: string) => void;
+  itemsBeingMoved?: string[];
 }
 
 export const ContentStack: React.FC<ContentStackProps> = ({
@@ -53,7 +57,11 @@ export const ContentStack: React.FC<ContentStackProps> = ({
   onSearchQueryChange,
   activeExternalSearch = null,
   onActivateExternalSearch = () => {},
-  onExecuteExternalSearch = () => {}
+  onExecuteExternalSearch = () => {},
+  isSelectingParent = false,
+  targetParentId = null,
+  onSelectParent = () => {},
+  itemsBeingMoved = []
 }) => {
   const deleteContentMutation = useDeleteContentMutation();
   const toast = useToast();
@@ -160,6 +168,12 @@ export const ContentStack: React.FC<ContentStackProps> = ({
 
   // Handle content click - double-click detection for selection + navigation
   const handleContentClick = (contentItem: Content) => {
+    // Parent selection mode - select this item as the new parent
+    if (isSelectingParent && onSelectParent) {
+      onSelectParent(contentItem.id);
+      return;
+    }
+
     const now = Date.now();
     const lastClick = lastClickRef.current;
 
@@ -255,7 +269,13 @@ export const ContentStack: React.FC<ContentStackProps> = ({
                 swipeDirection === 'left' ? 'translate-x-[-20px] opacity-70 scale-95' :
                 swipeDirection === 'right' ? 'translate-x-[20px] opacity-70 scale-95' :
                 'translate-x-0 opacity-100 scale-100'
-              } ${selection.selectedItems.has(currentItem.id) ? 'ring-2 ring-blue-500' : ''}`}
+              } ${
+                isSelectingParent && targetParentId === currentItem.id
+                  ? 'ring-2 ring-orange-500 border-2 border-orange-500'
+                  : selection.selectedItems.has(currentItem.id)
+                  ? 'ring-2 ring-blue-500'
+                  : ''
+              }`}
               style={{ touchAction: 'pan-y pinch-zoom' }}
             >
               {/* Selection Checkbox */}

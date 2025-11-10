@@ -10,7 +10,8 @@
     "storage",
     "management",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "sidePanel"
   ],
   "host_permissions": [
     "http://localhost:8080/*",
@@ -43,5 +44,8 @@
       "http://localhost:3002/*",
       "https://justshare.io/*"
     ]
+  },
+  "side_panel": {
+    "default_path": "sidebar.html"
   }
 }

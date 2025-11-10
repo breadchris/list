@@ -57,6 +57,10 @@ interface ContentListProps {
   onActivateExternalSearch?: (workflowId: string) => void;
   onExecuteExternalSearch?: () => void;
   selectedTagFilter?: TagFilter[];
+  isSelectingParent?: boolean;
+  targetParentId?: string | null;
+  onSelectParent?: (contentId: string) => void;
+  itemsBeingMoved?: string[];
 }
 
 interface TagDisplayProps {
@@ -148,7 +152,11 @@ export const ContentList: React.FC<ContentListProps> = ({
   activeExternalSearch = null,
   onActivateExternalSearch = () => {},
   onExecuteExternalSearch = () => {},
-  selectedTagFilter = []
+  selectedTagFilter = [],
+  isSelectingParent = false,
+  targetParentId = null,
+  onSelectParent = () => {},
+  itemsBeingMoved = []
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -506,6 +514,12 @@ export const ContentList: React.FC<ContentListProps> = ({
       if (target.closest('button, a, input, textarea, [role="button"]')) {
         return;
       }
+    }
+
+    // Parent selection mode - select this item as the new parent
+    if (isSelectingParent && onSelectParent) {
+      onSelectParent(contentItem.id);
+      return;
     }
 
     if (selection.isSelectionMode) {
@@ -872,6 +886,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                   <DateDivider date={dateKey} />
                   {items.map((item) => {
               const isSelected = selection.selectedItems.has(item.id);
+              const isTargetParent = isSelectingParent && targetParentId === item.id;
               const ItemContent = () => {
                 // Use batch vote data instead of individual query
                 const isDownvoted = batchVoteScoresMap?.get(item.id)?.isDownvoted || false;
@@ -1424,7 +1439,9 @@ export const ContentList: React.FC<ContentListProps> = ({
                       ? 'ring-2 ring-blue-400 shadow-lg'
                       : ''
                   } ${
-                    isSelected
+                    isTargetParent
+                      ? 'border-orange-500 border-2 ring-2 ring-orange-300'
+                      : isSelected
                       ? 'border-blue-500 border-2 bg-blue-50'
                       : 'border-gray-200'
                   }`}

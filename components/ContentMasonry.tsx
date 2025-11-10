@@ -53,6 +53,10 @@ interface ContentMasonryProps {
   onActivateExternalSearch?: (workflowId: string) => void;
   onExecuteExternalSearch?: () => void;
   selectedTagFilter?: TagFilter[];
+  isSelectingParent?: boolean;
+  targetParentId?: string | null;
+  onSelectParent?: (contentId: string) => void;
+  itemsBeingMoved?: string[];
 }
 
 interface TagDisplayProps {
@@ -101,7 +105,11 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
   activeExternalSearch = null,
   onActivateExternalSearch = () => {},
   onExecuteExternalSearch = () => {},
-  selectedTagFilter = []
+  selectedTagFilter = [],
+  isSelectingParent = false,
+  targetParentId = null,
+  onSelectParent = () => {},
+  itemsBeingMoved = []
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -431,6 +439,12 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
       }
     }
 
+    // Parent selection mode - select this item as the new parent
+    if (isSelectingParent && onSelectParent) {
+      onSelectParent(contentItem.id);
+      return;
+    }
+
     if (selection.isSelectionMode) {
       // In selection mode, toggle item selection
       selection.toggleItem(contentItem.id);
@@ -517,6 +531,7 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
   // Render individual content item (same logic as ContentList)
   const renderContentItem = (item: Content) => {
     const isSelected = selection.selectedItems.has(item.id);
+    const isTargetParent = isSelectingParent && targetParentId === item.id;
 
     return (
       <motion.div
@@ -528,7 +543,9 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
             ? 'ring-2 ring-blue-400 shadow-lg'
             : ''
         } ${
-          isSelected
+          isTargetParent
+            ? 'border-orange-500 border-2 ring-2 ring-orange-300'
+            : isSelected
             ? 'border-blue-500 border-2 bg-blue-50'
             : 'border-gray-200'
         }`}

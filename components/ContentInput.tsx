@@ -27,6 +27,7 @@ interface ContentInputProps {
   onContentAdded: (content: Content) => void;
   onNavigate?: (contentId: string) => void;
   onActionSelect?: (action: ContentAction) => void;
+  onAIChatV2Open?: (content: Content) => void;
   availableTags?: Tag[];
 }
 
@@ -38,6 +39,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   onContentAdded,
   onNavigate,
   onActionSelect,
+  onAIChatV2Open,
   availableTags = []
 }) => {
   // Internal state for active content action
@@ -45,15 +47,34 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   const navigate = useNavigate();
 
   // Handle action selection
-  const handleActionSelect = (action: ContentAction) => {
+  const handleActionSelect = async (action: ContentAction) => {
     // If import action and parent wants to handle it, delegate to parent
     if (action === 'import' && onActionSelect) {
       onActionSelect(action);
       return;
     }
-    // Navigate to AI Chat V2 page
+    // Create AI Chat V2 content and open sidebar
     if (action === 'ai-chat-v2') {
-      navigate(`/group/${groupId}/ai-chat`);
+      try {
+        const chatContent = await createContentMutation.mutateAsync({
+          type: 'ai-chat',
+          data: 'AI Chat Session',
+          group_id: groupId,
+          parent_content_id: parentContentId,
+          metadata: {
+            chat_history: [],
+            created_via: 'ai-chat-v2',
+            created_at: new Date().toISOString()
+          }
+        });
+
+        // Open sidebar with this content
+        if (onAIChatV2Open) {
+          onAIChatV2Open(chatContent);
+        }
+      } catch (error) {
+        toast.error('Failed to start AI chat', error instanceof Error ? error.message : 'Unknown error');
+      }
       return;
     }
     // Open modal for rich text editor

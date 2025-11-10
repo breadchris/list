@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type {
   ContentResponse,
   SEOExtractPayload,
@@ -1061,6 +1062,7 @@ import { transpileTSX, validateTSXSource } from "./tsx-transpiler.js";
 export async function handleTSXTranspile(
   supabase: any,
   payload: TSXTranspilePayload,
+  headers?: Record<string, string>,
 ): Promise<TSXTranspileResponse> {
   try {
     // Validate input
@@ -1081,6 +1083,25 @@ export async function handleTSXTranspile(
     }
 
     const filename = payload.filename || "component.tsx";
+
+    // Generate ETag from source code hash
+    const hash = createHash("sha256")
+      .update(payload.tsx_code)
+      .digest("hex");
+    const etag = `"${hash.substring(0, 16)}"`;
+
+    // Check if client has cached version (If-None-Match header)
+    if (headers?.["if-none-match"] === etag) {
+      console.log(
+        `TSX cache hit for ${filename} (ETag: ${etag})`,
+      );
+      return {
+        success: true,
+        etag,
+        cache_hit: true,
+        // No compiled_js needed for cache hit
+      };
+    }
 
     console.log(
       `Transpiling TSX: ${filename} (${payload.tsx_code.length} bytes)`,
@@ -1107,6 +1128,8 @@ export async function handleTSXTranspile(
       success: true,
       compiled_js: result.compiledJS,
       warnings: result.warnings,
+      etag,
+      cache_hit: false,
     };
   } catch (error: any) {
     console.error("TSX transpilation handler error:", error);
@@ -1413,6 +1436,7 @@ const chatResponseSchema = z.object({
 export interface ChatV2StreamPayload {
   prompt?: string; // For experimental_useObject
   messages?: Array<{ role: "user" | "assistant"; content: string }>; // For useChat
+  pageContext?: string; // Optional page text content for context
 }
 
 /**
@@ -1452,7 +1476,16 @@ export async function handleChatV2Stream(payload: ChatV2StreamPayload) {
   });
 
   // System prompt to instruct model to generate follow-up questions
-  const systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+  // Include page context if provided (from Chrome extension sidebar)
+  let systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+
+  if (payload.pageContext) {
+    systemPrompt = `You are a helpful AI assistant with access to the following page content:
+
+${payload.pageContext}
+
+Answer questions about this content, provide insights, and suggest related topics. After answering, provide 3-5 relevant follow-up questions the user might want to ask next.`;
+  }
 
   // Prepend system message to conversation
   const messagesWithSystem = [
@@ -1512,7 +1545,16 @@ export async function handleChatV2StreamResponse(payload: ChatV2StreamPayload) {
   });
 
   // System prompt to instruct model to generate follow-up questions
-  const systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+  // Include page context if provided (from Chrome extension sidebar)
+  let systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+
+  if (payload.pageContext) {
+    systemPrompt = `You are a helpful AI assistant with access to the following page content:
+
+${payload.pageContext}
+
+Answer questions about this content, provide insights, and suggest related topics. After answering, provide 3-5 relevant follow-up questions the user might want to ask next.`;
+  }
 
   // Prepend system message to conversation
   const messagesWithSystem = [

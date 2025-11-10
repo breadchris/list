@@ -168,23 +168,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           url: window.location.href,
           title: document.title
         };
-        console.log('Extracted page data:', { 
-          url: pageData.url, 
-          title: pageData.title, 
-          htmlLength: pageData.html.length 
+        console.log('Extracted page data:', {
+          url: pageData.url,
+          title: pageData.title,
+          htmlLength: pageData.html.length
         });
         sendResponse(pageData);
       } catch (error) {
         console.error('Error extracting page HTML:', error);
-        sendResponse({ 
-          html: '', 
-          url: window.location.href, 
-          title: document.title, 
-          error: error.message 
+        sendResponse({
+          html: '',
+          url: window.location.href,
+          title: document.title,
+          error: error.message
         });
       }
       return true; // Keep message channel open for async response
-      
+
+    case 'get-page-text':
+      try {
+        // Extract visible text from the page
+        // Try to get main content first, fallback to body
+        let textContent = '';
+
+        // Attempt to find main content area
+        const mainContent = document.querySelector('main, article, .content, #content, [role="main"]');
+
+        if (mainContent) {
+          textContent = mainContent.innerText;
+        } else {
+          textContent = document.body.innerText;
+        }
+
+        // Clean up excessive whitespace
+        textContent = textContent.replace(/\n\s*\n/g, '\n\n').trim();
+
+        console.log('Extracted page text:', {
+          url: window.location.href,
+          title: document.title,
+          textLength: textContent.length,
+          hasMainContent: !!mainContent
+        });
+
+        sendResponse({
+          text: textContent,
+          url: window.location.href,
+          title: document.title
+        });
+      } catch (error) {
+        console.error('Error extracting page text:', error);
+        sendResponse({
+          text: '',
+          url: window.location.href,
+          title: document.title,
+          error: error.message
+        });
+      }
+      return true; // Keep message channel open for async response
+
     default:
       // Unknown action, no response needed
       break;
