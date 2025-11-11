@@ -1975,7 +1975,7 @@ export class ContentRepository {
         return false;
       }
 
-      const { data, error } = await supabase
+      const { data, error} = await supabase
         .from("content")
         .select("user_id")
         .eq("id", contentId)
@@ -1989,6 +1989,68 @@ export class ContentRepository {
     } catch (error) {
       console.error("Failed to check content sharing permissions:", error);
       return false;
+    }
+  }
+
+  // Get user's public content in a specific group (for profile pages)
+  async getUserPublicContentInGroup(
+    userId: string,
+    groupId: string,
+    offset = 0,
+    limit = 20
+  ): Promise<Content[]> {
+    try {
+      // Query root-level public content for a specific user in a specific group
+      const { data, error } = await supabase
+        .from("content_relationships")
+        .select(
+          `
+          display_order,
+          child:content!inner!to_content_id (
+            *,
+            content_tags!left (
+              tags (
+                id,
+                created_at,
+                name,
+                color,
+                user_id
+              )
+            )
+          )
+        `
+        )
+        .is("from_content_id", null) // Only root items
+        .eq("child.group_id", groupId)
+        .eq("child.user_id", userId)
+        .order("child(created_at)", { ascending: false }) // Newest first
+        .range(offset, offset + limit - 1);
+
+      if (error) {
+        console.error("Error fetching user public content:", error);
+        throw new Error(error.message);
+      }
+
+      // Extract child content and transform tags
+      const rootData = (data || []).map((item: any) => item.child);
+
+      const contentWithTags = rootData.map((item: any) => ({
+        ...item,
+        tags:
+          (item as any).content_tags
+            ?.map((ct: any) => ct.tags)
+            .filter(Boolean) || [],
+      }));
+
+      // Filter to only public content (client-side check as additional safety layer)
+      // RLS policy should already enforce this, but we double-check
+      return contentWithTags.filter(
+        (item: Content) =>
+          item.metadata?.sharing?.isPublic === true
+      );
+    } catch (error) {
+      console.error("Failed to fetch user public content:", error);
+      throw error;
     }
   }
 
@@ -2978,6 +3040,135 @@ export class ContentRepository {
     if (childError) {
       console.error("Error deleting child relationships:", childError);
       throw new Error(childError.message);
+    }
+  }
+
+  /**
+   * Load all messages in a chat tree (for branching chat)
+   * Queries all content items that are descendants of the chat root
+   */
+  async loadChatTree(chatRootId: string): Promise<Content[]> {
+    try {
+      // Recursively load all children
+      const loadChildren = async (parentId: string): Promise<Content[]> => {
+        const { data, error } = await supabase
+          .from("content")
+          .select("*")
+          .eq("parent_content_id", parentId)
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          console.error("Error loading chat children:", error);
+          throw new Error(error.message);
+        }
+
+        if (!data || data.length === 0) {
+          return [];
+        }
+
+        // Recursively load children of children
+        const allChildren: Content[] = [...data];
+        for (const child of data) {
+          const grandchildren = await loadChildren(child.id);
+          allChildren.push(...grandchildren);
+        }
+
+        return allChildren;
+      };
+
+      return await loadChildren(chatRootId);
+    } catch (error) {
+      console.error("Error loading chat tree:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new chat message (user or assistant)
+   * Used by branching chat to persist messages
+   */
+  async createChatMessage(params: {
+    groupId: string;
+    parentContentId: string;
+    data: string;
+    metadata: {
+      sender: "user" | "assistant";
+      branch_label?: string;
+      created_at_ms: number;
+      follow_up_questions?: string[];
+    };
+  }): Promise<Content> {
+    const { groupId, parentContentId, data, metadata } = params;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
+      const { data: newContent, error } = await supabase
+        .from("content")
+        .insert({
+          type: "ai-chat",
+          data,
+          group_id: groupId,
+          user_id: user.id,
+          parent_content_id: parentContentId,
+          metadata,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating chat message:", error);
+        throw new Error(error.message);
+      }
+
+      return newContent;
+    } catch (error) {
+      console.error("Error creating chat message:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get siblings for a chat message (for branch navigation)
+   * Returns all messages with the same parent
+   */
+  async getChatSiblings(messageId: string): Promise<Content[]> {
+    try {
+      // First get the message to find its parent
+      const { data: message, error: messageError } = await supabase
+        .from("content")
+        .select("parent_content_id")
+        .eq("id", messageId)
+        .single();
+
+      if (messageError) {
+        console.error("Error finding message:", messageError);
+        throw new Error(messageError.message);
+      }
+
+      if (!message.parent_content_id) {
+        return [];
+      }
+
+      // Get all siblings (same parent)
+      const { data: siblings, error: siblingsError } = await supabase
+        .from("content")
+        .select("*")
+        .eq("parent_content_id", message.parent_content_id)
+        .order("created_at", { ascending: true });
+
+      if (siblingsError) {
+        console.error("Error loading siblings:", siblingsError);
+        throw new Error(siblingsError.message);
+      }
+
+      return siblings || [];
+    } catch (error) {
+      console.error("Error getting chat siblings:", error);
+      throw error;
     }
   }
 }

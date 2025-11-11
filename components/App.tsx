@@ -6,6 +6,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { ListApp } from './ListApp';
 import { GroupSettingsPage } from './GroupSettingsPage';
 import { PublicContentView } from './PublicContentView';
+import { UserProfilePage } from './UserProfilePage';
 import { TermsOfService } from './TermsOfService';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { RefundPolicy } from './RefundPolicy';
@@ -14,6 +15,7 @@ import { AdminPage } from './AdminPage';
 import { AIChatV2Page } from './AIChatV2Page';
 import { UserSettingsPage } from './UserSettingsPage';
 import BranchingChatPage from './BranchingChatPage';
+import { CalendarPage } from './CalendarPage';
 
 /**
  * Main App component that wraps the application with providers and React Router
@@ -33,10 +35,14 @@ export const App: React.FC = () => {
               <Route path="/group/:groupId/settings" element={<GroupSettingsPage />} />
               <Route path="/group/:groupId/ai-chat" element={<AIChatV2Page />} />
               <Route path="/group/:groupId/chat" element={<BranchingChatPage />} />
+              <Route path="/group/:groupId/calendar" element={<CalendarPage />} />
               <Route path="/invite/:joinCode" element={<ListApp />} />
 
               {/* Public content route */}
               <Route path="/public/content/:contentId" element={<PublicContentView />} />
+
+              {/* User profile route */}
+              <Route path="/group/:groupId/user/:userId" element={<UserProfilePage />} />
 
               {/* Admin page */}
               <Route path="/admin" element={<AdminPage />} />

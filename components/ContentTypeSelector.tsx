@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type ContentType = 'text' | 'ai-chat' | 'search' | 'image' | 'epub' | 'audio' | 'map';
+export type ContentType = 'text' | 'ai-chat' | 'search' | 'image' | 'epub' | 'audio' | 'map' | 'timeline';
 
 interface ContentTypeSelectorProps {
   selectedType: ContentType;
@@ -114,6 +114,21 @@ export const ContentTypeSelector: React.FC<ContentTypeSelectorProps> = ({
             <path d="M12 0c-4.198 0-8 3.403-8 7.602 0 4.198 3.469 9.21 8 16.398 4.531-7.188 8-12.2 8-16.398 0-4.199-3.801-7.602-8-7.602zm0 11c-1.657 0-3-1.343-3-3s1.343-3 3-3 3 1.343 3 3-1.343 3-3 3z" />
           </svg>
           <span className="text-sm font-medium">Map</span>
+        </button>
+
+        <button
+          onClick={() => onSelectType('timeline')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors flex-shrink-0 ${
+            selectedType === 'timeline'
+              ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+              : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" strokeWidth={2} />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
+          </svg>
+          <span className="text-sm font-medium">Timeline</span>
         </button>
       </div>
     </div>

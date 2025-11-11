@@ -105,6 +105,9 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   const [showPluginEditor, setShowPluginEditor] = useState(false);
   const [pluginContentId, setPluginContentId] = useState<string | null>(null);
   const [showRichTextModal, setShowRichTextModal] = useState(false);
+  const [timelineTitle, setTimelineTitle] = useState('');
+  const [timelineContext, setTimelineContext] = useState('');
+  const [timelineDuration, setTimelineDuration] = useState('');
   const pendingAISubmitRef = useRef(false);
   const hasCreatedPluginRef = useRef(false);
   const toast = useToast();
@@ -555,6 +558,41 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     }
   };
 
+  const handleCreateTimeline = async () => {
+    try {
+      const duration = Number(timelineDuration);
+      if (isNaN(duration) || duration <= 0) {
+        toast.error('Invalid Duration', 'Please enter a valid duration in seconds');
+        return;
+      }
+
+      // Create timeline content with metadata
+      const newContent = await createContentMutation.mutateAsync({
+        type: 'timeline',
+        data: timelineTitle,
+        group_id: groupId,
+        parent_content_id: parentContentId,
+        metadata: {
+          duration,
+          current_time: 0,
+          markers: [],
+          context: timelineContext || undefined,
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      onContentAdded(newContent);
+      toast.success('Timeline Created', `Timeline "${timelineTitle}" has been created`);
+      setActiveAction(null);
+      setTimelineTitle('');
+      setTimelineContext('');
+      setTimelineDuration('');
+    } catch (error) {
+      console.error('Error creating timeline:', error);
+      toast.error('Error', 'Failed to create timeline');
+    }
+  };
+
   // Auto-create plugin content when plugin action is selected
   React.useEffect(() => {
     // Reset flag when action changes away from plugin
@@ -670,6 +708,74 @@ export const ContentInput: React.FC<ContentInputProps> = ({
               onSave={handleMapSaved}
               onCancel={() => setActiveAction(null)}
             />
+          </div>
+        </div>
+      )}
+
+      {activeAction === 'timeline' && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h2 className="text-xl font-bold mb-4">Create Timeline</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Movie Timestamps"
+                  value={timelineTitle}
+                  onChange={(e) => setTimelineTitle(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Context (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Movie: The Matrix"
+                  value={timelineContext}
+                  onChange={(e) => setTimelineContext(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Duration (seconds)
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g., 7200 (2 hours)"
+                  value={timelineDuration}
+                  onChange={(e) => setTimelineDuration(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  min="1"
+                />
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleCreateTimeline}
+                  disabled={!timelineTitle || !timelineDuration}
+                  className="flex-1 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveAction(null);
+                    setTimelineTitle('');
+                    setTimelineContext('');
+                    setTimelineDuration('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

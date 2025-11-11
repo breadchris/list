@@ -1,7 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { ChatHistory } from '../hooks/useAIChatV2';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { BasePromptEditor } from './BasePromptEditor';
 
 export interface Content {
   id: string;
@@ -27,6 +28,8 @@ interface AIChatV2SidebarProps {
   isLoading: boolean;
   error: any;
   onFollowUpClick: (question: string) => void;
+  basePrompt: string;
+  onBasePromptChange: (prompt: string) => void;
 }
 
 export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
@@ -34,13 +37,16 @@ export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
   onClose,
   chatContent,
   groupId,
-  history,
+  history = [],
   currentResponse,
   isLoading,
   error,
   onFollowUpClick,
+  basePrompt,
+  onBasePromptChange,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isPromptEditorCollapsed, setIsPromptEditorCollapsed] = useState(true);
 
   // Auto-scroll to bottom when history or currentResponse updates
   useEffect(() => {
@@ -50,23 +56,9 @@ export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="flex flex-col bg-white h-full">{/* AI Chat Interface */}
-        {/* Header */}
-        <div className="bg-white border-b shadow-sm">
-          <div className="flex items-center justify-between p-4">
-            <h1 className="text-xl font-semibold text-gray-800">AI Chat V2 (Streaming)</h1>
-            <button
-              onClick={onClose}
-              className="text-gray-600 hover:text-gray-800 transition-colors"
-              title="Close"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
+    <div className="flex flex-row bg-white h-full">{/* AI Chat Interface with Prompt Editor */}
+      {/* Chat Section */}
+      <div className="flex-1 flex flex-col bg-white h-full min-h-0">
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
           {history.length === 0 && !currentResponse ? (
@@ -159,6 +151,15 @@ export const AIChatV2Sidebar: React.FC<AIChatV2SidebarProps> = ({
           )}
           <div ref={messagesEndRef} />
         </div>
+      </div>
+
+      {/* Base Prompt Editor (right sidebar) */}
+      <BasePromptEditor
+        value={basePrompt}
+        onChange={onBasePromptChange}
+        isCollapsed={isPromptEditorCollapsed}
+        onToggleCollapse={() => setIsPromptEditorCollapsed(!isPromptEditorCollapsed)}
+      />
     </div>
   );
 };

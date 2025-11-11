@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Drawer } from './vaul/index';
 
-export type ContentAction = 'text' | 'rich-text' | 'ai-chat' | 'ai-chat-v2' | 'claude-code' | 'image' | 'epub' | 'plugin' | 'import' | 'map';
+export type ContentAction = 'text' | 'rich-text' | 'ai-chat' | 'ai-chat-v2' | 'claude-code' | 'image' | 'epub' | 'plugin' | 'import' | 'map' | 'timeline';
 
 interface ActionConfig {
   id: ContentAction;
@@ -23,7 +23,8 @@ export const ACTION_COLORS: Record<ContentAction, { bg: string; text: string; he
   'image': { bg: 'bg-green-500', text: 'text-green-600', hex: '#10B981' },
   'epub': { bg: 'bg-orange-500', text: 'text-orange-600', hex: '#F97316' },
   'plugin': { bg: 'bg-pink-500', text: 'text-pink-600', hex: '#EC4899' },
-  'map': { bg: 'bg-red-500', text: 'text-red-600', hex: '#EF4444' }
+  'map': { bg: 'bg-red-500', text: 'text-red-600', hex: '#EF4444' },
+  'timeline': { bg: 'bg-indigo-500', text: 'text-indigo-600', hex: '#6366F1' }
 };
 
 const ACTIONS: ActionConfig[] = [
@@ -80,6 +81,12 @@ const ACTIONS: ActionConfig[] = [
     icon: '📍',
     label: 'Map',
     ...ACTION_COLORS['map']
+  },
+  {
+    id: 'timeline',
+    icon: '⏱️',
+    label: 'Timeline',
+    ...ACTION_COLORS['timeline']
   },
   {
     id: 'plugin',

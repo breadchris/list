@@ -1,5 +1,5 @@
 import { experimental_useObject as useObject } from "@ai-sdk/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { z } from "zod";
 
 // Build-time constant (injected by esbuild Define)
@@ -27,6 +27,8 @@ export type ChatHistory = Array<{
 export interface UseAIChatV2Options {
   initialHistory?: ChatHistory;
   onHistoryChange?: (history: ChatHistory) => void;
+  basePrompt?: string; // Custom system prompt for this chat session
+  onBasePromptChange?: (basePrompt: string) => void;
 }
 
 /**
@@ -48,8 +50,22 @@ export interface UseAIChatV2Options {
 export function useAIChatV2(options?: UseAIChatV2Options) {
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<ChatHistory>(
-    options?.initialHistory || []
+    options?.initialHistory || [],
   );
+  const [basePrompt, setBasePrompt] = useState<string>(
+    options?.basePrompt || "",
+  );
+
+  // Ref to track latest history state (prevents stale closures)
+  const historyRef = useRef<ChatHistory>([]);
+
+  // Destructure callbacks to stable references (prevents unnecessary effect triggers)
+  const { onHistoryChange, onBasePromptChange } = options || {};
+
+  // Keep ref in sync with history state
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
 
   const { object, submit, isLoading, error } = useObject({
     api: `${BUILD_TIME_LAMBDA_ENDPOINT}/content`,
@@ -73,12 +89,19 @@ export function useAIChatV2(options?: UseAIChatV2Options) {
     },
   });
 
-  // Notify parent of history changes
+  // Notify parent of history changes (using destructured callback for stable dependency)
   useEffect(() => {
-    if (options?.onHistoryChange && history.length > 0) {
-      options.onHistoryChange(history);
+    if (onHistoryChange && history.length > 0) {
+      onHistoryChange(history);
     }
-  }, [history, options]);
+  }, [history, onHistoryChange]);
+
+  // Notify parent of base prompt changes (using destructured callback for stable dependency)
+  useEffect(() => {
+    if (onBasePromptChange) {
+      onBasePromptChange(basePrompt);
+    }
+  }, [basePrompt, onBasePromptChange]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
@@ -109,8 +132,16 @@ export function useAIChatV2(options?: UseAIChatV2Options) {
       { role: "user" as const, content: userMessage },
     ];
 
+    // Prepend system message if base prompt is provided
+    const messagesWithSystem = basePrompt
+      ? [{ role: "assistant" as const, content: basePrompt }, ...messages]
+      : messages;
+
     // Submit with messages array and action field
-    submit({ action: "chat-v2-stream", messages });
+    submit({
+      action: "chat-v2-stream",
+      messages: messagesWithSystem,
+    });
 
     setInput("");
   };
@@ -126,16 +157,25 @@ export function useAIChatV2(options?: UseAIChatV2Options) {
       },
     ]);
 
-    // Build messages array from history + follow-up question
+    // Use historyRef to get latest history state (prevents stale closure)
     const messages = [
-      ...history.map((msg) => ({
+      ...historyRef.current.map((msg) => ({
         role: msg.role,
         content: msg.content,
       })),
       { role: "user" as const, content: question },
     ];
 
-    submit({ action: "chat-v2-stream", messages });
+    // Prepend system message if base prompt is provided
+    const messagesWithSystem = basePrompt
+      ? [{ role: "system" as const, content: basePrompt }, ...messages]
+      : messages;
+
+    // Submit with messages array and action field
+    submit({
+      action: "chat-v2-stream",
+      messages: messagesWithSystem,
+    });
     setInput("");
   };
 
@@ -148,5 +188,7 @@ export function useAIChatV2(options?: UseAIChatV2Options) {
     currentResponse: object,
     isLoading,
     error,
+    basePrompt,
+    setBasePrompt,
   };
 }

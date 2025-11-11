@@ -1437,6 +1437,7 @@ export interface ChatV2StreamPayload {
   prompt?: string; // For experimental_useObject
   messages?: Array<{ role: "user" | "assistant"; content: string }>; // For useChat
   pageContext?: string; // Optional page text content for context
+  base_prompt?: string; // Optional custom system prompt override
 }
 
 /**
@@ -1452,7 +1453,7 @@ export async function handleChatV2Stream(payload: ChatV2StreamPayload) {
   }
 
   // Normalize payload to messages format
-  let messages: Array<{ role: "user" | "assistant"; content: string }>;
+  let messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
 
   if (payload.prompt) {
     // experimental_useObject format: convert prompt to messages
@@ -1475,23 +1476,45 @@ export async function handleChatV2Stream(payload: ChatV2StreamPayload) {
     apiKey: openaiApiKey,
   });
 
-  // System prompt to instruct model to generate follow-up questions
-  // Include page context if provided (from Chrome extension sidebar)
-  let systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+  // Check if first message is already a system message from frontend
+  // If yes, append follow-up instructions to that system message
+  // If no, use default system prompt or pageContext prompt
+  let messagesWithSystem: Array<{ role: "system" | "user" | "assistant"; content: string }>;
 
-  if (payload.pageContext) {
-    systemPrompt = `You are a helpful AI assistant with access to the following page content:
+  if (messages.length > 0 && messages[0].role === "system") {
+    // Frontend provided a system message - append follow-up instructions
+    const userSystemPrompt = messages[0].content;
+    const enhancedSystemPrompt = `${userSystemPrompt}\n\nAfter answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+
+    messagesWithSystem = [
+      { role: "system" as const, content: enhancedSystemPrompt },
+      ...messages.slice(1), // Rest of messages (skip the first system message)
+    ];
+  } else {
+    // No system message from frontend - construct default
+    let systemPrompt: string;
+
+    if (payload.base_prompt) {
+      // Legacy base_prompt field (deprecated - prefer system message in messages array)
+      systemPrompt = `${payload.base_prompt}\n\nAfter answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+    } else if (payload.pageContext) {
+      // Default prompt with page context
+      systemPrompt = `You are a helpful AI assistant with access to the following page content:
 
 ${payload.pageContext}
 
 Answer questions about this content, provide insights, and suggest related topics. After answering, provide 3-5 relevant follow-up questions the user might want to ask next.`;
-  }
+    } else {
+      // Default prompt without page context
+      systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+    }
 
-  // Prepend system message to conversation
-  const messagesWithSystem = [
-    { role: "system" as const, content: systemPrompt },
-    ...messages,
-  ];
+    // Prepend system message to conversation
+    messagesWithSystem = [
+      { role: "system" as const, content: systemPrompt },
+      ...messages,
+    ];
+  }
 
   // Use Vercel AI SDK streamObject for structured streaming
   const result = streamObject({
@@ -1521,7 +1544,7 @@ export async function handleChatV2StreamResponse(payload: ChatV2StreamPayload) {
   }
 
   // Normalize payload to messages format
-  let messages: Array<{ role: "user" | "assistant"; content: string }>;
+  let messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
 
   if (payload.prompt) {
     // experimental_useObject format: convert prompt to messages
@@ -1544,23 +1567,45 @@ export async function handleChatV2StreamResponse(payload: ChatV2StreamPayload) {
     apiKey: openaiApiKey,
   });
 
-  // System prompt to instruct model to generate follow-up questions
-  // Include page context if provided (from Chrome extension sidebar)
-  let systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+  // Check if first message is already a system message from frontend
+  // If yes, append follow-up instructions to that system message
+  // If no, use default system prompt or pageContext prompt
+  let messagesWithSystem: Array<{ role: "system" | "user" | "assistant"; content: string }>;
 
-  if (payload.pageContext) {
-    systemPrompt = `You are a helpful AI assistant with access to the following page content:
+  if (messages.length > 0 && messages[0].role === "system") {
+    // Frontend provided a system message - append follow-up instructions
+    const userSystemPrompt = messages[0].content;
+    const enhancedSystemPrompt = `${userSystemPrompt}\n\nAfter answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+
+    messagesWithSystem = [
+      { role: "system" as const, content: enhancedSystemPrompt },
+      ...messages.slice(1), // Rest of messages (skip the first system message)
+    ];
+  } else {
+    // No system message from frontend - construct default
+    let systemPrompt: string;
+
+    if (payload.base_prompt) {
+      // Legacy base_prompt field (deprecated - prefer system message in messages array)
+      systemPrompt = `${payload.base_prompt}\n\nAfter answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+    } else if (payload.pageContext) {
+      // Default prompt with page context
+      systemPrompt = `You are a helpful AI assistant with access to the following page content:
 
 ${payload.pageContext}
 
 Answer questions about this content, provide insights, and suggest related topics. After answering, provide 3-5 relevant follow-up questions the user might want to ask next.`;
-  }
+    } else {
+      // Default prompt without page context
+      systemPrompt = `You are a helpful AI assistant. After answering the user's question, provide 3-5 relevant follow-up questions they might want to ask next. The follow-up questions should be natural, conversational, and help the user explore the topic further.`;
+    }
 
-  // Prepend system message to conversation
-  const messagesWithSystem = [
-    { role: "system" as const, content: systemPrompt },
-    ...messages,
-  ];
+    // Prepend system message to conversation
+    messagesWithSystem = [
+      { role: "system" as const, content: systemPrompt },
+      ...messages,
+    ];
+  }
 
   // Use Vercel AI SDK streamObject for structured streaming
   const result = streamObject({

@@ -8,7 +8,7 @@ interface UrlPreviewCardProps {
 /**
  * Component to display URL preview screenshots
  */
-export const UrlPreviewCard: React.FC<UrlPreviewCardProps> = ({ previewUrl, className = '' }) => {
+export const UrlPreviewCard = React.memo<UrlPreviewCardProps>(({ previewUrl, className = '' }) => {
   const fullImageUrl = previewUrl;
 
   return (
@@ -49,7 +49,7 @@ export const UrlPreviewCard: React.FC<UrlPreviewCardProps> = ({ previewUrl, clas
       </div>
     </div>
   );
-};
+});
 
 interface UrlPreviewLoadingProps {
   url: string;

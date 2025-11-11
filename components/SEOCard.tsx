@@ -7,7 +7,7 @@ interface SEOCardProps {
   onClick?: () => void;
 }
 
-export const SEOCard: React.FC<SEOCardProps> = ({ metadata, className = '', onClick }) => {
+export const SEOCard = React.memo<SEOCardProps>(({ metadata, className = '', onClick }) => {
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     if (metadata.url) {
@@ -140,7 +140,7 @@ export const SEOCard: React.FC<SEOCardProps> = ({ metadata, className = '', onCl
       </div>
     </div>
   );
-};
+});
 
 // Add custom CSS for line clamping
 const style = document.createElement('style');

@@ -190,8 +190,8 @@ export const FocusActionBar: React.FC<FocusActionBarProps> = ({
       {isTagSelectorOpen && (
         <TagSelector
           contentId={contentItem.id}
-          groupId={groupId}
-          currentTags={contentItem.tags || []}
+          existingTags={contentItem.tags || []}
+          onSave={() => setIsTagSelectorOpen(false)}
           onClose={() => setIsTagSelectorOpen(false)}
         />
       )}

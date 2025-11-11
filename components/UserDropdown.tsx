@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from './SupabaseClient';
+import { User } from 'lucide-react';
 
 interface UserDropdownProps {
-  user: { email: string | null } | null;
+  user: { id?: string; email: string | null } | null;
+  currentGroupId?: string;
 }
 
 /**
@@ -13,7 +15,7 @@ interface UserDropdownProps {
  * - Settings link
  * - Sign out button
  */
-export const UserDropdown: React.FC<UserDropdownProps> = ({ user }) => {
+export const UserDropdown: React.FC<UserDropdownProps> = ({ user, currentGroupId }) => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -45,6 +47,13 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({ user }) => {
     setIsOpen(false);
   };
 
+  const handleViewProfile = () => {
+    if (user?.id && currentGroupId) {
+      navigate(`/group/${currentGroupId}/user/${user.id}`);
+      setIsOpen(false);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -73,6 +82,17 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({ user }) => {
               </p>
               <p className="text-xs text-gray-500 mt-0.5">Signed in</p>
             </div>
+
+            {/* View My Profile Option - only show if we have a current group */}
+            {currentGroupId && user?.id && (
+              <button
+                onClick={handleViewProfile}
+                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-colors text-gray-700 flex items-center space-x-3"
+              >
+                <User className="w-4 h-4 text-gray-500" />
+                <span className="text-sm">View My Profile</span>
+              </button>
+            )}
 
             {/* Settings Option */}
             <button

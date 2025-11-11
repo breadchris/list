@@ -10,11 +10,15 @@ import { JsContentDisplay } from './JsContentDisplay';
 import { UrlPreviewCard } from './UrlPreviewCard';
 import { YouTubeVideoCard } from './YouTubeVideoCard';
 import { YouTubeSectionCard } from './YouTubeSectionCard';
+import { SocialMediaEmbed } from './SocialMediaEmbed';
+import { detectSocialMediaUrl, extractSocialMediaUrls } from '../utils/socialMediaDetector';
 import { ImageDisplay } from './ImageDisplay';
 import { AudioDisplay } from './AudioDisplay';
 import { EpubViewer } from './EpubViewer';
 import { TranscriptViewer } from './TranscriptViewer';
 import { MapDisplay, type MapData } from './MapDisplay';
+import TimelinePlayer from './timeline/TimelinePlayer';
+import type { TimelineMetadata } from './timeline/types';
 import { TsxRenderer } from './TsxRenderer';
 import { PluginRenderer } from './PluginRenderer';
 import { useToast } from './ToastProvider';
@@ -675,6 +679,52 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
                   )}
                 </div>
               </div>
+            ) : item.type === 'timeline' ? (
+              <div>
+                <div className="flex items-center space-x-2 mb-2">
+                  <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" strokeWidth={2} />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
+                  </svg>
+                  <span className="text-xs font-medium text-indigo-600 uppercase tracking-wide">Timeline</span>
+                </div>
+                <div className="border border-gray-200 rounded-lg overflow-hidden" style={{ height: '700px' }}>
+                  <TimelinePlayer
+                    contentId={item.id}
+                    title={item.data}
+                    metadata={item.metadata as TimelineMetadata}
+                    onUpdate={async (updatedMetadata: TimelineMetadata) => {
+                      try {
+                        await contentRepository.updateContent(
+                          item.id,
+                          { metadata: updatedMetadata }
+                        );
+                        queryClient.invalidateQueries({ queryKey: [QueryKeys.CONTENT_BY_PARENT, parentContentId, groupId] });
+                      } catch (error) {
+                        console.error('Error updating timeline:', error);
+                        toast.error('Failed to update timeline', error instanceof Error ? error.message : 'Unknown error');
+                      }
+                    }}
+                    onClose={() => {
+                      // No-op for embedded view - no close action needed
+                    }}
+                  />
+                </div>
+                <TagDisplay tags={item.tags || []} isVisible={true} />
+                <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                <div className="flex items-center gap-2 mt-2">
+                  <p className="text-xs text-gray-500">
+                    {formatRelativeTime(item.created_at)}
+                  </p>
+                  {item.child_count && item.child_count > 0 && (
+                    <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : item.type === 'video_section' ? (
               <div>
                 {/* YouTube Video Section Card */}
@@ -725,34 +775,49 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
                   )}
                 </div>
               </div>
-            ) : (
-              <div>
-                <LinkifiedText
-                  text={item.data}
-                  className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
-                  maxHeight={200}
-                />
-                {/* URL Preview Image */}
-                {item.metadata?.url_preview && (
-                  <UrlPreviewCard previewUrl={item.metadata.url_preview} />
-                )}
-                <div className="flex items-center gap-2 mt-2">
-                  <p className="text-xs text-gray-500">
-                    {formatRelativeTime(item.created_at)}
-                  </p>
-                  {item.child_count && item.child_count > 0 ? (
-                    <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
-                      <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                      </svg>
-                      <span>{item.child_count}</span>
-                    </div>
+            ) : (() => {
+              // Check if content contains social media URLs
+              const socialMediaUrls = extractSocialMediaUrls(item.data);
+              const primarySocialMedia = socialMediaUrls.length > 0 ? socialMediaUrls[0] : null;
+
+              return (
+                <div>
+                  <LinkifiedText
+                    text={item.data}
+                    className="text-gray-900 whitespace-pre-wrap break-words text-sm sm:text-base"
+                    maxHeight={200}
+                  />
+                  {/* Social Media Embed (takes priority over URL preview) */}
+                  {primarySocialMedia ? (
+                    <SocialMediaEmbed
+                      platform={primarySocialMedia.platform}
+                      url={primarySocialMedia.url}
+                      onError={() => {
+                        // Fallback to URL preview if embed fails
+                      }}
+                    />
+                  ) : item.metadata?.url_preview ? (
+                    /* URL Preview Image (fallback when no social media detected) */
+                    <UrlPreviewCard previewUrl={item.metadata.url_preview} />
                   ) : null}
-                  <TagDisplay tags={item.tags || []} isVisible={true} />
+                  <div className="flex items-center gap-2 mt-2">
+                    <p className="text-xs text-gray-500">
+                      {formatRelativeTime(item.created_at)}
+                    </p>
+                    {item.child_count && item.child_count > 0 ? (
+                      <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
+                        <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                        <span>{item.child_count}</span>
+                      </div>
+                    ) : null}
+                    <TagDisplay tags={item.tags || []} isVisible={true} />
+                  </div>
+                  <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
                 </div>
-                <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* Right gutter for icons and actions */}

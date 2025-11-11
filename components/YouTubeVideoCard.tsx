@@ -8,7 +8,7 @@ interface YouTubeVideoCardProps {
   onClick?: () => void;
 }
 
-export const YouTubeVideoCard: React.FC<YouTubeVideoCardProps> = ({
+export const YouTubeVideoCard = React.memo<YouTubeVideoCardProps>(({
   metadata,
   videoUrl,
   className = '',
@@ -164,7 +164,7 @@ export const YouTubeVideoCard: React.FC<YouTubeVideoCardProps> = ({
       </div>
     </div>
   );
-};
+});
 
 // Add custom CSS for line clamping
 const style = document.createElement('style');

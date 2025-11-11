@@ -1,6 +1,7 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAIChatV2 } from '../hooks/useAIChatV2';
+import { BasePromptEditor } from './BasePromptEditor';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -12,6 +13,8 @@ import remarkGfm from 'remark-gfm';
 export const AIChatV2Page: React.FC = () => {
   const navigate = useNavigate();
   const { groupId } = useParams<{ groupId: string }>();
+  const [basePrompt, setBasePrompt] = useState('');
+  const [isPromptEditorCollapsed, setIsPromptEditorCollapsed] = useState(false);
   const {
     input,
     handleInputChange,
@@ -21,7 +24,9 @@ export const AIChatV2Page: React.FC = () => {
     currentResponse,
     isLoading,
     error,
-  } = useAIChatV2();
+  } = useAIChatV2({
+    basePrompt,
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when history or currentResponse updates
@@ -42,7 +47,7 @@ export const AIChatV2Page: React.FC = () => {
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b shadow-sm">
-        <div className="flex items-center p-4 max-w-4xl mx-auto">
+        <div className="flex items-center p-4">
           <button
             onClick={handleBack}
             className="mr-4 text-gray-600 hover:text-gray-800 transition-colors"
@@ -56,8 +61,10 @@ export const AIChatV2Page: React.FC = () => {
         </div>
       </div>
 
-      {/* Main content area */}
-      <div className="flex-1 overflow-hidden flex flex-col max-w-4xl w-full mx-auto">
+      {/* Main content area with 2-column layout */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Chat area (center) */}
+        <div className="flex-1 overflow-hidden flex flex-col">
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {history.length === 0 && !currentResponse ? (
@@ -151,29 +158,38 @@ export const AIChatV2Page: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input area */}
-        <div className="bg-white border-t shadow-sm">
-          <form onSubmit={handleSubmit} className="p-4">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                name="message"
-                value={input}
-                onChange={handleInputChange}
-                placeholder="Type your message..."
-                disabled={isLoading}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-gray-100"
-              />
-              <button
-                type="submit"
-                disabled={isLoading || !input?.trim()}
-                className="px-6 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                Send
-              </button>
-            </div>
-          </form>
+          {/* Input area */}
+          <div className="bg-white border-t shadow-sm">
+            <form onSubmit={handleSubmit} className="p-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  name="message"
+                  value={input}
+                  onChange={handleInputChange}
+                  placeholder="Type your message..."
+                  disabled={isLoading}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-gray-100"
+                />
+                <button
+                  type="submit"
+                  disabled={isLoading || !input?.trim()}
+                  className="px-6 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  Send
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
+
+        {/* Base Prompt Editor (right sidebar) */}
+        <BasePromptEditor
+          value={basePrompt}
+          onChange={setBasePrompt}
+          isCollapsed={isPromptEditorCollapsed}
+          onToggleCollapse={() => setIsPromptEditorCollapsed(!isPromptEditorCollapsed)}
+        />
       </div>
     </div>
   );

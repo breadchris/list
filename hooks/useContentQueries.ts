@@ -22,6 +22,26 @@ export const usePublicContentChildren = (parentId: string | null, options?: { en
 };
 
 /**
+ * Hook for fetching user's public content in a specific group (for profile pages)
+ */
+export const useUserPublicContent = (
+  userId: string,
+  groupId: string,
+  options?: { enabled?: boolean }
+) => {
+  return useQuery({
+    queryKey: ['user-public-content', userId, groupId],
+    queryFn: async () => {
+      if (!userId || !groupId) return [];
+      return await contentRepository.getUserPublicContentInGroup(userId, groupId, 0, 50);
+    },
+    enabled: !!userId && !!groupId && options?.enabled !== false,
+    staleTime: 300000, // 5 minutes
+    gcTime: 600000, // 10 minutes
+  });
+};
+
+/**
  * Hook for fetching paginated content by parent
  */
 export const useContentByParent = (
