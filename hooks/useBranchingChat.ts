@@ -1,7 +1,9 @@
 import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { useState, useEffect, useCallback } from "react";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { ContentRepository, Content } from "../components/ContentRepository";
+import { CONTENT_TYPE_SCHEMAS, ContentTypeConfig } from "../components/contentTypeSchemas";
 
 // Build-time constant (injected by esbuild Define)
 const BUILD_TIME_LAMBDA_ENDPOINT = LAMBDA_ENDPOINT;
@@ -14,6 +16,14 @@ const chatResponseSchema = z.object({
     .describe(
       "3-5 relevant follow-up questions the user might want to ask next",
     ),
+});
+
+// Intent detection response schema
+const intentDetectionSchema = z.object({
+  intent_detected: z.boolean().describe("Whether a content generation intent was detected"),
+  content_type_id: z.string().optional().describe("The ID of the detected content type"),
+  confidence: z.number().min(0).max(1).optional().describe("Confidence score 0-1"),
+  reasoning: z.string().optional().describe("Why this content type was detected"),
 });
 
 export interface BranchingMessage {
@@ -33,20 +43,29 @@ export interface UseBranchingChatOptions {
   groupId: string;
   chatRootId: string | null; // Content item that is the root of this chat tree
   basePrompt?: string;
+  onContentGenerationSuggestion?: (contentTypeId: string, userMessage: string) => void;
+}
+
+export interface ContentGenerationRequest {
+  content_type_id: string;
+  user_message: string;
+  conversation_history: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
 /**
  * Hook for branching chat with Vercel AI SDK streaming
  * Combines tree structure navigation with real-time AI streaming
+ * Supports configurable content generation (recipes, task lists, etc.)
  */
 export function useBranchingChat(options: UseBranchingChatOptions) {
-  const { groupId, chatRootId, basePrompt = "" } = options;
+  const { groupId, chatRootId, basePrompt = "", onContentGenerationSuggestion } = options;
 
   const [messages, setMessages] = useState<BranchingMessage[]>([]);
   const [currentPath, setCurrentPath] = useState<string[]>(["root"]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
+  const [pendingContentGeneration, setPendingContentGeneration] = useState<ContentGenerationRequest | null>(null);
 
   const repository = new ContentRepository();
 
@@ -131,7 +150,7 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
     if (!message) return [];
 
     return messages.filter(
-      (m) => m.parentId === message.parentId && m.sender === message.sender
+      (m) => m.id !== messageId && m.parentId === message.parentId && m.sender === message.sender
     ).sort((a, b) => a.createdAt - b.createdAt);
   };
 
@@ -234,12 +253,10 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
     setInput(e.target.value);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || !groupId || !chatRootId) return;
+  // Send message directly (no form event required)
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || !groupId || !chatRootId) return;
 
-    const userMessage = input;
-    setInput("");
     setIsLoading(true);
 
     try {
@@ -250,7 +267,7 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
       const userMessageContent = await repository.createChatMessage({
         groupId,
         parentContentId: parentMessageId === "root" ? chatRootId : parentMessageId,
-        data: userMessage,
+        data: text,
         metadata: {
           sender: "user",
           created_at_ms: Date.now(),
@@ -260,7 +277,7 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
       // Add to messages array
       const newUserMessage: BranchingMessage = {
         id: userMessageContent.id,
-        text: userMessage,
+        text,
         sender: "user",
         timestamp: userMessageContent.created_at,
         parentId: parentMessageId === "root" ? chatRootId : parentMessageId,
@@ -279,7 +296,7 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
         action: "chat-v2-stream",
         messages: [
           ...history,
-          { role: "user" as const, content: userMessage },
+          { role: "user" as const, content: text },
         ],
         ...(basePrompt && { base_prompt: basePrompt }),
       });
@@ -287,6 +304,15 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
       console.error("Failed to send message:", error);
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const userMessage = input;
+    setInput("");
+    await sendMessage(userMessage);
   };
 
   // Edit message (creates a new branch)
@@ -299,7 +325,7 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
 
       // Get siblings to determine branch label
       const siblings = getSiblingsForMessage(messageId);
-      const branchLabel = siblings.length === 1 ? "Branch 1" : `Branch ${siblings.length}`;
+      const branchLabel = `Branch ${siblings.length + 1}`;
 
       // Label original as "Original" if not already labeled
       if (!originalMessage.branchLabel) {
@@ -362,12 +388,200 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
     }
   };
 
+  // Detect content generation intent
+  const detectContentIntent = async (userMessage: string): Promise<{ detected: boolean; contentTypeId?: string }> => {
+    try {
+      const response = await fetch(`${BUILD_TIME_LAMBDA_ENDPOINT}/content`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "detect-content-intent",
+          user_message: userMessage,
+          available_types: Object.keys(CONTENT_TYPE_SCHEMAS),
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Intent detection failed:", response.statusText);
+        return { detected: false };
+      }
+
+      const result = await response.json();
+      return {
+        detected: result.intent_detected,
+        contentTypeId: result.content_type_id,
+      };
+    } catch (error) {
+      console.error("Intent detection error:", error);
+      return { detected: false };
+    }
+  };
+
+  // Generate structured content
+  const generateStructuredContent = async (
+    contentTypeId: string,
+    userMessage: string,
+    onProgress?: (partial: any) => void
+  ): Promise<any | null> => {
+    const contentTypeConfig = CONTENT_TYPE_SCHEMAS[contentTypeId];
+    if (!contentTypeConfig) {
+      console.error("Unknown content type:", contentTypeId);
+      return null;
+    }
+
+    try {
+      // Convert Zod schema to JSON schema for Lambda
+      const jsonSchema = zodToJsonSchema(contentTypeConfig.schema, "contentSchema");
+
+      const history = buildMessageHistory();
+
+      const response = await fetch(`${BUILD_TIME_LAMBDA_ENDPOINT}/content`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate-structured-content",
+          content_type_id: contentTypeId,
+          schema: jsonSchema,
+          system_prompt: contentTypeConfig.system_prompt,
+          user_message: userMessage,
+          conversation_history: history,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Content generation failed:", response.statusText);
+        return null;
+      }
+
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      if (!reader) return null;
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalObject: any = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith("data: ")) continue;
+
+          const data = line.slice(6); // Remove "data: " prefix
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.object) {
+              finalObject = parsed.object;
+              if (onProgress) {
+                onProgress(parsed.object);
+              }
+            }
+          } catch (e) {
+            // Ignore parse errors for incomplete chunks
+          }
+        }
+      }
+
+      return finalObject;
+    } catch (error) {
+      console.error("Content generation error:", error);
+      return null;
+    }
+  };
+
+  // Confirm and create generated content
+  const confirmContentGeneration = async (contentTypeId: string, userMessage: string) => {
+    if (!groupId || !chatRootId) return;
+
+    setIsLoading(true);
+
+    try {
+      // Generate the structured content
+      const generatedContent = await generateStructuredContent(contentTypeId, userMessage);
+
+      if (!generatedContent) {
+        console.error("Failed to generate content");
+        setIsLoading(false);
+        return;
+      }
+
+      const contentTypeConfig = CONTENT_TYPE_SCHEMAS[contentTypeId];
+
+      // Create content item as child of chat root
+      const contentItem = await repository.createContent({
+        group_id: groupId,
+        parent_content_id: chatRootId,
+        type: "text", // All generated content types stored as 'text' with metadata
+        data: contentTypeConfig.display_name,
+        metadata: {
+          content_type: contentTypeId,
+          generated_data: generatedContent,
+          generated_from_message: userMessage,
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      console.log("Created structured content:", contentItem);
+
+      // Clear pending state
+      setPendingContentGeneration(null);
+
+      // Optionally send a confirmation message in the chat
+      await sendMessage(`Created ${contentTypeConfig.display_name}: ${contentTypeConfig.icon}`);
+    } catch (error) {
+      console.error("Failed to create generated content:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Cancel content generation
+  const cancelContentGeneration = () => {
+    setPendingContentGeneration(null);
+  };
+
+  // Modified sendMessage to check for intent
+  const sendMessageWithIntentDetection = async (text: string) => {
+    if (!text.trim() || !groupId || !chatRootId) return;
+
+    // Check for content generation intent if callback is provided
+    if (onContentGenerationSuggestion) {
+      const { detected, contentTypeId } = await detectContentIntent(text);
+
+      if (detected && contentTypeId) {
+        // Store pending generation request
+        const history = buildMessageHistory();
+        setPendingContentGeneration({
+          content_type_id: contentTypeId,
+          user_message: text,
+          conversation_history: history,
+        });
+
+        // Notify parent component to show confirmation UI
+        onContentGenerationSuggestion(contentTypeId, text);
+        return;
+      }
+    }
+
+    // No intent detected or no callback - proceed with normal message
+    await sendMessage(text);
+  };
+
   return {
     messages,
     currentPath,
     input,
     handleInputChange,
     handleSubmit,
+    sendMessage,
+    sendMessageWithIntentDetection,
     currentResponse,
     isLoading,
     isLoadingMessages,
@@ -376,5 +590,10 @@ export function useBranchingChat(options: UseBranchingChatOptions) {
     switchToBranch,
     editMessage,
     setMessages, // For UI state updates (collapse/expand)
+    // Content generation
+    pendingContentGeneration,
+    confirmContentGeneration,
+    cancelContentGeneration,
+    generateStructuredContent,
   };
 }

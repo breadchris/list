@@ -12,7 +12,6 @@ import { ContentDeck } from "./ContentDeck";
 import { ContentInput } from "./ContentInput";
 import { WorkflowActionsDrawer } from "./WorkflowActionsDrawer";
 import { JsEditorView } from "./JsEditorView";
-import { SavedTagFilterButton } from "./SavedTagFilterButton";
 import { MicroGameOverlay } from "./MicroGameOverlay";
 import { SEOProgressOverlay, SEOProgressItem } from "./SEOProgressOverlay";
 import { MarkdownProgressOverlay } from "./MarkdownProgressOverlay";
@@ -37,8 +36,7 @@ import { Footer } from "./Footer";
 import { LLMPromptModal } from "./LLMPromptModal";
 import { ClaudeCodePromptModal } from "./ClaudeCodePromptModal";
 import { ClaudeCodeService } from "./ClaudeCodeService";
-import { AIChatV2SidebarContainer } from "./AIChatV2SidebarContainer";
-import { ChatHistory } from "../hooks/useAIChatV2";
+import { BranchingChatSidebarContainer } from "./BranchingChatSidebarContainer";
 import {
   Group,
   Content,
@@ -72,7 +70,7 @@ import { useTagsForGroup } from "../hooks/useTagQueries";
 import { useToast } from "./ToastProvider";
 import { extractUrls, getFirstUrl } from "../utils/urlDetection";
 import { getYouTubeVideoFromContent } from "../utils/youtubeHelpers";
-import { Clock, SkipBack, ArrowDownAZ, Shuffle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Clock, SkipBack, ArrowDownAZ, Shuffle, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { ViewDisplaySelector, DisplayMode } from "./ViewDisplaySelector";
 
 // Simplified app loading states to prevent rapid transitions
@@ -121,26 +119,11 @@ export const ListApp: React.FC = () => {
   const [focusedParentId, setFocusedParentId] = useState<string | null>(null);
   const [focusedParentName, setFocusedParentName] = useState<string>("");
 
-  // AI Chat V2 sidebar state
-  const [showAIChatSidebar, setShowAIChatSidebar] = useState(false);
-  const [activeChatContent, setActiveChatContent] = useState<Content | null>(
-    null,
-  );
-  const activeChatContentRef = useRef<Content | null>(null);
-
-  // Chat controls exposed from AIChatV2SidebarContainer
-  const [chatInput, setChatInput] = useState("");
-  const [chatIsLoading, setChatIsLoading] = useState(false);
-  const [chatHandleInputChange, setChatHandleInputChange] = useState<
-    ((e: React.ChangeEvent<HTMLInputElement>) => void) | null
-  >(null);
-  const [chatHandleSubmit, setChatHandleSubmit] = useState<
-    ((e: React.FormEvent) => void) | null
-  >(null);
-
-  // Content list collapse state (only when chat sidebar is visible)
-  const [isContentListCollapsed, setIsContentListCollapsed] = useState(() => {
-    const saved = localStorage.getItem('contentListCollapsed');
+  // Branching Chat sidebar state
+  const [showBranchingChatSidebar, setShowBranchingChatSidebar] = useState(false);
+  const [activeBranchingChatContent, setActiveBranchingChatContent] = useState<Content | null>(null);
+  const [isBranchingChatListCollapsed, setIsBranchingChatListCollapsed] = useState(() => {
+    const saved = localStorage.getItem('branchingChatContentListCollapsed');
     return saved === 'true';
   });
 
@@ -2378,6 +2361,15 @@ export const ListApp: React.FC = () => {
             await new Promise((resolve) => setTimeout(resolve, 100));
             await initializeApp();
 
+            // Fallback: Check for pending invite code and redirect if not on invite page
+            const pendingInviteCode = sessionStorage.getItem("pendingInviteCode");
+            const isOnInvitePage = window.location.pathname.startsWith("/invite/");
+            if (pendingInviteCode && !isOnInvitePage) {
+              console.log("Redirecting to pending invite page:", pendingInviteCode);
+              // Redirect to the invite page so the invite handler can process it
+              navigate(`/invite/${pendingInviteCode}`, { replace: true });
+            }
+
             // Session is automatically shared with extension via chrome.storage bridge
             // No explicit notification needed - extension will detect session on next auth check
           } else if (!session?.user && event === "SIGNED_OUT") {
@@ -2554,50 +2546,37 @@ export const ListApp: React.FC = () => {
     setTimeout(() => setNewContent(undefined), 100);
   };
 
-  const handleAIChatV2Open = (chatContent: Content) => {
-    setActiveChatContent(chatContent);
-    activeChatContentRef.current = chatContent;
-    setShowAIChatSidebar(true);
+  const handleBranchingChatOpen = (chatContent: Content) => {
+    setActiveBranchingChatContent(chatContent);
+    setShowBranchingChatSidebar(true);
   };
 
-  const handleAIChatV2Close = () => {
-    setShowAIChatSidebar(false);
-    setActiveChatContent(null);
-    activeChatContentRef.current = null;
+  const handleBranchingChatClose = () => {
+    setShowBranchingChatSidebar(false);
+    setActiveBranchingChatContent(null);
+    // Clear URL back to group root when closing sidebar
+    if (currentGroup) {
+      navigate(`/group/${currentGroup.id}`);
+    }
   };
 
-  // Save content list collapse state to localStorage
+  const handleBranchingChatMessagesUpdate = (contentId: string, messages: any[]) => {
+    // Save chat tree to content metadata
+    // This would typically update the content in Supabase
+    console.log('Branching chat messages updated:', contentId, messages);
+  };
+
+  // Save branching chat list collapse state to localStorage
   useEffect(() => {
-    localStorage.setItem('contentListCollapsed', String(isContentListCollapsed));
-  }, [isContentListCollapsed]);
+    localStorage.setItem('branchingChatContentListCollapsed', String(isBranchingChatListCollapsed));
+  }, [isBranchingChatListCollapsed]);
 
   // Toggle content list collapse
   const toggleContentListCollapse = () => {
-    setIsContentListCollapsed(prev => !prev);
-  };
-
-  const handleChatHistoryUpdate = useCallback(async (contentId: string, history: ChatHistory) => {
-    const currentChat = activeChatContentRef.current;
-    if (!currentChat || currentChat.id !== contentId) return;
-
-    try {
-      await contentRepository.updateContent(currentChat.id, {
-        metadata: {
-          ...currentChat.metadata,
-          chat_history: history,
-          last_updated: new Date().toISOString(),
-        },
-      });
-    } catch (error) {
-      console.error("Failed to save chat history:", error);
-      toast.error(
-        "Failed to save chat history",
-        error instanceof Error ? error.message : "Unknown error",
-      );
+    if (showBranchingChatSidebar) {
+      setIsBranchingChatListCollapsed(prev => !prev);
     }
-  }, []);
-
-  // AI Chat V2 state is now managed in AIChatV2SidebarContainer to prevent unnecessary rerenders
+  };
 
   const handleInputClose = () => {
     setShowInput(false);
@@ -2718,8 +2697,12 @@ export const ListApp: React.FC = () => {
             parentContent.type === "ai-chat" ||
             parentContent.type === "chat"
           ) {
-            // Open AI chat sidebar with existing chat history
-            handleAIChatV2Open(parentContent);
+            // Open branching chat sidebar with existing chat history
+            handleBranchingChatOpen(parentContent);
+            // Set URL to enable direct linking to this chat
+            if (currentGroup) {
+              navigate(`/group/${currentGroup.id}/content/${parentId}`);
+            }
             return; // Don't navigate to children
           } else {
             // Regular content navigation
@@ -2792,21 +2775,23 @@ export const ListApp: React.FC = () => {
         if (content.type === "js") {
           setCurrentJsContent(content);
           setCurrentParentId(contentId);
+        } else if (content.type === "branching-chat") {
+          // Open branching chat sidebar instead of navigating
+          handleBranchingChatOpen(content);
+          // Keep URL at /group/:groupId/content/:contentId for direct linking
+          return;
         } else if (content.type === "ai-chat" || content.type === "chat") {
-          // Open AI chat sidebar instead of navigating
-          handleAIChatV2Open(content);
-          // Navigate back to parent view without contentId in URL
-          if (currentGroup) {
-            navigate(`/group/${currentGroup.id}`);
-          }
+          // Open branching chat sidebar instead of navigating
+          handleBranchingChatOpen(content);
+          // Keep URL at /group/:groupId/content/:contentId for direct linking
           return;
         } else {
           // Regular content navigation
           setCurrentJsContent(null);
           setCurrentParentId(contentId);
-          // Close sidebar if open when viewing non-chat content
-          if (showAIChatSidebar) {
-            handleAIChatV2Close();
+          // Close sidebars if open when viewing non-chat content
+          if (showBranchingChatSidebar) {
+            handleBranchingChatClose();
           }
         }
 
@@ -3100,18 +3085,6 @@ export const ListApp: React.FC = () => {
                               onClearAll={clearTagFilter}
                             />
 
-                            {/* Saved Tag Filters */}
-                            <SavedTagFilterButton
-                              groupId={currentGroup.id}
-                              currentFilter={selectedTagFilter}
-                              onFilterApply={(tags) =>
-                                setSelectedTagFilter(
-                                  tags.map((tag) => ({ tag, mode: "include" })),
-                                )
-                              }
-                              className="hidden md:flex"
-                            />
-
                             {/* Selected Tags Display - Collapsible with Hover Expand */}
                             {selectedTagFilter.length > 0 && (
                               <div
@@ -3323,6 +3296,16 @@ export const ListApp: React.FC = () => {
                               </svg>
                             </button>
                           )}
+                          {/* Calendar Icon */}
+                          {currentGroup && (
+                            <button
+                              onClick={() => navigate(`/group/${currentGroup.id}/calendar`)}
+                              className="text-gray-500 hover:text-gray-700 transition-colors p-1.5 rounded-md hover:bg-gray-50"
+                              title="Calendar"
+                            >
+                              <Calendar className="w-4 h-4" />
+                            </button>
+                          )}
                           {/* User dropdown */}
                           <UserDropdown user={user} currentGroupId={currentGroup?.id} />
                         </div>
@@ -3338,19 +3321,19 @@ export const ListApp: React.FC = () => {
                   </header>
 
                   {/* Main Content Area with Chat Sidebar */}
-                  <div className="flex-1 flex overflow-hidden p-16">
+                  <div className="flex-1 flex overflow-hidden p-2 sm:p-4 md:p-8 lg:p-16">
                     {/* Content List Area */}
                     <div
                       className={`flex flex-col h-full transition-[width] duration-300 ease-in-out overflow-y-auto ${
-                        showAIChatSidebar
-                          ? isContentListCollapsed
+                        showBranchingChatSidebar
+                          ? isBranchingChatListCollapsed
                             ? "w-12"
                             : "w-1/5 min-w-[250px]"
                           : "w-full"
-                      } ${isContentListCollapsed && showAIChatSidebar ? "border-r border-gray-200" : ""}`}
+                      } ${(isBranchingChatListCollapsed && showBranchingChatSidebar) ? "border-r border-gray-200" : ""}`}
                     >
                       {/* Collapsed View - Only visible when chat sidebar is open and collapsed */}
-                      {isContentListCollapsed && showAIChatSidebar ? (
+                      {(isBranchingChatListCollapsed && showBranchingChatSidebar) ? (
                         <div className="flex flex-col items-center h-full">
                           <button
                             onClick={toggleContentListCollapse}
@@ -3374,9 +3357,9 @@ export const ListApp: React.FC = () => {
                         </div>
                       ) : (
                         /* Expanded View - Normal content list */
-                        <div className="px-4 pt-4 pb-24 flex-1 flex flex-col max-w-4xl mx-auto w-full">
+                        <div className="pt-4 pb-24 flex-1 flex flex-col max-w-4xl mx-auto w-full">
                           {/* Collapse Button - Only visible when chat sidebar is open */}
-                          {showAIChatSidebar && (
+                          {showBranchingChatSidebar && (
                             <div className="mb-2 flex justify-end">
                               <button
                                 onClick={toggleContentListCollapse}
@@ -3609,21 +3592,18 @@ export const ListApp: React.FC = () => {
                       )}
                     </div>
 
-                    {/* AI Chat V2 Sidebar */}
-                    {showAIChatSidebar && activeChatContent && currentGroup && (
+                    {/* Branching Chat Sidebar */}
+                    {showBranchingChatSidebar && activeBranchingChatContent && currentGroup && (
                       <div className={`w-full h-full border-l border-gray-200 overflow-hidden transition-all duration-300 ease-in-out ${
-                        isContentListCollapsed ? "md:w-[calc(100%-3rem)]" : "md:w-4/5"
+                        isBranchingChatListCollapsed ? "md:w-[calc(100%-3rem)]" : "md:w-4/5"
                       }`}>
-                        <AIChatV2SidebarContainer
-                          isOpen={showAIChatSidebar}
-                          onClose={handleAIChatV2Close}
-                          chatContent={activeChatContent}
+                        <BranchingChatSidebarContainer
+                          key={activeBranchingChatContent.id}
+                          isOpen={showBranchingChatSidebar}
+                          onClose={handleBranchingChatClose}
+                          chatContent={activeBranchingChatContent}
                           groupId={currentGroup.id}
-                          onHistoryUpdate={handleChatHistoryUpdate}
-                          onInputChange={setChatInput}
-                          onIsLoadingChange={setChatIsLoading}
-                          onHandleInputChangeExpose={(handler) => setChatHandleInputChange(() => handler)}
-                          onHandleSubmitExpose={(handler) => setChatHandleSubmit(() => handler)}
+                          onMessagesUpdate={handleBranchingChatMessagesUpdate}
                         />
                       </div>
                     )}
@@ -3639,18 +3619,12 @@ export const ListApp: React.FC = () => {
                         onClearFocus={handleClearFocus}
                         onContentAdded={handleContentAdded}
                         onNavigate={handleNavigate}
-                        onActionSelect={(action) => {
-                          if (action === "import") {
-                            setShowSpotifyModal(true);
-                          }
-                        }}
-                        onAIChatV2Open={handleAIChatV2Open}
                         availableTags={availableTags}
-                        isChatSidebarOpen={showAIChatSidebar}
-                        chatInput={chatInput}
-                        chatIsLoading={chatIsLoading}
-                        onChatInputChange={chatHandleInputChange}
-                        onChatSubmit={chatHandleSubmit}
+                        isChatSidebarOpen={showBranchingChatSidebar}
+                        chatInput=""
+                        chatIsLoading={false}
+                        onChatInputChange={null}
+                        onChatSubmit={null}
                       />
                     </div>
                   )}

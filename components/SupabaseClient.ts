@@ -160,8 +160,12 @@ export const signInWithGoogle = async () => {
     if (isIOSApp) {
       redirectTo = 'list://auth/success';
     } else {
-      // For web browsers, use the current origin
-      redirectTo = window.location.origin;
+      // For web browsers, preserve invite URL if present
+      const currentPath = window.location.pathname;
+      const isInvitePage = currentPath.startsWith('/invite/');
+      redirectTo = isInvitePage
+        ? `${window.location.origin}${currentPath}`
+        : window.location.origin;
     }
 
     console.log("🔧 SupabaseClient: Using redirect URL:", redirectTo);
@@ -198,8 +202,12 @@ export const signInWithApple = async () => {
     if (isIOSApp) {
       redirectTo = 'list://auth/success';
     } else {
-      // For web browsers, use the current origin
-      redirectTo = window.location.origin;
+      // For web browsers, preserve invite URL if present
+      const currentPath = window.location.pathname;
+      const isInvitePage = currentPath.startsWith('/invite/');
+      redirectTo = isInvitePage
+        ? `${window.location.origin}${currentPath}`
+        : window.location.origin;
     }
 
     console.log("🔧 SupabaseClient: Using redirect URL:", redirectTo);
@@ -236,8 +244,12 @@ export const signInWithSpotify = async () => {
     if (isIOSApp) {
       redirectTo = 'list://auth/success';
     } else {
-      // For web browsers, use the current origin
-      redirectTo = window.location.origin;
+      // For web browsers, preserve invite URL if present
+      const currentPath = window.location.pathname;
+      const isInvitePage = currentPath.startsWith('/invite/');
+      redirectTo = isInvitePage
+        ? `${window.location.origin}${currentPath}`
+        : window.location.origin;
     }
 
     console.log("🔧 SupabaseClient: Using redirect URL:", redirectTo);
@@ -294,7 +306,12 @@ export const linkSpotifyAccount = async () => {
     if (isIOSApp) {
       redirectTo = 'list://auth/success';
     } else {
-      redirectTo = window.location.origin;
+      // For web browsers, preserve invite URL if present
+      const currentPath = window.location.pathname;
+      const isInvitePage = currentPath.startsWith('/invite/');
+      redirectTo = isInvitePage
+        ? `${window.location.origin}${currentPath}`
+        : window.location.origin;
     }
 
     console.log("🔧 SupabaseClient: Linking Spotify with redirect URL:", redirectTo);
@@ -388,7 +405,12 @@ export const linkGitHubAccount = async () => {
     if (isIOSApp) {
       redirectTo = 'list://auth/success';
     } else {
-      redirectTo = window.location.origin;
+      // For web browsers, preserve invite URL if present
+      const currentPath = window.location.pathname;
+      const isInvitePage = currentPath.startsWith('/invite/');
+      redirectTo = isInvitePage
+        ? `${window.location.origin}${currentPath}`
+        : window.location.origin;
     }
 
     console.log("🔧 SupabaseClient: Linking GitHub with redirect URL:", redirectTo);

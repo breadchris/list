@@ -89,7 +89,7 @@ export const SocialMediaEmbed: React.FC<SocialMediaEmbedProps> = ({ platform, ur
   };
 
   return (
-    <div className="w-full my-2" onError={handleError}>
+    <div className="w-full my-2 max-h-[400px] sm:max-h-[500px] overflow-hidden" onError={handleError}>
       {platform === 'twitter' && <XEmbed {...embedProps} />}
       {platform === 'instagram' && <InstagramEmbed {...embedProps} />}
       {platform === 'tiktok' && <TikTokEmbed {...embedProps} />}

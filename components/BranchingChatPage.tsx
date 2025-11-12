@@ -12,8 +12,9 @@ import { NotesArea } from './NotesArea';
 import { BookmarksSidebar, BookmarkedMessage } from './BookmarksSidebar';
 import { useBranchingChat } from '../hooks/useBranchingChat';
 import { ContentRepository } from './ContentRepository';
+import { supabase } from './SupabaseClient';
 
-const BRANCH_COLORS = ['#D4C4A8', '#C9B99A', '#BEAE8C', '#D9CDB8', '#CFC0A4'];
+const BRANCH_COLORS = ['#E5E7EB', '#DBEAFE', '#D1FAE5', '#FEF3C7', '#E9D5FF'];
 
 export default function BranchingChatPage() {
   // Get groupId from URL params
@@ -29,12 +30,35 @@ export default function BranchingChatPage() {
       if (!groupId) return;
 
       try {
-        // For now, create a new chat root for each session
-        // In production, you might want to list existing chats or use a specific chat ID
-        const { data: { user } } = await repository.supabase.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { data: newChat, error } = await repository.supabase
+        // IMPORTANT: Check for existing chat before creating to prevent duplicates
+        // React StrictMode will execute this effect twice in development, so we must
+        // query first and only create if no chat exists for this group/user combination
+        const { data: existingChats, error: queryError } = await supabase
+          .from("content")
+          .select("id")
+          .eq("type", "ai-chat")
+          .eq("group_id", groupId)
+          .eq("user_id", user.id)
+          .eq("metadata->>chat_type", "branching")
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (queryError) {
+          console.error("Failed to query existing chats:", queryError);
+          return;
+        }
+
+        // If chat root already exists, reuse it (prevents duplicate creation)
+        if (existingChats && existingChats.length > 0) {
+          setChatRootId(existingChats[0].id);
+          return;
+        }
+
+        // Only create a new chat root if none exists
+        const { data: newChat, error } = await supabase
           .from("content")
           .insert({
             type: "ai-chat",
@@ -70,6 +94,7 @@ export default function BranchingChatPage() {
     input,
     handleInputChange,
     handleSubmit,
+    sendMessage,
     currentResponse,
     isLoading,
     isLoadingMessages,
@@ -91,6 +116,7 @@ export default function BranchingChatPage() {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [bookmarks, setBookmarks] = useState<BookmarkedMessage[]>([]);
+  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(false);
 
   const variants = [
     {
@@ -124,20 +150,13 @@ export default function BranchingChatPage() {
       return;
     }
 
-    // Create synthetic form event for hook
-    const syntheticEvent = {
-      preventDefault: () => {},
-    } as React.FormEvent;
+    // Use sendMessage directly - no state race condition
+    sendMessage(text);
+  };
 
-    // Temporarily set input (hook will read it)
-    const inputEvent = {
-      target: { value: text }
-    } as React.ChangeEvent<HTMLInputElement>;
-
-    handleInputChange(inputEvent);
-
-    // Submit after brief delay to let state update
-    setTimeout(() => handleSubmit(syntheticEvent), 0);
+  // Handle follow-up question click
+  const handleFollowUpClick = (question: string) => {
+    handleSendMessage(question);
   };
 
   const toggleMessageExpansion = (messageId: string) => {
@@ -154,30 +173,13 @@ export default function BranchingChatPage() {
 
   // Get visible messages for current path
   const getVisibleMessages = () => {
-    const visibleIds = new Set(currentPath);
-
-    // Include siblings of messages in current path for branch navigation
-    currentPath.forEach(msgId => {
-      const siblings = getSiblingsForMessage(msgId);
-      siblings.forEach(sibling => visibleIds.add(sibling.id));
-    });
-
-    return messages.filter(msg => visibleIds.has(msg.id));
+    // Only show messages in the current path (not all siblings)
+    // Branch tabs at each point allow switching between alternatives
+    return currentPath
+      .filter(id => id !== "root")
+      .map(id => messages.find(m => m.id === id))
+      .filter((m): m is BranchingMessage => m !== undefined);
   };
-
-  // Add streaming message if currently loading
-  const displayMessages = isLoading && currentResponse?.answer
-    ? [...messages, {
-        id: 'streaming',
-        text: currentResponse.answer,
-        sender: 'assistant' as const,
-        timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-        isStreaming: true,
-        parentId: currentPath[currentPath.length - 1] || null,
-        createdAt: Date.now(),
-        isCollapsed: false,
-      }]
-    : messages;
 
   const visibleMessages = getVisibleMessages();
 
@@ -250,7 +252,7 @@ export default function BranchingChatPage() {
     const messageElement = document.getElementById(`message-${messageId}`);
     if (messageElement) {
       messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      messageElement.style.backgroundColor = '#F4D03F';
+      messageElement.style.backgroundColor = '#DBEAFE'; // blue-100
       setTimeout(() => {
         messageElement.style.backgroundColor = '';
       }, 1000);
@@ -273,13 +275,17 @@ export default function BranchingChatPage() {
   };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [displayMessages]);
+    // Small delay to allow layout to stabilize before scrolling
+    const timeout = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
+    return () => clearTimeout(timeout);
+  }, [messages, currentResponse]);
 
   // Loading state
   if (isLoadingMessages) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#E8DCC8' }}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="text-xl font-medium mb-2">Loading chat...</div>
           <div className="text-sm text-gray-600">Fetching messages from database</div>
@@ -287,8 +293,6 @@ export default function BranchingChatPage() {
       </div>
     );
   }
-
-  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(false);
 
   // Show notes sidebar layout
   if (activeVariant === 'notes-sidebar') {
@@ -322,12 +326,12 @@ export default function BranchingChatPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#E8DCC8]">
+    <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Main chat area with max width on large screens */}
       <div className="flex-1 flex justify-center">
-        <div className="flex flex-col h-screen bg-[#E8DCC8] w-full max-w-5xl">
+        <div className="flex flex-col h-screen bg-white w-full max-w-5xl">
           {/* Header */}
-          <div className="bg-[#F4D03F] border-b-2 border-[#9a8a6a] p-3 sm:p-4 flex items-center justify-between flex-shrink-0">
+          <div className="bg-white border-b border-gray-200 shadow-sm p-3 sm:p-4 flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
               <h1 className="text-sm sm:text-lg truncate">Branching Chat</h1>
@@ -337,7 +341,7 @@ export default function BranchingChatPage() {
               <select
                 value={activeVariant}
                 onChange={(e) => setActiveVariant(e.target.value)}
-                className="bg-[#F5EFE3] border-2 border-[#9a8a6a] px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm focus:outline-none focus:border-[#E67E50]"
+                className="bg-white border border-gray-300 px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 {variants.map(variant => (
                   <option key={variant.id} value={variant.id}>
@@ -347,14 +351,14 @@ export default function BranchingChatPage() {
               </select>
               <button
                 onClick={() => setUserFocusedView(!userFocusedView)}
-                className={`hover:bg-[#e4c02f] p-1.5 sm:p-2 transition-colors border ${
-                  userFocusedView ? 'bg-[#e4c02f] border-[#9a8a6a]' : 'border-transparent'
+                className={`hover:bg-gray-100 p-1.5 sm:p-2 transition-colors border ${
+                  userFocusedView ? 'bg-gray-100 border-gray-300' : 'border-transparent'
                 }`}
                 title={userFocusedView ? 'Show all messages' : 'Focus on my messages'}
               >
                 <LayoutList className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
-              <button className="p-1.5 sm:p-2 hover:bg-[#e4c02f] transition-colors">
+              <button className="p-1.5 sm:p-2 hover:bg-gray-100 transition-colors">
                 <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
@@ -388,6 +392,27 @@ export default function BranchingChatPage() {
                         isBookmarked={activeVariant === 'bookmarks' ? isMessageBookmarked(message.id) : false}
                         disableAnimation={!message.isStreaming}
                       />
+
+                      {/* Follow-up questions for assistant messages */}
+                      {message.sender === 'assistant' && message.followUpQuestions && message.followUpQuestions.length > 0 && (
+                        <div className="flex justify-start mb-4">
+                          <div className="max-w-[80%] space-y-2">
+                            <div className="text-xs text-gray-600 px-2">Suggested questions:</div>
+                            <div className="flex flex-wrap gap-2">
+                              {message.followUpQuestions.map((question, qIdx) => (
+                                <button
+                                  key={qIdx}
+                                  onClick={() => handleFollowUpClick(question)}
+                                  className="text-xs px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-full transition-colors border border-gray-200"
+                                >
+                                  {question}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {allVersions.length > 1 && (
                         <div className="hidden sm:block">
                           <BranchList
@@ -396,7 +421,7 @@ export default function BranchingChatPage() {
                               label: msg.branchLabel || `Version ${i + 1}`,
                               color: BRANCH_COLORS[i % BRANCH_COLORS.length],
                             }))}
-                            activeMessageId={message.id}
+                            activeMessageId={allVersions.find(v => currentPath.includes(v.id))?.id || message.id}
                             onSelectBranch={(msgId) => switchToBranch(msgId)}
                           />
                         </div>
@@ -405,9 +430,9 @@ export default function BranchingChatPage() {
                       {allVersions.length > 1 && (
                         <div className="block sm:hidden mb-4">
                           <select
-                            value={message.id}
+                            value={allVersions.find(v => currentPath.includes(v.id))?.id || message.id}
                             onChange={(e) => switchToBranch(e.target.value)}
-                            className="w-full p-2 border-2 border-[#9a8a6a] bg-[#F5EFE3] text-sm"
+                            className="w-full p-2 border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           >
                             {allVersions.map((msg, i) => (
                               <option key={msg.id} value={msg.id}>
@@ -423,7 +448,7 @@ export default function BranchingChatPage() {
 
                 {/* Show streaming message if loading */}
                 {isLoading && currentResponse?.answer && (
-                  <div id="message-streaming">
+                  <div key="streaming-message" id="message-streaming">
                     <BranchingChatMessage
                       message={currentResponse.answer}
                       sender="assistant"
@@ -433,6 +458,26 @@ export default function BranchingChatPage() {
                       onToggle={() => {}}
                       disableAnimation={false}
                     />
+
+                    {/* Follow-up questions for streaming message */}
+                    {currentResponse.follow_up_questions && currentResponse.follow_up_questions.length > 0 && (
+                      <div className="flex justify-start mb-4">
+                        <div className="max-w-[80%] space-y-2">
+                          <div className="text-xs text-gray-600 px-2">Suggested questions:</div>
+                          <div className="flex flex-wrap gap-2">
+                            {currentResponse.follow_up_questions.map((question, qIdx) => (
+                              <button
+                                key={qIdx}
+                                onClick={() => handleFollowUpClick(question)}
+                                className="text-xs px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-full transition-colors border border-gray-200"
+                              >
+                                {question}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -441,7 +486,7 @@ export default function BranchingChatPage() {
           </div>
 
           {/* Input */}
-          <div className="border-t-2 border-[#9a8a6a] flex-shrink-0">
+          <div className="border-t border-gray-200 flex-shrink-0">
             <BranchingChatInput
               onSend={handleSendMessage}
               initialValue={editingMessage?.text}

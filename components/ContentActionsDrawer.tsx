@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Drawer } from './vaul/index';
 
-export type ContentAction = 'text' | 'rich-text' | 'ai-chat' | 'ai-chat-v2' | 'claude-code' | 'image' | 'epub' | 'plugin' | 'import' | 'map' | 'timeline';
+export type ContentAction = 'text' | 'rich-text' | 'ai-chat' | 'branching-chat' | 'claude-code' | 'image' | 'epub' | 'map' | 'timeline';
 
 interface ActionConfig {
   id: ContentAction;
@@ -16,13 +16,11 @@ interface ActionConfig {
 export const ACTION_COLORS: Record<ContentAction, { bg: string; text: string; hex: string }> = {
   'text': { bg: 'bg-gray-500', text: 'text-gray-600', hex: '#6B7280' },
   'rich-text': { bg: 'bg-slate-500', text: 'text-slate-600', hex: '#64748B' },
-  'import': { bg: 'bg-blue-500', text: 'text-blue-600', hex: '#3B82F6' },
   'claude-code': { bg: 'bg-indigo-500', text: 'text-indigo-600', hex: '#6366F1' },
   'ai-chat': { bg: 'bg-purple-500', text: 'text-purple-600', hex: '#A855F7' },
-  'ai-chat-v2': { bg: 'bg-teal-500', text: 'text-teal-600', hex: '#14B8A6' },
+  'branching-chat': { bg: 'bg-violet-500', text: 'text-violet-600', hex: '#8B5CF6' },
   'image': { bg: 'bg-green-500', text: 'text-green-600', hex: '#10B981' },
   'epub': { bg: 'bg-orange-500', text: 'text-orange-600', hex: '#F97316' },
-  'plugin': { bg: 'bg-pink-500', text: 'text-pink-600', hex: '#EC4899' },
   'map': { bg: 'bg-red-500', text: 'text-red-600', hex: '#EF4444' },
   'timeline': { bg: 'bg-indigo-500', text: 'text-indigo-600', hex: '#6366F1' }
 };
@@ -41,12 +39,6 @@ const ACTIONS: ActionConfig[] = [
     ...ACTION_COLORS['rich-text']
   },
   {
-    id: 'import',
-    icon: '📥',
-    label: 'Import',
-    ...ACTION_COLORS['import']
-  },
-  {
     id: 'claude-code',
     icon: '💻',
     label: 'Claude Code',
@@ -59,10 +51,10 @@ const ACTIONS: ActionConfig[] = [
     ...ACTION_COLORS['ai-chat']
   },
   {
-    id: 'ai-chat-v2',
-    icon: '🤖',
-    label: 'AI Chat V2',
-    ...ACTION_COLORS['ai-chat-v2']
+    id: 'branching-chat',
+    icon: '🌳',
+    label: 'Branching Chat',
+    ...ACTION_COLORS['branching-chat']
   },
   {
     id: 'image',
@@ -87,12 +79,6 @@ const ACTIONS: ActionConfig[] = [
     icon: '⏱️',
     label: 'Timeline',
     ...ACTION_COLORS['timeline']
-  },
-  {
-    id: 'plugin',
-    icon: '🔌',
-    label: 'Plugin',
-    ...ACTION_COLORS['plugin']
   }
 ];
 

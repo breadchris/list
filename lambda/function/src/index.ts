@@ -18,7 +18,9 @@ import {
 	handleLibgenSearch,
 	handleScreenshotQueue,
 	handleTSXTranspile,
-	handleTranscribeAudio
+	handleTranscribeAudio,
+	handleDetectContentIntent,
+	handleGenerateStructuredContentStream
 } from './content-handlers.js';
 import { handleMapKitTokenRequest } from './mapkit-token-handler.js';
 import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
@@ -1029,6 +1031,24 @@ async function handleContentRequest(request: ContentRequest, headers?: Record<st
 		if (action === 'chat-v2-stream') {
 			// Return Response directly for streaming support
 			return await handleChatV2StreamResponse(payload);
+		}
+
+		// Handle detect-content-intent (no Supabase needed)
+		if (action === 'detect-content-intent') {
+			const result = await handleDetectContentIntent(payload);
+			return {
+				statusCode: 200,
+				headers: {
+					'Content-Type': 'application/json',
+					...corsHeaders
+				},
+				body: JSON.stringify(result)
+			};
+		}
+
+		// Handle generate-structured-content (streaming response)
+		if (action === 'generate-structured-content') {
+			return await handleGenerateStructuredContentStream(payload);
 		}
 
 		const supabase = getSupabaseClient();

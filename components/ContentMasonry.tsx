@@ -20,7 +20,6 @@ import { MapDisplay, type MapData } from './MapDisplay';
 import TimelinePlayer from './timeline/TimelinePlayer';
 import type { TimelineMetadata } from './timeline/types';
 import { TsxRenderer } from './TsxRenderer';
-import { PluginRenderer } from './PluginRenderer';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useInfiniteContentByTag, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -35,6 +34,7 @@ import { supabase } from './SupabaseClient';
 import { QueryInvalidation } from '../hooks/queryKeys';
 import { PieMenu } from './pie/PieMenu';
 import { useContentPieMenu } from '../hooks/useContentPieMenu';
+import { useFeatureFlags } from '../hooks/useFeatureFlags';
 
 interface ContentMasonryProps {
   groupId: string;
@@ -122,6 +122,10 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
 
   // Focus mode for single-click content focusing
   const focus = useContentFocus();
+
+  // Feature flags
+  const { getFlag } = useFeatureFlags();
+  const showContentTypeOnHover = getFlag('showContentTypeOnHover');
 
   // Skeleton delay state to prevent flashing
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -820,9 +824,18 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
             })()}
           </div>
 
-          {/* Right gutter for icons and actions */}
-          {!selection.isSelectionMode && (
-            <div className="flex flex-col items-center gap-1 w-8">
+          {/* Right gutter for icons and actions - hidden when focused */}
+          {!selection.isSelectionMode && !focus.isFocused(item.id) && (
+            <div className={`flex flex-col items-center gap-1 w-8 transition-transform duration-150 ease-out translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100`}>
+              {/* Content Type Indicator */}
+              {showContentTypeOnHover && (
+                <div className="flex-shrink-0">
+                  <span className="text-xs text-gray-400 uppercase tracking-wide">
+                    {item.type}
+                  </span>
+                </div>
+              )}
+
               {/* Public globe icon */}
               {isContentPublic(item) && (
                 <div className="flex-shrink-0" title="This content is public">
@@ -841,7 +854,7 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
                   }
                   selection.toggleItem(item.id);
                 }}
-                className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
+                className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
                 title="Select for workflow"
               >
                 <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -850,7 +863,7 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
               </button>
 
               {/* Tag button */}
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+              <div>
                 <TagButton
                   contentId={item.id}
                   existingTags={item.tags || []}

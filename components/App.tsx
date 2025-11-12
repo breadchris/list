@@ -12,10 +12,10 @@ import { PrivacyPolicy } from './PrivacyPolicy';
 import { RefundPolicy } from './RefundPolicy';
 import { PricingPage } from './PricingPage';
 import { AdminPage } from './AdminPage';
-import { AIChatV2Page } from './AIChatV2Page';
 import { UserSettingsPage } from './UserSettingsPage';
 import BranchingChatPage from './BranchingChatPage';
 import { CalendarPage } from './CalendarPage';
+import { RichTextContentPage } from './RichTextContentPage';
 
 /**
  * Main App component that wraps the application with providers and React Router
@@ -31,9 +31,9 @@ export const App: React.FC = () => {
               {/* Main app routes */}
               <Route path="/" element={<ListApp />} />
               <Route path="/group/:groupId" element={<ListApp />} />
-              <Route path="/group/:groupId/content/:contentId" element={<ListApp />} />
+              <Route path="/group/:groupId/content/:contentId" element={<RichTextContentPage />} />
               <Route path="/group/:groupId/settings" element={<GroupSettingsPage />} />
-              <Route path="/group/:groupId/ai-chat" element={<AIChatV2Page />} />
+              <Route path="/group/:groupId/ai-chat" element={<BranchingChatPage />} />
               <Route path="/group/:groupId/chat" element={<BranchingChatPage />} />
               <Route path="/group/:groupId/calendar" element={<CalendarPage />} />
               <Route path="/invite/:joinCode" element={<ListApp />} />

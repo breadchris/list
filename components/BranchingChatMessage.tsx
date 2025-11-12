@@ -1,6 +1,8 @@
 import { motion } from 'motion/react';
 import { useState, useEffect, useRef } from 'react';
 import { Pencil, Highlighter, Bookmark, BookmarkCheck } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessageProps {
   message: string;
@@ -29,37 +31,10 @@ export function BranchingChatMessage({
   onBookmark,
   isBookmarked = false,
 }: ChatMessageProps) {
-  const words = message.split(' ');
-  const [displayedWords, setDisplayedWords] = useState(disableAnimation ? words.length : 0);
-  const hasAnimated = useRef(false);
   const [selectedText, setSelectedText] = useState('');
   const [showHighlightButton, setShowHighlightButton] = useState(false);
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 });
   const messageRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (disableAnimation || hasAnimated.current) {
-      setDisplayedWords(words.length);
-      return;
-    }
-
-    if (isStreaming) {
-      setDisplayedWords(words.length);
-    } else {
-      hasAnimated.current = true;
-      let currentIndex = 0;
-      const interval = setInterval(() => {
-        if (currentIndex < words.length) {
-          setDisplayedWords(currentIndex + 1);
-          currentIndex++;
-        } else {
-          clearInterval(interval);
-        }
-      }, 80);
-
-      return () => clearInterval(interval);
-    }
-  }, [message, isStreaming, words.length, disableAnimation]);
 
   // Handle text selection
   const handleMouseUp = () => {
@@ -123,9 +98,9 @@ export function BranchingChatMessage({
       <div className="mb-2 animate-collapse">
         <button
           onClick={onToggle}
-          className="w-full flex items-center gap-2 opacity-40 hover:opacity-70 transition-opacity py-1 px-2 hover:bg-[#D4C4A8]/30 rounded cursor-pointer"
+          className="w-full flex items-center gap-2 opacity-40 hover:opacity-70 transition-opacity py-1 px-2 hover:bg-gray-100 rounded cursor-pointer"
         >
-          <div className="w-2 h-2 bg-[#9a8a6a] rounded-full flex-shrink-0" />
+          <div className="w-2 h-2 bg-gray-400 rounded-full flex-shrink-0" />
           <span style={{ fontSize: '0.75rem' }} className="truncate text-left min-w-0 flex-1">
             {sender === 'user' ? 'You: ' : ''}
             {message.length > 80 ? message.slice(0, 80) + '...' : message}
@@ -143,8 +118,8 @@ export function BranchingChatMessage({
       <div className="flex items-start gap-2 sm:gap-3">
         {/* Avatar */}
         <div
-          className={`w-6 h-6 sm:w-8 sm:h-8 flex items-center justify-center border-2 border-[#9a8a6a] text-xs flex-shrink-0 ${ 
-            sender === 'user' ? 'bg-[#E67E50]' : 'bg-[#F4D03F]'
+          className={`w-6 h-6 sm:w-8 sm:h-8 flex items-center justify-center border-2 border-gray-300 text-xs text-white flex-shrink-0 ${
+            sender === 'user' ? 'bg-blue-600' : 'bg-teal-500'
           }`}
         >
           {sender === 'user' ? 'U' : 'A'}
@@ -155,7 +130,7 @@ export function BranchingChatMessage({
           <div className="flex items-center justify-between mb-1 sm:mb-2 gap-2">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <span className="text-xs sm:text-sm opacity-60 truncate">{timestamp}</span>
-              <span className="text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 border border-[#9a8a6a] opacity-40 capitalize flex-shrink-0">
+              <span className="text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 border border-gray-200 opacity-40 capitalize flex-shrink-0">
                 {sender}
               </span>
             </div>
@@ -163,8 +138,8 @@ export function BranchingChatMessage({
               {onBookmark && (
                 <button
                   onClick={onBookmark}
-                  className={`p-1 sm:p-1.5 hover:bg-[#D4C4A8] border border-[#9a8a6a] transition-colors ${
-                    isBookmarked ? 'bg-[#F4D03F]' : 'opacity-60 hover:opacity-100'
+                  className={`p-1 sm:p-1.5 hover:bg-gray-100 border border-gray-200 transition-colors ${
+                    isBookmarked ? 'bg-blue-100' : 'opacity-60 hover:opacity-100'
                   }`}
                   title={isBookmarked ? 'Remove bookmark' : 'Bookmark this message'}
                 >
@@ -178,7 +153,7 @@ export function BranchingChatMessage({
               {onEdit && (
                 <button
                   onClick={onEdit}
-                  className="p-1 sm:p-1.5 hover:bg-[#D4C4A8] border border-[#9a8a6a] transition-colors opacity-60 hover:opacity-100"
+                  className="p-1 sm:p-1.5 hover:bg-gray-100 border border-gray-200 transition-colors opacity-60 hover:opacity-100"
                   title="Edit message"
                 >
                   <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
@@ -192,9 +167,9 @@ export function BranchingChatMessage({
             ref={messageRef}
             onClick={handleMessageClick}
             onMouseUp={handleMouseUp}
-            className={`border-2 border-[#9a8a6a] p-3 sm:p-4 bg-[#F5EFE3] transition-all relative text-sm sm:text-base ${
-              isCollapsed ? 'cursor-pointer hover:bg-[#EDE5D8]' : ''
-            } ${sender === 'assistant' && !isCollapsed ? 'cursor-pointer hover:bg-[#EDE5D8]' : ''}`}
+            className={`border border-gray-200 p-3 sm:p-4 bg-white transition-all relative text-sm sm:text-base ${
+              isCollapsed ? 'cursor-pointer hover:bg-gray-50' : ''
+            } ${sender === 'assistant' && !isCollapsed ? 'cursor-pointer hover:bg-gray-50' : ''}`}
             style={{
               userSelect: onHighlight ? 'text' : 'none',
             }}
@@ -202,18 +177,10 @@ export function BranchingChatMessage({
             {isCollapsed ? (
               <div className="opacity-60 text-sm truncate">{message}</div>
             ) : (
-              <div className="whitespace-pre-wrap">
-                {words.slice(0, displayedWords).map((word, index) => (
-                  <motion.span
-                    key={index}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2, delay: 0 }}
-                    className="inline-block mr-1"
-                  >
-                    {word}
-                  </motion.span>
-                ))}
+              <div className="prose prose-sm max-w-none text-sm">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {message}
+                </ReactMarkdown>
               </div>
             )}
           </div>
@@ -233,7 +200,7 @@ export function BranchingChatMessage({
         >
           <button
             onClick={handleHighlight}
-            className="bg-[#F4D03F] border-2 border-[#9a8a6a] px-3 py-1.5 shadow-lg hover:bg-[#e4c02f] transition-colors flex items-center gap-2 text-sm"
+            className="bg-blue-600 border border-gray-300 px-3 py-1.5 shadow-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm text-white"
           >
             <Highlighter className="w-3.5 h-3.5" />
             Highlight

@@ -13,7 +13,7 @@ export interface ContentQueueJob {
 }
 
 export interface ContentRequest {
-	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio';
+	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio' | 'chat-v2-stream' | 'detect-content-intent' | 'generate-structured-content';
 	payload: any;
 	sync?: boolean; // When true, execute immediately and return results. When false/omitted, queue job (default)
 	headers?: Record<string, string>; // Optional HTTP headers (e.g., If-None-Match for caching)
@@ -410,4 +410,25 @@ export interface TranscribeAudioResult {
 	success: boolean;
 	transcript_content_id?: string;
 	error?: string;
+}
+
+// Content Generation Types (Branching Chat)
+export interface DetectContentIntentPayload {
+	user_message: string;
+	available_types: string[];
+}
+
+export interface DetectContentIntentResponse {
+	intent_detected: boolean;
+	content_type_id?: string;
+	confidence?: number;
+	reasoning?: string;
+}
+
+export interface GenerateStructuredContentPayload {
+	content_type_id: string;
+	schema: any; // JSON schema from zod-to-json-schema
+	system_prompt: string;
+	user_message: string;
+	conversation_history: Array<{ role: 'user' | 'assistant'; content: string }>;
 }

@@ -14,6 +14,7 @@ interface MonthViewProps {
   selectedDate: Date;
   currentMonth: Date;
   onDateSelect: (date: Date) => void;
+  onEventClick?: (event: CalendarEvent) => void;
 }
 
 /**
@@ -24,6 +25,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
   selectedDate,
   currentMonth,
   onDateSelect,
+  onEventClick,
 }) => {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -105,7 +107,8 @@ export const MonthView: React.FC<MonthViewProps> = ({
               ?.events.map((event) => (
                 <li
                   key={event.id}
-                  className="group flex items-center space-x-3 rounded-lg bg-gray-700 px-3 py-2 hover:bg-gray-600 transition-colors"
+                  onClick={() => onEventClick?.(event)}
+                  className="group flex items-center space-x-3 rounded-lg bg-gray-700 px-3 py-2 hover:bg-gray-600 transition-colors cursor-pointer"
                 >
                   <div
                     className="h-2 w-2 rounded-full flex-shrink-0"

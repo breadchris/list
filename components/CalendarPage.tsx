@@ -10,9 +10,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCalendar } from '../hooks/useCalendar';
 import { useCalendarEvents } from '../hooks/useCalendarEvents';
-import { CalendarView, CalendarFilters } from '../types/CalendarTypes';
+import { CalendarView, CalendarFilters, CalendarEvent } from '../types/CalendarTypes';
 import { formatMonthYear } from '../utils/calendarUtils';
 import { MonthView } from './MonthView';
+import { DayView } from './DayView';
+import { WeekView } from './WeekView';
+import { YearView } from './YearView';
 
 /**
  * Calendar Page
@@ -27,6 +30,8 @@ export const CalendarPage: React.FC = () => {
     view,
     selectedDate,
     currentMonth,
+    currentWeek,
+    currentYear,
     dateRange,
     setView,
     goToToday,
@@ -51,6 +56,11 @@ export const CalendarPage: React.FC = () => {
     filters,
     enabled: !!groupId,
   });
+
+  // Handle event click - navigate to content detail
+  const handleEventClick = (event: CalendarEvent) => {
+    navigate(`/group/${groupId}/content/${event.content_id}`);
+  };
 
   if (!groupId) {
     return (
@@ -86,10 +96,10 @@ export const CalendarPage: React.FC = () => {
 
       {/* Calendar Controls */}
       <div className="fixed top-14 left-0 right-0 z-40 bg-gray-800 border-b border-gray-700 px-4 py-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-3">
           {/* Date Navigation */}
-          <div className="flex items-center space-x-4">
-            <h2 className="text-xl font-semibold text-white">
+          <div className="flex items-center space-x-2 sm:space-x-4">
+            <h2 className="text-base sm:text-xl font-semibold text-white">
               {formatMonthYear(selectedDate)}
             </h2>
 
@@ -118,12 +128,12 @@ export const CalendarPage: React.FC = () => {
           </div>
 
           {/* View Selector */}
-          <div className="flex items-center space-x-2 bg-gray-700 rounded-lg p-1">
+          <div className="flex items-center space-x-1 sm:space-x-2 bg-gray-700 rounded-lg p-1 w-full sm:w-auto">
             {(['month', 'week', 'day', 'year'] as CalendarView[]).map((viewType) => (
               <button
                 key={viewType}
                 onClick={() => setView(viewType)}
-                className={`px-3 py-1.5 text-sm rounded capitalize ${
+                className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm rounded capitalize flex-1 sm:flex-none ${
                   view === viewType
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-300 hover:text-white hover:bg-gray-600'
@@ -150,40 +160,37 @@ export const CalendarPage: React.FC = () => {
                 selectedDate={selectedDate}
                 currentMonth={currentMonth}
                 onDateSelect={selectDate}
+                onEventClick={handleEventClick}
               />
             )}
 
             {view === 'week' && (
-              <div className="text-white">
-                <p className="text-center py-8 text-gray-400">
-                  Week view coming soon
-                </p>
-                <p className="text-center text-sm text-gray-500">
-                  {events.length} events in this period
-                </p>
-              </div>
+              <WeekView
+                events={events}
+                selectedDate={selectedDate}
+                currentWeek={currentWeek}
+                onDateSelect={selectDate}
+                onEventClick={handleEventClick}
+              />
             )}
 
             {view === 'day' && (
-              <div className="text-white">
-                <p className="text-center py-8 text-gray-400">
-                  Day view coming soon
-                </p>
-                <p className="text-center text-sm text-gray-500">
-                  {events.length} events in this period
-                </p>
-              </div>
+              <DayView
+                events={events}
+                selectedDate={selectedDate}
+                onDateSelect={selectDate}
+                onEventClick={handleEventClick}
+              />
             )}
 
             {view === 'year' && (
-              <div className="text-white">
-                <p className="text-center py-8 text-gray-400">
-                  Year view coming soon
-                </p>
-                <p className="text-center text-sm text-gray-500">
-                  {events.length} events in this period
-                </p>
-              </div>
+              <YearView
+                events={events}
+                selectedDate={selectedDate}
+                currentYear={currentYear}
+                onDateSelect={selectDate}
+                onEventClick={handleEventClick}
+              />
             )}
           </div>
         )}

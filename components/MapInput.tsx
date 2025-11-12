@@ -31,6 +31,7 @@ export const MapInput: React.FC<MapInputProps> = ({ onSave, onCancel }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
+  const initializingRef = useRef(false);
 
   const [mode, setMode] = useState<InputMode>('select');
   const [isMapKitLoaded, setIsMapKitLoaded] = useState(false);
@@ -119,8 +120,27 @@ export const MapInput: React.FC<MapInputProps> = ({ onSave, onCancel }) => {
 
   // Initialize map for current location mode
   const initCurrentLocationMap = useCallback(async () => {
-    if (!mapContainerRef.current || !token || !isMapKitLoaded) return;
+    // Prevent multiple simultaneous initializations
+    if (initializingRef.current) {
+      console.log('Map initialization already in progress');
+      return;
+    }
 
+    // Check preconditions
+    if (!mapContainerRef.current) {
+      setMapError('Map container not ready. Please try again.');
+      return;
+    }
+
+    if (!token || !isMapKitLoaded) {
+      // Don't show error - token/MapKit are still loading legitimately
+      // Just wait for next attempt when they're ready
+      console.log('Waiting for MapKit token and library to load...');
+      return;
+    }
+
+    // Mark initialization as in progress
+    initializingRef.current = true;
     setMapLoading(true);
     setMapError(null);
 
@@ -182,19 +202,45 @@ export const MapInput: React.FC<MapInputProps> = ({ onSave, onCancel }) => {
       });
 
       setMapLoading(false);
-    } catch (error) {
+      initializingRef.current = false; // Reset flag on success
+    } catch (error: any) {
       console.error('Error getting current location:', error);
-      setMapError('Could not access your location. Please check permissions.');
+
+      // Provide specific error messages based on error type
+      let errorMessage = 'Could not access your location. Please try again.';
+
+      if (error?.code === 1) {
+        // PERMISSION_DENIED
+        errorMessage = 'Location access denied. Please enable location permissions in your browser settings.';
+      } else if (error?.code === 2) {
+        // POSITION_UNAVAILABLE
+        errorMessage = 'Location unavailable. Please check your device location services.';
+      } else if (error?.code === 3) {
+        // TIMEOUT
+        errorMessage = 'Location request timed out. Please try again.';
+      } else if (!navigator.geolocation) {
+        errorMessage = 'Geolocation is not supported by your browser.';
+      }
+
+      setMapError(errorMessage);
       setMapLoading(false);
+      initializingRef.current = false; // Reset flag on error
     }
   }, [token, isMapKitLoaded, reverseGeocode]);
 
+  // Reset initialization flag when mode changes away from current_location
+  useEffect(() => {
+    if (mode !== 'current_location') {
+      initializingRef.current = false;
+    }
+  }, [mode]);
+
   // Trigger current location initialization after mode change and render
   useEffect(() => {
-    if (mode === 'current_location' && !selectedLocation && !mapLoading && !mapError) {
+    if (mode === 'current_location' && !selectedLocation && !initializingRef.current) {
       initCurrentLocationMap();
     }
-  }, [mode, selectedLocation, mapLoading, mapError, initCurrentLocationMap]);
+  }, [mode, selectedLocation]);
 
   // Initialize map for search mode
   const initSearchMap = useCallback((latitude: number, longitude: number, placeName: string, placeAddress?: string) => {

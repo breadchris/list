@@ -5,7 +5,7 @@
   "main": "index.tsx",
   "type": "module",
   "dependencies": {
-    "@ai-sdk/react": "^2.0.0",
+    "@ai-sdk/react": "3.0.0-beta.98",
     "@lexical/list": "^0.36.1",
     "@lexical/react": "^0.36.1",
     "@lexical/rich-text": "^0.36.1",
@@ -22,7 +22,7 @@
     "@tailwindcss/cli": "^4.1.12",
     "@tanstack/react-query": "^5.0.0",
     "@types/qrcode.react": "^1.0.5",
-    "ai": "^5.0.0",
+    "ai": "6.0.0-beta.98",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "epubjs": "^0.3.93",
@@ -44,7 +44,8 @@
     "react-swipeable": "^7.0.2",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.3.1",
-    "tailwindcss": "^4.1.12"
+    "tailwindcss": "^4.1.12",
+    "zod-to-json-schema": "^3.24.6"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",

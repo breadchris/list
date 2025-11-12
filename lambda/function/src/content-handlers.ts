@@ -1624,3 +1624,156 @@ Answer questions about this content, provide insights, and suggest related topic
     },
   });
 }
+
+// =============================================================================
+// CONTENT INTENT DETECTION
+// =============================================================================
+
+/**
+ * Detect if a user message contains intent to create structured content
+ * Used in branching chat to suggest generating recipes, task lists, etc.
+ */
+export async function handleDetectContentIntent(
+  payload: any
+): Promise<ContentResponse> {
+  const {
+    user_message,
+    available_types,
+  }: { user_message: string; available_types: string[] } = payload;
+
+  try {
+    // Intent detection schema
+    const intentSchema = z.object({
+      intent_detected: z
+        .boolean()
+        .describe("Whether a content generation intent was detected"),
+      content_type_id: z
+        .string()
+        .optional()
+        .describe("The ID of the detected content type"),
+      confidence: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe("Confidence score 0-1"),
+      reasoning: z
+        .string()
+        .optional()
+        .describe("Why this content type was detected"),
+    });
+
+    // Build system prompt with available content types
+    const systemPrompt = `You are a content intent detector. Analyze user messages to determine if they want to create structured content.
+
+Available content types: ${available_types.join(", ")}
+
+Content type descriptions:
+- recipe: User wants to create or get a recipe for a dish
+- task_list: User wants to organize tasks or create a project plan
+- event: User wants to plan an event or create a schedule
+- book_summary: User wants a summary or breakdown of a book
+
+Detect if the user message clearly indicates they want one of these structured content types.
+Only return true if there is HIGH confidence (> 0.8) that the user wants structured content.
+For general questions or ambiguous requests, return false.`;
+
+    const openaiProvider = createOpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      compatibility: "strict",
+    });
+
+    const result = await streamObject({
+      model: openaiProvider("gpt-4o-mini"), // Use mini for fast intent detection
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: user_message },
+      ],
+      schema: intentSchema,
+      temperature: 0.3, // Low temperature for more deterministic detection
+      maxTokens: 200,
+    });
+
+    // Wait for final object
+    const detection = await result.object;
+
+    return {
+      success: true,
+      data: {
+        intent_detected: detection?.intent_detected || false,
+        content_type_id: detection?.content_type_id,
+        confidence: detection?.confidence,
+        reasoning: detection?.reasoning,
+      },
+    };
+  } catch (error: any) {
+    console.error("Intent detection error:", error);
+    return {
+      success: false,
+      error: error.message,
+      data: {
+        intent_detected: false,
+      },
+    };
+  }
+}
+
+// =============================================================================
+// STRUCTURED CONTENT GENERATION
+// =============================================================================
+
+/**
+ * Generate structured content using streamObject with a provided JSON schema
+ * Used for recipes, task lists, events, book summaries, etc.
+ */
+export async function handleGenerateStructuredContentStream(
+  payload: any
+): Promise<Response> {
+  const {
+    content_type_id,
+    schema,
+    system_prompt,
+    user_message,
+    conversation_history = [],
+  }: {
+    content_type_id: string;
+    schema: any;
+    system_prompt: string;
+    user_message: string;
+    conversation_history: Array<{ role: "user" | "assistant"; content: string }>;
+  } = payload;
+
+  // Convert JSON schema to Zod schema (streamObject requires Zod)
+  // This is a simplified converter - the schema is already validated on frontend
+  // For production, consider using a full JSON Schema -> Zod converter library
+  const zodSchema = z.any(); // Accept any shape matching the JSON schema
+
+  const openaiProvider = createOpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    compatibility: "strict",
+  });
+
+  // Build messages array
+  const messages = [
+    { role: "system" as const, content: system_prompt },
+    ...conversation_history,
+    { role: "user" as const, content: user_message },
+  ];
+
+  // Use streamObject to generate structured content
+  const result = streamObject({
+    model: openaiProvider("gpt-4o"),
+    messages,
+    schema: zodSchema,
+    temperature: 0.7,
+    maxTokens: 3000, // Generous limit for detailed content
+  });
+
+  // Return Response object with data stream
+  return result.toTextStreamResponse({
+    headers: {
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}

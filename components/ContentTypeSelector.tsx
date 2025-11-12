@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type ContentType = 'text' | 'ai-chat' | 'search' | 'image' | 'epub' | 'audio' | 'map' | 'timeline';
+export type ContentType = 'text' | 'ai-chat' | 'branching-chat' | 'search' | 'image' | 'epub' | 'audio' | 'map' | 'timeline';
 
 interface ContentTypeSelectorProps {
   selectedType: ContentType;

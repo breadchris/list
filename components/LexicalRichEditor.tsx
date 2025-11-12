@@ -211,7 +211,7 @@ const EditorContent: React.FC<
       <RichTextPlugin
         contentEditable={
           <ContentEditable
-            className="lexical-rich-content-editable w-full px-3 py-3 bg-gray-800 text-white rounded-md border border-gray-600 focus:outline-none focus:ring-blue-400 focus:border-blue-400 min-h-[200px]"
+            className="lexical-rich-content-editable w-full px-3 py-3 bg-white text-gray-900 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[200px]"
             ariaLabel="Rich text editor"
             aria-placeholder={placeholder}
             spellCheck={true}
@@ -236,12 +236,6 @@ const EditorContent: React.FC<
         availableTags={availableTags}
       />
       {onChange && <OnChangePlugin onChange={onChange} />}
-      {anchorElem && (
-        <DraggableBlockPlugin
-          anchorElem={anchorElem}
-          onInsertBlock={handleInsertBlock}
-        />
-      )}
       <ImperativeHandlePlugin
         innerRef={innerRef}
         onSubmit={onSubmit}
@@ -294,9 +288,9 @@ export const LexicalRichEditor = forwardRef<
           italic: "italic",
           underline: "underline",
           strikethrough: "line-through",
-          code: "font-mono bg-gray-700 px-1 py-0.5 rounded text-sm",
+          code: "font-mono bg-gray-100 text-gray-800 px-1 py-0.5 rounded text-sm",
         },
-        link: "text-blue-400 hover:text-blue-300 underline cursor-pointer",
+        link: "text-blue-600 hover:text-blue-700 underline cursor-pointer",
         list: {
           ul: "lexical-list-ul list-disc pl-6 mb-2",
           ol: "lexical-list-ol list-decimal pl-6 mb-2",

@@ -14,8 +14,6 @@ import { ImageUploadInput } from './ImageUploadInput';
 import { EpubUploadInput } from './EpubUploadInput';
 import { MapInput } from './MapInput';
 import { MapData } from './MapDisplay';
-import { PluginLoader } from './PluginLoader';
-import { PluginEditor } from './PluginEditor';
 import { ContentActionsDrawer, ContentAction } from './ContentActionsDrawer';
 import { WorkflowAction } from './WorkflowFAB';
 
@@ -27,7 +25,6 @@ interface ContentInputProps {
   onContentAdded: (content: Content) => void;
   onNavigate?: (contentId: string) => void;
   onActionSelect?: (action: ContentAction) => void;
-  onAIChatV2Open?: (content: Content) => void;
   availableTags?: Tag[];
   // Chat mode props
   isChatSidebarOpen?: boolean;
@@ -45,7 +42,6 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   onContentAdded,
   onNavigate,
   onActionSelect,
-  onAIChatV2Open,
   availableTags = [],
   isChatSidebarOpen = false,
   chatInput,
@@ -59,35 +55,6 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
   // Handle action selection
   const handleActionSelect = async (action: ContentAction) => {
-    // If import action and parent wants to handle it, delegate to parent
-    if (action === 'import' && onActionSelect) {
-      onActionSelect(action);
-      return;
-    }
-    // Create AI Chat V2 content and open sidebar
-    if (action === 'ai-chat-v2') {
-      try {
-        const chatContent = await createContentMutation.mutateAsync({
-          type: 'ai-chat',
-          data: 'AI Chat Session',
-          group_id: groupId,
-          parent_content_id: parentContentId,
-          metadata: {
-            chat_history: [],
-            created_via: 'ai-chat-v2',
-            created_at: new Date().toISOString()
-          }
-        });
-
-        // Open sidebar with this content
-        if (onAIChatV2Open) {
-          onAIChatV2Open(chatContent);
-        }
-      } catch (error) {
-        toast.error('Failed to start AI chat', error instanceof Error ? error.message : 'Unknown error');
-      }
-      return;
-    }
     // Open modal for rich text editor
     if (action === 'rich-text') {
       setShowRichTextModal(true);
@@ -102,14 +69,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   const lexicalInputRef = useRef<LexicalContentInputRef>(null);
   const richEditorRef = useRef<LexicalRichEditorRef>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [showPluginEditor, setShowPluginEditor] = useState(false);
-  const [pluginContentId, setPluginContentId] = useState<string | null>(null);
   const [showRichTextModal, setShowRichTextModal] = useState(false);
   const [timelineTitle, setTimelineTitle] = useState('');
   const [timelineContext, setTimelineContext] = useState('');
   const [timelineDuration, setTimelineDuration] = useState('');
   const pendingAISubmitRef = useRef(false);
-  const hasCreatedPluginRef = useRef(false);
   const toast = useToast();
   const queryClient = useQueryClient();
 
@@ -593,64 +557,6 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     }
   };
 
-  // Auto-create plugin content when plugin action is selected
-  React.useEffect(() => {
-    // Reset flag when action changes away from plugin
-    if (activeAction !== 'plugin') {
-      hasCreatedPluginRef.current = false;
-      return;
-    }
-
-    // Only create once per plugin action selection
-    if (activeAction === 'plugin' && !pluginContentId && !hasCreatedPluginRef.current) {
-      hasCreatedPluginRef.current = true; // Set flag immediately to prevent duplicates
-
-      const createPluginContent = async () => {
-        try {
-          // Create plugin content with default template
-          const newContent = await createContentMutation.mutateAsync({
-            type: 'plugin',
-            data: PluginLoader.getDefaultTemplate(),
-            group_id: groupId,
-            parent_content_id: parentContentId,
-          });
-
-          setPluginContentId(newContent.id);
-          setShowPluginEditor(true);
-          onContentAdded(newContent);
-        } catch (error) {
-          console.error('Error creating plugin content:', error);
-          toast.error('Error', 'Failed to create plugin');
-          hasCreatedPluginRef.current = false; // Reset flag on error to allow retry
-          setActiveAction(null);
-        }
-      };
-
-      createPluginContent();
-    }
-  }, [activeAction, pluginContentId, groupId, parentContentId, onContentAdded, createContentMutation, toast]);
-
-  // Show plugin editor as modal when active
-  if (activeAction === 'plugin' && showPluginEditor && pluginContentId) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] overflow-hidden">
-          <PluginEditor
-            contentId={pluginContentId}
-            groupId={groupId}
-            initialValue={PluginLoader.getDefaultTemplate()}
-            onClose={() => {
-              setShowPluginEditor(false);
-              setPluginContentId(null);
-              setActiveAction(null);
-            }}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // Always show the new content input UI
   return (
     <>
       <div className="bg-gray-800 px-4 py-3">

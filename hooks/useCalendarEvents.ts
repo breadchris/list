@@ -20,15 +20,21 @@ interface UseCalendarEventsOptions {
  * Map content item to calendar event
  */
 function mapContentToEvent(content: Content): CalendarEvent {
-  // Extract date from content (use created_at by default)
-  const date = new Date(content.created_at);
+  // Parse created_at timestamp to get both date and time
+  const createdDate = new Date(content.created_at);
+  const date = createdDate;
 
-  // Try to extract time from metadata if available
-  let time: string | undefined;
+  // Extract time-of-day from created_at (HH:mm format for timeline positioning)
+  const hours = createdDate.getHours();
+  const minutes = createdDate.getMinutes();
+  const extractedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+
+  // Use metadata.event_time if explicitly set, otherwise use extracted time from created_at
+  let time: string = extractedTime;
   let endTime: string | undefined;
 
   if (content.metadata?.event_time) {
-    time = content.metadata.event_time;
+    time = content.metadata.event_time; // Override with explicit time if available
   }
 
   if (content.metadata?.event_end_time) {

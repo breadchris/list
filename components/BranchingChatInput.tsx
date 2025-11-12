@@ -31,9 +31,9 @@ export function BranchingChatInput({ onSend, initialValue = '', isEditing = fals
   };
 
   return (
-    <div className="border-t-2 border-[#9a8a6a] bg-[#F5EFE3] p-3 sm:p-4">
+    <div className="border-t border-gray-200 bg-white p-3 sm:p-4">
       {isEditing && (
-        <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-[#F4D03F]/30 border border-[#9a8a6a]/30 rounded">
+        <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded">
           <span style={{ fontSize: '0.85rem' }} className="opacity-70">
             Editing message...
           </span>
@@ -54,12 +54,12 @@ export function BranchingChatInput({ onSend, initialValue = '', isEditing = fals
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type a message..."
-          className="flex-1 bg-background border border-[#9a8a6a] px-3 py-2 sm:px-4 sm:py-3 focus:outline-none focus:border-[#F4D03F] text-sm sm:text-base"
+          className="flex-1 bg-white border border-gray-300 px-3 py-2 sm:px-4 sm:py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
           onKeyDown={handleKeyDown}
         />
         <button
           type="submit"
-          className="bg-[#E67E50] hover:bg-[#d06e40] border border-[#9a8a6a] px-4 py-2 sm:px-6 sm:py-3 transition-colors flex items-center gap-2"
+          className="bg-blue-600 hover:bg-blue-700 border border-gray-300 px-4 py-2 sm:px-6 sm:py-3 transition-colors flex items-center gap-2 text-white"
         >
           <Send className="w-4 h-4" />
           <span className="hidden sm:inline">Send</span>

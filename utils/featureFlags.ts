@@ -9,13 +9,15 @@
 export type FeatureFlagKey =
   | 'enableQueryCaching'
   | 'enableExperimentalFeatures'
-  | 'enableDebugMode';
+  | 'enableDebugMode'
+  | 'showContentTypeOnHover';
 
 // Default values - all disabled by default
 const FEATURE_FLAG_DEFAULTS: Record<FeatureFlagKey, boolean> = {
   enableQueryCaching: false,
   enableExperimentalFeatures: false,
   enableDebugMode: false,
+  showContentTypeOnHover: false,
 };
 
 // Feature flag metadata for UI display
@@ -31,6 +33,10 @@ export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { label: string; desc
   enableDebugMode: {
     label: 'Enable Debug Mode',
     description: 'Show additional debugging information in the console',
+  },
+  showContentTypeOnHover: {
+    label: 'Show Content Type on Hover',
+    description: 'Display the content type (text, image, audio, etc.) as faint text when hovering over content items',
   },
 };
 

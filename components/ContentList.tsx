@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Content, contentRepository, Tag, TagFilter, SEOMetadata, SharingMetadata, YouTubeVideoMetadata } from './ContentRepository';
 import { LinkifiedText } from './LinkifiedText';
 import { SEOCard } from './SEOCard';
@@ -13,9 +14,12 @@ import { AudioDisplay } from './AudioDisplay';
 import { EpubViewer } from './EpubViewer';
 import { TranscriptViewer } from './TranscriptViewer';
 import { TsxRenderer } from './TsxRenderer';
-import { PluginRenderer } from './PluginRenderer';
 import TimelinePlayer from './timeline/TimelinePlayer';
 import type { TimelineMetadata } from './timeline/types';
+import { RecipeViewer } from './viewers/RecipeViewer';
+import { TaskListViewer } from './viewers/TaskListViewer';
+import { EventViewer } from './viewers/EventViewer';
+import { BookSummaryViewer } from './viewers/BookSummaryViewer';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useInfiniteContentByTag, useDeleteContentMutation, useContentById } from '../hooks/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -38,6 +42,7 @@ import { PieMenu } from './pie/PieMenu';
 import { useContentPieMenu } from '../hooks/useContentPieMenu';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useContentFocus } from '../hooks/useContentFocus';
+import { useFeatureFlags } from '../hooks/useFeatureFlags';
 import { FocusActionBar } from './FocusActionBar';
 
 interface ContentListProps {
@@ -162,10 +167,15 @@ export const ContentList: React.FC<ContentListProps> = ({
   onSelectParent = () => {},
   itemsBeingMoved = []
 }) => {
+  const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const deleteContentMutation = useDeleteContentMutation();
   const toast = useToast();
+
+  // Feature flags
+  const { getFlag } = useFeatureFlags();
+  const showContentTypeOnHover = getFlag('showContentTypeOnHover');
 
   // Skeleton delay state to prevent flashing
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -530,8 +540,12 @@ export const ContentList: React.FC<ContentListProps> = ({
       // In selection mode, toggle item selection
       selection.toggleItem(contentItem.id);
     } else {
-      // Normal mode: toggle focus for this item
-      focus.toggleFocus(contentItem.id);
+      // Normal mode: navigate to dedicated page for text content, otherwise toggle focus
+      if (contentItem.type === 'text') {
+        navigate(`/group/${groupId}/content/${contentItem.id}`);
+      } else {
+        focus.toggleFocus(contentItem.id);
+      }
     }
   };
 
@@ -1107,39 +1121,6 @@ export const ContentList: React.FC<ContentListProps> = ({
                           )}
                         </div>
                       </div>
-                    ) : item.type === 'plugin' ? (
-                      <div>
-                        <div className="flex items-center space-x-2 mb-2">
-                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                          </svg>
-                          <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">Plugin</span>
-                        </div>
-
-                        {/* Plugin Renderer */}
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
-                          <PluginRenderer
-                            pluginCode={item.data}
-                            contentId={item.id}
-                            groupId={item.group_id}
-                          />
-                        </div>
-
-                        <TagDisplay tags={item.tags || []} isVisible={true} />
-                        <div className="flex items-center gap-2 mt-2">
-                          <p className="text-xs text-gray-500">
-                            {formatRelativeTime(item.created_at)}
-                          </p>
-                          {item.child_count && item.child_count > 0 && (
-                            <div className="flex items-center text-xs text-blue-600" title={`${item.child_count} child item${item.child_count === 1 ? '' : 's'}`}>
-                              <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                              </svg>
-                              <span>{item.child_count} item{item.child_count === 1 ? '' : 's'}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
                     ) : item.type === 'image' ? (
                       <div>
                         <ImageDisplay imageUrl={item.data} alt="Uploaded image" />
@@ -1242,6 +1223,50 @@ export const ContentList: React.FC<ContentListProps> = ({
                               </svg>
                             </div>
                           )}
+                        </div>
+                      </div>
+                    ) : item.metadata?.content_type === 'recipe' && item.metadata?.generated_data ? (
+                      <div>
+                        <RecipeViewer data={item.metadata.generated_data} />
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : item.metadata?.content_type === 'task_list' && item.metadata?.generated_data ? (
+                      <div>
+                        <TaskListViewer data={item.metadata.generated_data} />
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : item.metadata?.content_type === 'event' && item.metadata?.generated_data ? (
+                      <div>
+                        <EventViewer data={item.metadata.generated_data} />
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : item.metadata?.content_type === 'book_summary' && item.metadata?.generated_data ? (
+                      <div>
+                        <BookSummaryViewer data={item.metadata.generated_data} />
+                        <TagDisplay tags={item.tags || []} isVisible={true} />
+                        <ContentJobsIndicator jobs={jobsByContentId.get(item.id) || []} className="mt-2" />
+                        <div className="flex items-center gap-2 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
                         </div>
                       </div>
                     ) : item.type === 'audio' ? (
@@ -1537,9 +1562,18 @@ export const ContentList: React.FC<ContentListProps> = ({
                     {/* Main content area */}
                     <ItemContent />
 
-                  {/* Right gutter for icons and actions */}
-                  {!selection.isSelectionMode && (
-                    <div className="flex flex-col items-center gap-1 w-8">
+                  {/* Right gutter for icons and actions - hidden when focused */}
+                  {!selection.isSelectionMode && !focus.isFocused(item.id) && (
+                    <div className={`flex flex-col items-center gap-1 w-8 transition-transform duration-150 ease-out translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100`}>
+                      {/* Content Type Indicator */}
+                      {showContentTypeOnHover && (
+                        <div className="flex-shrink-0">
+                          <span className="text-xs text-gray-400 uppercase tracking-wide">
+                            {item.type}
+                          </span>
+                        </div>
+                      )}
+
                       {/* Public globe icon */}
                       {isContentPublic(item) && (
                         <div className="flex-shrink-0" title="This content is public">
@@ -1550,7 +1584,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                       )}
 
                       {/* Vote buttons */}
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div>
                         <VoteButtons
                           contentId={item.id}
                           groupId={groupId}
@@ -1571,7 +1605,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                           }
                           selection.toggleItem(item.id);
                         }}
-                        className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
                         title="Select for workflow"
                       >
                         <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1580,7 +1614,7 @@ export const ContentList: React.FC<ContentListProps> = ({
                       </button>
 
                       {/* Tag button */}
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div>
                         <TagButton
                           contentId={item.id}
                           existingTags={item.tags || []}

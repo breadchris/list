@@ -344,3 +344,157 @@ export function buildCalendarDays(
     };
   });
 }
+
+/**
+ * Parse time string to hours and minutes
+ * Supports formats: "14:30", "2:30 PM", "2:30pm"
+ */
+export function parseTime(timeStr: string): { hours: number; minutes: number } {
+  const time = timeStr.trim().toLowerCase();
+
+  // Check for AM/PM format
+  const isPM = time.includes('pm');
+  const isAM = time.includes('am');
+
+  // Extract time part (remove am/pm)
+  const timePart = time.replace(/\s*(am|pm)\s*/g, '').trim();
+  const [hoursStr, minutesStr = '0'] = timePart.split(':');
+
+  let hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+
+  // Convert to 24-hour format
+  if (isPM && hours !== 12) {
+    hours += 12;
+  } else if (isAM && hours === 12) {
+    hours = 0;
+  }
+
+  return { hours, minutes };
+}
+
+/**
+ * Calculate grid row for event time
+ * Returns row number (2-289) for 288 five-minute intervals + 1 header row
+ * Row 2 = 12:00 AM, Row 74 = 6:00 AM, Row 289 = 11:55 PM
+ */
+export function calculateTimeSlotRow(time: string): number {
+  try {
+    const { hours, minutes } = parseTime(time);
+    // 288 total rows = 24 hours × 12 intervals (5 minutes each)
+    // Add 2 for offset (1 for header row, 1 for grid indexing)
+    const intervalsPassed = (hours * 12) + Math.floor(minutes / 5);
+    return intervalsPassed + 2;
+  } catch (error) {
+    // Default to midnight if parsing fails
+    return 2;
+  }
+}
+
+/**
+ * Calculate span for event duration
+ * Returns number of grid rows to span
+ */
+export function calculateDurationSpan(startTime: string, endTime: string): number {
+  try {
+    const start = parseTime(startTime);
+    const end = parseTime(endTime);
+
+    const startMinutes = start.hours * 60 + start.minutes;
+    const endMinutes = end.hours * 60 + end.minutes;
+    const duration = endMinutes - startMinutes;
+
+    // Each row = 5 minutes, so divide duration by 5
+    const span = Math.ceil(duration / 5);
+
+    // Minimum span of 3 (15 minutes) for visibility
+    return Math.max(span, 3);
+  } catch (error) {
+    // Default to 1 hour (12 intervals)
+    return 12;
+  }
+}
+
+/**
+ * Build week days with events grouped by date
+ * Used by WeekView to create the week grid with event data
+ */
+export function buildWeekDays(
+  startDate: Date,
+  events: Array<{ id: string; date: Date; [key: string]: any }>,
+  selectedDate: Date
+): Array<{
+  date: Date;
+  isToday: boolean;
+  isSelected: boolean;
+  dayOfWeek: number;
+  events: Array<{ id: string; date: Date; [key: string]: any }>;
+}> {
+  const weekDays = getWeekDays(startDate);
+  const today = new Date();
+
+  return weekDays.map((date, index) => {
+    // Filter events for this specific date
+    const dayEvents = events.filter((event) =>
+      isSameDay(event.date, date)
+    );
+
+    return {
+      date,
+      isToday: isSameDay(date, today),
+      isSelected: isSameDay(date, selectedDate),
+      dayOfWeek: index, // 0 = Sunday, 6 = Saturday
+      events: dayEvents,
+    };
+  });
+}
+
+/**
+ * Build year months with events
+ * Used by YearView to create the year grid with event data
+ */
+export function buildYearMonths(
+  year: number,
+  events: Array<{ id: string; date: Date; [key: string]: any }>,
+  selectedDate: Date
+): Array<{
+  month: number;
+  name: string;
+  days: Array<{
+    date: Date;
+    isCurrentMonth: boolean;
+    isToday: boolean;
+    isSelected: boolean;
+    hasEvents: boolean;
+    eventCount: number;
+  }>;
+}> {
+  const months = getMonthsInYear(year);
+  const today = new Date();
+
+  return months.map((monthDate, monthIndex) => {
+    const monthDays = getMonthDays(year, monthIndex);
+
+    const days = monthDays.map((date) => {
+      // Filter events for this specific date
+      const dayEvents = events.filter((event) =>
+        isSameDay(event.date, date)
+      );
+
+      return {
+        date,
+        isCurrentMonth: date.getMonth() === monthIndex,
+        isToday: isSameDay(date, today),
+        isSelected: isSameDay(date, selectedDate),
+        hasEvents: dayEvents.length > 0,
+        eventCount: dayEvents.length,
+      };
+    });
+
+    return {
+      month: monthIndex,
+      name: getFullMonthName(monthIndex),
+      days,
+    };
+  });
+}
