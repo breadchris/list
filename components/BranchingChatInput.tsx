@@ -26,7 +26,10 @@ export function BranchingChatInput({ onSend, initialValue = '', isEditing = fals
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e);
+      if (input.trim()) {
+        onSend(input);
+        setInput('');
+      }
     }
   };
 

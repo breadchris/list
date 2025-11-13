@@ -115,18 +115,7 @@ export function BranchingChatMessage({
   
   return (
     <div className="mb-4 sm:mb-6 w-full">
-      <div className="flex items-start gap-2 sm:gap-3">
-        {/* Avatar */}
-        <div
-          className={`w-6 h-6 sm:w-8 sm:h-8 flex items-center justify-center border-2 border-gray-300 text-xs text-white flex-shrink-0 ${
-            sender === 'user' ? 'bg-blue-600' : 'bg-teal-500'
-          }`}
-        >
-          {sender === 'user' ? 'U' : 'A'}
-        </div>
-
-        {/* Message Content */}
-        <div className="flex-1 min-w-0">
+      <div className="w-full">
           <div className="flex items-center justify-between mb-1 sm:mb-2 gap-2">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <span className="text-xs sm:text-sm opacity-60 truncate">{timestamp}</span>
@@ -185,7 +174,6 @@ export function BranchingChatMessage({
             )}
           </div>
         </div>
-      </div>
 
       {/* Floating Highlight Button */}
       {showHighlightButton && (

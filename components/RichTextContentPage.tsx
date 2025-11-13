@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Check, AlertCircle, Edit } from 'lucide-react';
 import { LexicalRichEditor } from './LexicalRichEditor';
 import { useRichTextContent } from '../hooks/useRichTextContent';
 import { useAutoSaveContent } from '../hooks/useAutoSaveContent';
-import { useTags } from '../hooks/useTags';
+import { useTagsForGroup } from '../hooks/useTagQueries';
 
 /**
  * Minimal Rich Text Content Page
  *
  * Features:
  * - Clean, distraction-free layout
- * - Click to edit (auto-edit on click)
+ * - Explicit edit button to enter edit mode
  * - Auto-save on change with debounce
  * - Read-only view mode by default
- * - Escape key to exit edit mode
+ * - Escape key or Done button to exit edit mode
  */
 export const RichTextContentPage: React.FC = () => {
   const { groupId, contentId } = useParams<{ groupId: string; contentId: string }>();
@@ -31,7 +31,7 @@ export const RichTextContentPage: React.FC = () => {
   });
 
   // Fetch available tags for mentions
-  const { data: tags = [] } = useTags(groupId!);
+  const { data: tags = [] } = useTagsForGroup(groupId!);
 
   // Auto-save functionality
   const { saveState, save, error: saveError } = useAutoSaveContent({
@@ -102,14 +102,35 @@ export const RichTextContentPage: React.FC = () => {
       <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex items-center justify-between">
-            {/* Back button */}
-            <button
-              onClick={handleBack}
-              className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span className="text-sm font-medium">Back</span>
-            </button>
+            <div className="flex items-center gap-4">
+              {/* Back button */}
+              <button
+                onClick={handleBack}
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5" />
+                <span className="text-sm font-medium">Back</span>
+              </button>
+
+              {/* Edit/Done button */}
+              {!isEditing ? (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  <Edit className="w-4 h-4" />
+                  <span className="text-sm font-medium">Edit</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsEditing(false)}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                >
+                  <Check className="w-4 h-4" />
+                  <span className="text-sm font-medium">Done</span>
+                </button>
+              )}
+            </div>
 
             {/* Save status indicator */}
             <div className="flex items-center space-x-2">
@@ -172,10 +193,9 @@ export const RichTextContentPage: React.FC = () => {
               </div>
             </div>
           ) : (
-            /* View mode - Click to edit */
+            /* View mode - Read-only view */
             <div
-              onClick={() => setIsEditing(true)}
-              className="min-h-[60vh] cursor-text rounded-lg hover:bg-gray-50 transition-colors px-6 py-4"
+              className="min-h-[60vh] rounded-lg px-6 py-4"
             >
               {currentContent ? (
                 <div className="prose prose-gray max-w-none">
@@ -186,7 +206,7 @@ export const RichTextContentPage: React.FC = () => {
                 </div>
               ) : (
                 <p className="text-gray-400 italic">
-                  Click to start writing...
+                  No content yet. Click Edit to start writing.
                 </p>
               )}
             </div>

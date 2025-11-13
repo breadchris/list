@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Drawer } from './vaul/index';
 
-export type ContentAction = 'text' | 'rich-text' | 'ai-chat' | 'branching-chat' | 'claude-code' | 'image' | 'epub' | 'map' | 'timeline';
+export type ContentAction = 'text' | 'rich-text' | 'ai-chat' | 'claude-code' | 'image' | 'epub' | 'map' | 'timeline';
 
 interface ActionConfig {
   id: ContentAction;
@@ -18,7 +18,6 @@ export const ACTION_COLORS: Record<ContentAction, { bg: string; text: string; he
   'rich-text': { bg: 'bg-slate-500', text: 'text-slate-600', hex: '#64748B' },
   'claude-code': { bg: 'bg-indigo-500', text: 'text-indigo-600', hex: '#6366F1' },
   'ai-chat': { bg: 'bg-purple-500', text: 'text-purple-600', hex: '#A855F7' },
-  'branching-chat': { bg: 'bg-violet-500', text: 'text-violet-600', hex: '#8B5CF6' },
   'image': { bg: 'bg-green-500', text: 'text-green-600', hex: '#10B981' },
   'epub': { bg: 'bg-orange-500', text: 'text-orange-600', hex: '#F97316' },
   'map': { bg: 'bg-red-500', text: 'text-red-600', hex: '#EF4444' },
@@ -49,12 +48,6 @@ const ACTIONS: ActionConfig[] = [
     icon: '💬',
     label: 'AI Chat',
     ...ACTION_COLORS['ai-chat']
-  },
-  {
-    id: 'branching-chat',
-    icon: '🌳',
-    label: 'Branching Chat',
-    ...ACTION_COLORS['branching-chat']
   },
   {
     id: 'image',

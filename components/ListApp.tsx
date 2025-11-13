@@ -619,6 +619,12 @@ export const ListApp: React.FC = () => {
     if (!currentGroup || itemsToMove.length === 0) return;
 
     try {
+      console.log('Starting move operation:', {
+        itemsToMove,
+        targetParentId,
+        currentParentId
+      });
+
       // Update each item's parent_content_id
       const updates = itemsToMove.map((id) =>
         contentRepository.updateContent(id, {
@@ -626,7 +632,16 @@ export const ListApp: React.FC = () => {
         }),
       );
 
-      await Promise.all(updates);
+      const results = await Promise.all(updates);
+
+      // Validate that updates actually succeeded
+      const failedUpdates = results.filter(result => !result || !result.id);
+      if (failedUpdates.length > 0) {
+        console.error('Some updates failed:', failedUpdates);
+        throw new Error(`${failedUpdates.length} item(s) failed to update`);
+      }
+
+      console.log('Move operation completed successfully:', results);
 
       // Get parent name for success message
       let parentName = "Root";
@@ -650,9 +665,21 @@ export const ListApp: React.FC = () => {
       // Exit mode and clear state
       handleCancelMoveToParent();
 
-      // Refresh content
+      // Refresh content - invalidate all relevant queries
       queryClient.invalidateQueries({
         queryKey: QueryKeys.contentByParent(currentGroup.id, currentParentId),
+      });
+
+      // Invalidate target parent's children (if different from current)
+      if (targetParentId !== currentParentId) {
+        queryClient.invalidateQueries({
+          queryKey: QueryKeys.contentByParent(currentGroup.id, targetParentId),
+        });
+      }
+
+      // Invalidate all content queries to ensure moved items refresh everywhere
+      queryClient.invalidateQueries({
+        queryKey: QueryKeys.allContent(currentGroup.id),
       });
     } catch (error) {
       console.error("Move failed:", error);

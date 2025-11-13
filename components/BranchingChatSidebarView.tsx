@@ -107,6 +107,15 @@ export const BranchingChatSidebarView: React.FC<
     await sendMessage(question);
   };
 
+  // Custom input change handler to update editingMessage state
+  const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (editingMessage) {
+      setEditingMessage({ ...editingMessage, text: e.target.value });
+    } else {
+      handleInputChange(e);
+    }
+  };
+
   // Custom submit handler to handle edit mode
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,11 +173,7 @@ export const BranchingChatSidebarView: React.FC<
                       isStreaming={message.isStreaming}
                       isCollapsed={message.isCollapsed}
                       onToggle={() => toggleMessageExpansion(message.id)}
-                      onEdit={
-                        message.sender === "user"
-                          ? () => startEditingMessage(message.id, message.text)
-                          : undefined
-                      }
+                      onEdit={() => startEditingMessage(message.id, message.text)}
                       disableAnimation={!message.isStreaming}
                     />
 
@@ -260,7 +265,7 @@ export const BranchingChatSidebarView: React.FC<
             <input
               type="text"
               value={editingMessage?.text || input}
-              onChange={handleInputChange}
+              onChange={handleEditInputChange}
               placeholder={
                 editingMessage ? "Edit your message..." : "Type a message..."
               }

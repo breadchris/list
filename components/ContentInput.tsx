@@ -1,21 +1,27 @@
-import React, { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Content, Tag, contentRepository } from './ContentRepository';
-import { useCreateContentMutation } from '../hooks/useContentQueries';
-import { useAddTagToContentMutation, useCreateTagMutation } from '../hooks/useTagMutations';
-import { LexicalContentInput, LexicalContentInputRef } from './LexicalContentInput';
-import { LexicalRichEditor, LexicalRichEditorRef } from './LexicalRichEditor';
-import { ChatService } from './ChatService';
-import { ClaudeCodeService } from './ClaudeCodeService';
-import { useToast } from './ToastProvider';
-import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from '../hooks/queryKeys';
-import { ImageUploadInput } from './ImageUploadInput';
-import { EpubUploadInput } from './EpubUploadInput';
-import { MapInput } from './MapInput';
-import { MapData } from './MapDisplay';
-import { ContentActionsDrawer, ContentAction } from './ContentActionsDrawer';
-import { WorkflowAction } from './WorkflowFAB';
+import React, { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Content, Tag, contentRepository } from "./ContentRepository";
+import { useCreateContentMutation } from "../hooks/useContentQueries";
+import {
+  useAddTagToContentMutation,
+  useCreateTagMutation,
+} from "../hooks/useTagMutations";
+import {
+  LexicalContentInput,
+  LexicalContentInputRef,
+} from "./LexicalContentInput";
+import { LexicalRichEditor, LexicalRichEditorRef } from "./LexicalRichEditor";
+import { ChatService } from "./ChatService";
+import { ClaudeCodeService } from "./ClaudeCodeService";
+import { useToast } from "./ToastProvider";
+import { useQueryClient } from "@tanstack/react-query";
+import { QueryKeys } from "../hooks/queryKeys";
+import { ImageUploadInput } from "./ImageUploadInput";
+import { EpubUploadInput } from "./EpubUploadInput";
+import { MapInput } from "./MapInput";
+import { MapData } from "./MapDisplay";
+import { ContentActionsDrawer, ContentAction } from "./ContentActionsDrawer";
+import { WorkflowAction } from "./WorkflowFAB";
 
 interface ContentInputProps {
   groupId: string;
@@ -47,7 +53,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   chatInput,
   chatIsLoading = false,
   onChatInputChange,
-  onChatSubmit
+  onChatSubmit,
 }) => {
   // Internal state for active content action
   const [activeAction, setActiveAction] = useState<ContentAction | null>(null);
@@ -56,7 +62,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   // Handle action selection
   const handleActionSelect = async (action: ContentAction) => {
     // Open modal for rich text editor
-    if (action === 'rich-text') {
+    if (action === "rich-text") {
       setShowRichTextModal(true);
       return;
     }
@@ -70,17 +76,27 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   const richEditorRef = useRef<LexicalRichEditorRef>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [showRichTextModal, setShowRichTextModal] = useState(false);
-  const [timelineTitle, setTimelineTitle] = useState('');
-  const [timelineContext, setTimelineContext] = useState('');
-  const [timelineDuration, setTimelineDuration] = useState('');
+  const [timelineTitle, setTimelineTitle] = useState("");
+  const [timelineContext, setTimelineContext] = useState("");
+  const [timelineDuration, setTimelineDuration] = useState("");
   const pendingAISubmitRef = useRef(false);
   const toast = useToast();
   const queryClient = useQueryClient();
 
   const handleSubmit = async (text: string, mentions: string[] = []) => {
-    if (!text || (createContentMutation.isPending && !pendingAISubmitRef.current)) return;
+    if (
+      !text ||
+      (createContentMutation.isPending && !pendingAISubmitRef.current)
+    )
+      return;
 
-    console.log('Submitting content:', { text, mentions, activeAction, parentContentId, isChatSidebarOpen });
+    console.log("Submitting content:", {
+      text,
+      mentions,
+      activeAction,
+      parentContentId,
+      isChatSidebarOpen,
+    });
 
     // If in chat mode, delegate to chat handler
     if (isChatSidebarOpen && onChatSubmit) {
@@ -94,14 +110,8 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       return;
     }
 
-    // If active action is AI chat, route to AI handler
-    if (activeAction === 'ai-chat') {
-      handleAISubmit(text);
-      return;
-    }
-
     // If active action is Claude Code, route to Claude Code start handler
-    if (activeAction === 'claude-code') {
+    if (activeAction === "claude-code") {
       handleClaudeCodeStart(text);
       return;
     }
@@ -116,12 +126,13 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     try {
       // Check if parent is a chat or claude-code - if so, route to appropriate handler
       if (parentContentId) {
-        const parentContent = await contentRepository.getContentById(parentContentId);
-        if (parentContent && parentContent.type === 'chat') {
+        const parentContent =
+          await contentRepository.getContentById(parentContentId);
+        if (parentContent && parentContent.type === "chat") {
           handleChatSubmit(text, parentContentId);
           return;
         }
-        if (parentContent && parentContent.type === 'claude-code') {
+        if (parentContent && parentContent.type === "claude-code") {
           handleClaudeCodeSubmit(text, parentContentId);
           return;
         }
@@ -129,7 +140,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
       // Normal content creation
       const newContent = await createContentMutation.mutateAsync({
-        type: 'text',
+        type: "text",
         data: text,
         group_id: groupId,
         parent_content_id: parentContentId,
@@ -140,20 +151,22 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         for (const mentionName of mentions) {
           try {
             // Find tag by name (case-insensitive)
-            let tag = availableTags.find(t => t.name.toLowerCase() === mentionName.toLowerCase());
+            let tag = availableTags.find(
+              (t) => t.name.toLowerCase() === mentionName.toLowerCase(),
+            );
 
             // If tag doesn't exist, create it
             if (!tag) {
               tag = await createTagMutation.mutateAsync({
                 name: mentionName.toLowerCase(),
-                group_id: groupId
+                group_id: groupId,
               });
             }
 
             // Apply tag to content
             await addTagMutation.mutateAsync({
               contentId: newContent.id,
-              tagId: tag.id
+              tagId: tag.id,
             });
           } catch (tagError) {
             console.error(`Error applying tag "${mentionName}":`, tagError);
@@ -166,12 +179,15 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       // Clear the Lexical editor content
       lexicalInputRef.current?.clear();
     } catch (error) {
-      console.error('Error creating content:', error);
+      console.error("Error creating content:", error);
       // Error is already handled by the mutation
     }
   };
 
-  const handleRichTextSubmit = async (text: string, mentions: string[] = []) => {
+  const handleRichTextSubmit = async (
+    text: string,
+    mentions: string[] = [],
+  ) => {
     await handleSubmit(text, mentions);
     setShowRichTextModal(false);
   };
@@ -184,63 +200,67 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     try {
       // Create user message as child of chat
       const userMessage = await createContentMutation.mutateAsync({
-        type: 'text',
+        type: "text",
         data: text,
         group_id: groupId,
         parent_content_id: chatContentId,
-        metadata: { role: 'user' }
+        metadata: { role: "user" },
       });
 
       // Call chat service to get AI response
       const chatResponse = await ChatService.sendMessage({
         chat_content_id: chatContentId,
         message: text,
-        group_id: groupId
+        group_id: groupId,
       });
 
       if (!chatResponse.success) {
-        throw new Error(chatResponse.error || 'Chat failed');
+        throw new Error(chatResponse.error || "Chat failed");
       }
 
-      toast.success('AI Responded', 'Message sent and AI has responded');
+      toast.success("AI Responded", "Message sent and AI has responded");
 
       // Invalidate cache to show new assistant message
       queryClient.invalidateQueries({
-        queryKey: QueryKeys.contentByParent(groupId, chatContentId)
+        queryKey: QueryKeys.contentByParent(groupId, chatContentId),
       });
 
       onContentAdded(userMessage);
       setActiveAction(null);
       lexicalInputRef.current?.clear();
-
     } catch (error) {
-      console.error('Error in chat:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error('Chat Failed', errorMessage);
+      console.error("Error in chat:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      toast.error("Chat Failed", errorMessage);
     } finally {
       setIsGeneratingAI(false);
     }
   };
 
-  const handleClaudeCodeSubmit = async (text: string, claudeCodeContentId: string) => {
+  const handleClaudeCodeSubmit = async (
+    text: string,
+    claudeCodeContentId: string,
+  ) => {
     if (!text || createContentMutation.isPending || isGeneratingAI) return;
 
     setIsGeneratingAI(true);
 
     try {
       // Get session info from parent claude-code content
-      const session = await contentRepository.getClaudeCodeSession(claudeCodeContentId);
+      const session =
+        await contentRepository.getClaudeCodeSession(claudeCodeContentId);
 
       // Create user prompt as child of claude-code
       const userPrompt = await createContentMutation.mutateAsync({
-        type: 'text',
+        type: "text",
         data: text,
         group_id: groupId,
         parent_content_id: claudeCodeContentId,
-        metadata: { role: 'user', type: 'claude-code-prompt' }
+        metadata: { role: "user", type: "claude-code-prompt" },
       });
 
-      toast.success('Executing Claude Code', 'Running your prompt...');
+      toast.success("Executing Claude Code", "Running your prompt...");
 
       // Execute Claude Code with session resume
       const response = await ClaudeCodeService.executeClaudeCode(
@@ -250,12 +270,12 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         [], // No selected content when resuming
         claudeCodeContentId, // Parent is the original claude-code item
         (status) => {
-          console.log('Claude Code progress:', status);
-        }
+          console.log("Claude Code progress:", status);
+        },
       );
 
       if (!response.success) {
-        throw new Error(response.error || 'Claude Code execution failed');
+        throw new Error(response.error || "Claude Code execution failed");
       }
 
       // Update session metadata if we got a new session_id
@@ -264,39 +284,41 @@ export const ContentInput: React.FC<ContentInputProps> = ({
           session_id: response.session_id,
           s3_url: response.s3_url,
           initial_prompt: session?.initial_prompt || text,
-          last_updated_at: new Date().toISOString()
+          last_updated_at: new Date().toISOString(),
         });
       }
 
       // Force refetch to get new components immediately
-      toast.success('Claude Code Complete', 'Refreshing components...');
+      toast.success("Claude Code Complete", "Refreshing components...");
 
       // Invalidate and refetch to ensure we get the latest data
       await queryClient.invalidateQueries({
-        queryKey: QueryKeys.contentByParent(groupId, claudeCodeContentId)
+        queryKey: QueryKeys.contentByParent(groupId, claudeCodeContentId),
       });
 
       // Wait a moment for Lambda to finish creating child components
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Refetch to get updated component list
       await queryClient.refetchQueries({
-        queryKey: QueryKeys.contentByParent(groupId, claudeCodeContentId)
+        queryKey: QueryKeys.contentByParent(groupId, claudeCodeContentId),
       });
 
       // Get the updated content to count new components
       const queryData = queryClient.getQueryData<any>(
-        QueryKeys.contentByParent(groupId, claudeCodeContentId)
+        QueryKeys.contentByParent(groupId, claudeCodeContentId),
       );
 
       // Count newly generated components (those with generated_by_claude_code metadata and matching session)
-      const newComponents = queryData?.pages
-        ?.flatMap((page: any) => page.items || [])
-        ?.filter((item: Content) =>
-          item.metadata?.generated_by_claude_code &&
-          item.metadata?.session_id === response.session_id &&
-          item.type !== 'text' // Exclude text prompts
-        ) || [];
+      const newComponents =
+        queryData?.pages
+          ?.flatMap((page: any) => page.items || [])
+          ?.filter(
+            (item: Content) =>
+              item.metadata?.generated_by_claude_code &&
+              item.metadata?.session_id === response.session_id &&
+              item.type !== "text", // Exclude text prompts
+          ) || [];
 
       // Show specific feedback about generated components
       if (newComponents.length > 0) {
@@ -305,27 +327,30 @@ export const ContentInput: React.FC<ContentInputProps> = ({
           .filter(Boolean)
           .slice(0, 3);
 
-        const countText = `${newComponents.length} component${newComponents.length !== 1 ? 's' : ''}`;
-        const filesText = fileNames.length > 0 ? fileNames.join(', ') : '';
-        const moreText = newComponents.length > 3 ? `, +${newComponents.length - 3} more` : '';
+        const countText = `${newComponents.length} component${newComponents.length !== 1 ? "s" : ""}`;
+        const filesText = fileNames.length > 0 ? fileNames.join(", ") : "";
+        const moreText =
+          newComponents.length > 3 ? `, +${newComponents.length - 3} more` : "";
 
         toast.success(
           `Generated ${countText}`,
-          filesText ? `${filesText}${moreText}` : 'Components created successfully'
+          filesText
+            ? `${filesText}${moreText}`
+            : "Components created successfully",
         );
       } else {
         // No new components found yet - might still be processing
-        toast.success('Claude Code Complete', 'Session updated successfully');
+        toast.success("Claude Code Complete", "Session updated successfully");
       }
 
       onContentAdded(userPrompt);
       setActiveAction(null);
       lexicalInputRef.current?.clear();
-
     } catch (error) {
-      console.error('Error in Claude Code execution:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error('Claude Code Failed', errorMessage);
+      console.error("Error in Claude Code execution:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      toast.error("Claude Code Failed", errorMessage);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -339,40 +364,37 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     try {
       // Step 1: Create the chat container
       const chatContent = await createContentMutation.mutateAsync({
-        type: 'chat',
-        data: `Chat: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`,
+        type: "chat",
+        data: `Chat: ${text.substring(0, 50)}${text.length > 50 ? "..." : ""}`,
         group_id: groupId,
         parent_content_id: parentContentId,
       });
 
       // Step 2: Create first user message as child of chat
       const userMessage = await createContentMutation.mutateAsync({
-        type: 'text',
+        type: "text",
         data: text,
         group_id: groupId,
         parent_content_id: chatContent.id,
-        metadata: { role: 'user' }
+        metadata: { role: "user" },
       });
 
       // Step 3: Call chat service to get AI response
       const chatResponse = await ChatService.sendMessage({
         chat_content_id: chatContent.id,
         message: text,
-        group_id: groupId
+        group_id: groupId,
       });
 
       if (!chatResponse.success) {
-        throw new Error(chatResponse.error || 'Chat failed');
+        throw new Error(chatResponse.error || "Chat failed");
       }
 
-      toast.success(
-        'Chat Started!',
-        'AI has responded to your message'
-      );
+      toast.success("Chat Started!", "AI has responded to your message");
 
       // Invalidate cache to show new assistant message
       queryClient.invalidateQueries({
-        queryKey: QueryKeys.contentByParent(groupId, chatContent.id)
+        queryKey: QueryKeys.contentByParent(groupId, chatContent.id),
       });
 
       onContentAdded(chatContent);
@@ -383,11 +405,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       if (onNavigate) {
         onNavigate(chatContent.id);
       }
-
     } catch (error) {
-      console.error('Error starting chat:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error('Chat Failed', errorMessage);
+      console.error("Error starting chat:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      toast.error("Chat Failed", errorMessage);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -401,22 +423,22 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     try {
       // Step 1: Create the claude-code container
       const claudeCodeContent = await createContentMutation.mutateAsync({
-        type: 'claude-code',
-        data: `Code: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`,
+        type: "claude-code",
+        data: `Code: ${text.substring(0, 50)}${text.length > 50 ? "..." : ""}`,
         group_id: groupId,
         parent_content_id: parentContentId,
       });
 
       // Step 2: Create first user prompt as child
       const userPrompt = await createContentMutation.mutateAsync({
-        type: 'text',
+        type: "text",
         data: text,
         group_id: groupId,
         parent_content_id: claudeCodeContent.id,
-        metadata: { role: 'user', type: 'claude-code-prompt' }
+        metadata: { role: "user", type: "claude-code-prompt" },
       });
 
-      toast.success('Executing Claude Code', 'Running your prompt...');
+      toast.success("Executing Claude Code", "Running your prompt...");
 
       // Step 3: Execute Claude Code
       const response = await ClaudeCodeService.executeClaudeCode(
@@ -426,12 +448,12 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         [], // No selected content for initial start
         claudeCodeContent.id,
         (status) => {
-          console.log('Claude Code progress:', status);
-        }
+          console.log("Claude Code progress:", status);
+        },
       );
 
       if (!response.success) {
-        throw new Error(response.error || 'Claude Code execution failed');
+        throw new Error(response.error || "Claude Code execution failed");
       }
 
       // Step 4: Store session metadata if we got a session_id
@@ -441,15 +463,15 @@ export const ContentInput: React.FC<ContentInputProps> = ({
           s3_url: response.s3_url,
           initial_prompt: text,
           created_at: new Date().toISOString(),
-          last_updated_at: new Date().toISOString()
+          last_updated_at: new Date().toISOString(),
         });
       }
 
-      toast.success('Claude Code Complete', 'Session started successfully');
+      toast.success("Claude Code Complete", "Session started successfully");
 
       // Invalidate cache to show new results
       queryClient.invalidateQueries({
-        queryKey: QueryKeys.contentByParent(groupId, claudeCodeContent.id)
+        queryKey: QueryKeys.contentByParent(groupId, claudeCodeContent.id),
       });
 
       onContentAdded(claudeCodeContent);
@@ -460,11 +482,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       if (onNavigate) {
         onNavigate(claudeCodeContent.id);
       }
-
     } catch (error) {
-      console.error('Error starting Claude Code session:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error('Claude Code Failed', errorMessage);
+      console.error("Error starting Claude Code session:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      toast.error("Claude Code Failed", errorMessage);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -476,12 +498,15 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       const content = await contentRepository.getContentById(contentId);
       if (content) {
         onContentAdded(content);
-        toast.success('Image Uploaded', 'Your image has been uploaded successfully');
+        toast.success(
+          "Image Uploaded",
+          "Your image has been uploaded successfully",
+        );
       }
       setActiveAction(null);
     } catch (error) {
-      console.error('Error fetching uploaded content:', error);
-      toast.error('Error', 'Failed to fetch uploaded image');
+      console.error("Error fetching uploaded content:", error);
+      toast.error("Error", "Failed to fetch uploaded image");
     }
   };
 
@@ -491,12 +516,15 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       const content = await contentRepository.getContentById(contentId);
       if (content) {
         onContentAdded(content);
-        toast.success('Book Uploaded', 'Your book has been uploaded successfully');
+        toast.success(
+          "Book Uploaded",
+          "Your book has been uploaded successfully",
+        );
       }
       setActiveAction(null);
     } catch (error) {
-      console.error('Error fetching uploaded content:', error);
-      toast.error('Error', 'Failed to fetch uploaded book');
+      console.error("Error fetching uploaded content:", error);
+      toast.error("Error", "Failed to fetch uploaded book");
     }
   };
 
@@ -504,7 +532,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     try {
       // Create map content with rich metadata
       const newContent = await createContentMutation.mutateAsync({
-        type: 'map',
+        type: "map",
         data: placeName,
         groupId: groupId,
         parent_content_id: parentContentId,
@@ -514,11 +542,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       });
 
       onContentAdded(newContent);
-      toast.success('Map Saved', `Location "${placeName}" has been saved`);
+      toast.success("Map Saved", `Location "${placeName}" has been saved`);
       setActiveAction(null);
     } catch (error) {
-      console.error('Error saving map:', error);
-      toast.error('Error', 'Failed to save map location');
+      console.error("Error saving map:", error);
+      toast.error("Error", "Failed to save map location");
     }
   };
 
@@ -526,13 +554,16 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     try {
       const duration = Number(timelineDuration);
       if (isNaN(duration) || duration <= 0) {
-        toast.error('Invalid Duration', 'Please enter a valid duration in seconds');
+        toast.error(
+          "Invalid Duration",
+          "Please enter a valid duration in seconds",
+        );
         return;
       }
 
       // Create timeline content with metadata
       const newContent = await createContentMutation.mutateAsync({
-        type: 'timeline',
+        type: "timeline",
         data: timelineTitle,
         group_id: groupId,
         parent_content_id: parentContentId,
@@ -546,14 +577,17 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       });
 
       onContentAdded(newContent);
-      toast.success('Timeline Created', `Timeline "${timelineTitle}" has been created`);
+      toast.success(
+        "Timeline Created",
+        `Timeline "${timelineTitle}" has been created`,
+      );
       setActiveAction(null);
-      setTimelineTitle('');
-      setTimelineContext('');
-      setTimelineDuration('');
+      setTimelineTitle("");
+      setTimelineContext("");
+      setTimelineDuration("");
     } catch (error) {
-      console.error('Error creating timeline:', error);
-      toast.error('Error', 'Failed to create timeline');
+      console.error("Error creating timeline:", error);
+      toast.error("Error", "Failed to create timeline");
     }
   };
 
@@ -566,7 +600,11 @@ export const ContentInput: React.FC<ContentInputProps> = ({
             <LexicalContentInput
               ref={lexicalInputRef}
               onSubmit={handleSubmit}
-              disabled={createContentMutation.isPending || isGeneratingAI || chatIsLoading}
+              disabled={
+                createContentMutation.isPending ||
+                isGeneratingAI ||
+                chatIsLoading
+              }
               parentContentId={parentContentId}
               focusedParentName={focusedParentName}
               onClearFocus={onClearFocus}
@@ -581,7 +619,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       </div>
 
       {/* Modal overlays for special actions */}
-      {activeAction === 'image' && (
+      {activeAction === "image" && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-auto">
             <ImageUploadInput
@@ -594,7 +632,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         </div>
       )}
 
-      {activeAction === 'epub' && (
+      {activeAction === "epub" && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-auto">
             <EpubUploadInput
@@ -607,7 +645,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         </div>
       )}
 
-      {activeAction === 'map' && (
+      {activeAction === "map" && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-auto">
             <MapInput
@@ -618,7 +656,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         </div>
       )}
 
-      {activeAction === 'timeline' && (
+      {activeAction === "timeline" && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <h2 className="text-xl font-bold mb-4">Create Timeline</h2>
@@ -672,9 +710,9 @@ export const ContentInput: React.FC<ContentInputProps> = ({
                 <button
                   onClick={() => {
                     setActiveAction(null);
-                    setTimelineTitle('');
-                    setTimelineContext('');
-                    setTimelineDuration('');
+                    setTimelineTitle("");
+                    setTimelineContext("");
+                    setTimelineDuration("");
                   }}
                   className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
                 >

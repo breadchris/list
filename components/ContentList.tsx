@@ -540,12 +540,8 @@ export const ContentList: React.FC<ContentListProps> = ({
       // In selection mode, toggle item selection
       selection.toggleItem(contentItem.id);
     } else {
-      // Normal mode: navigate to dedicated page for text content, otherwise toggle focus
-      if (contentItem.type === 'text') {
-        navigate(`/group/${groupId}/content/${contentItem.id}`);
-      } else {
-        focus.toggleFocus(contentItem.id);
-      }
+      // Normal mode: toggle focus for all content types
+      focus.toggleFocus(contentItem.id);
     }
   };
 

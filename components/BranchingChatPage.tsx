@@ -386,7 +386,7 @@ export default function BranchingChatPage() {
                         isStreaming={message.isStreaming}
                         isCollapsed={userFocusedView && message.sender === 'assistant' ? true : message.isCollapsed}
                         onToggle={() => toggleMessageExpansion(message.id)}
-                        onEdit={message.sender === 'user' ? () => startEditingMessage(message.id, message.text) : undefined}
+                        onEdit={() => startEditingMessage(message.id, message.text)}
                         onHighlight={activeVariant === 'highlights' ? (text) => handleHighlight(message.id, text) : undefined}
                         onBookmark={activeVariant === 'bookmarks' ? () => handleBookmark(message.id) : undefined}
                         isBookmarked={activeVariant === 'bookmarks' ? isMessageBookmarked(message.id) : false}

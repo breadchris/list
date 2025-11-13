@@ -1,8 +1,0 @@
-{
-  "action": "chat-v2-stream",
-  "payload": {
-    "messages": [
-      { "role": "user", "content": "Say hello" }
-    ]
-  }
-}

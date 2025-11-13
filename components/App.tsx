@@ -1,21 +1,21 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { QueryProvider } from '../providers/QueryProvider';
-import { ToastProvider } from './ToastProvider';
-import { ErrorBoundary } from './ErrorBoundary';
-import { ListApp } from './ListApp';
-import { GroupSettingsPage } from './GroupSettingsPage';
-import { PublicContentView } from './PublicContentView';
-import { UserProfilePage } from './UserProfilePage';
-import { TermsOfService } from './TermsOfService';
-import { PrivacyPolicy } from './PrivacyPolicy';
-import { RefundPolicy } from './RefundPolicy';
-import { PricingPage } from './PricingPage';
-import { AdminPage } from './AdminPage';
-import { UserSettingsPage } from './UserSettingsPage';
-import BranchingChatPage from './BranchingChatPage';
-import { CalendarPage } from './CalendarPage';
-import { RichTextContentPage } from './RichTextContentPage';
+import React from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { QueryProvider } from "../providers/QueryProvider";
+import { ToastProvider } from "./ToastProvider";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { ListApp } from "./ListApp";
+import { GroupSettingsPage } from "./GroupSettingsPage";
+import { PublicContentView } from "./PublicContentView";
+import { UserProfilePage } from "./UserProfilePage";
+import { TermsOfService } from "./TermsOfService";
+import { PrivacyPolicy } from "./PrivacyPolicy";
+import { RefundPolicy } from "./RefundPolicy";
+import { PricingPage } from "./PricingPage";
+import { AdminPage } from "./AdminPage";
+import { UserSettingsPage } from "./UserSettingsPage";
+import BranchingChatPage from "./BranchingChatPage";
+import { CalendarPage } from "./CalendarPage";
+import { RichTextContentPage } from "./RichTextContentPage";
 
 /**
  * Main App component that wraps the application with providers and React Router
@@ -31,18 +31,31 @@ export const App: React.FC = () => {
               {/* Main app routes */}
               <Route path="/" element={<ListApp />} />
               <Route path="/group/:groupId" element={<ListApp />} />
-              <Route path="/group/:groupId/content/:contentId" element={<RichTextContentPage />} />
-              <Route path="/group/:groupId/settings" element={<GroupSettingsPage />} />
-              <Route path="/group/:groupId/ai-chat" element={<BranchingChatPage />} />
-              <Route path="/group/:groupId/chat" element={<BranchingChatPage />} />
-              <Route path="/group/:groupId/calendar" element={<CalendarPage />} />
+              <Route
+                path="/group/:groupId/content/:contentId"
+                element={<ListApp />}
+              />
+              <Route
+                path="/group/:groupId/settings"
+                element={<GroupSettingsPage />}
+              />
+              <Route
+                path="/group/:groupId/calendar"
+                element={<CalendarPage />}
+              />
               <Route path="/invite/:joinCode" element={<ListApp />} />
 
               {/* Public content route */}
-              <Route path="/public/content/:contentId" element={<PublicContentView />} />
+              <Route
+                path="/public/content/:contentId"
+                element={<PublicContentView />}
+              />
 
               {/* User profile route */}
-              <Route path="/group/:groupId/user/:userId" element={<UserProfilePage />} />
+              <Route
+                path="/group/:groupId/user/:userId"
+                element={<UserProfilePage />}
+              />
 
               {/* Admin page */}
               <Route path="/admin" element={<AdminPage />} />
