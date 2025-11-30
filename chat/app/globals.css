@@ -55,6 +55,8 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
+    --highlight: oklch(0.852 0.199 91.936);
+    --brand: oklch(0.623 0.214 259.815);
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -81,6 +83,8 @@
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+    --highlight: oklch(0.852 0.199 91.936);
+    --brand: oklch(0.707 0.165 254.624);
   }
 }
 
@@ -90,6 +94,5 @@
   }
   body {
     @apply bg-background text-foreground;
-    @apply bg-neutral-900
   }
 }

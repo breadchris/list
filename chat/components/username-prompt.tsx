@@ -35,7 +35,11 @@ export function UsernamePrompt({ children }: { children: React.ReactNode }) {
   };
 
   if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        Loading...
+      </div>
+    );
   }
 
   if (!username) {
@@ -57,7 +61,11 @@ export function UsernamePrompt({ children }: { children: React.ReactNode }) {
               autoFocus
               maxLength={30}
             />
-            <Button type="submit" className="w-full" disabled={!inputValue.trim()}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={!inputValue.trim()}
+            >
               Join Session
             </Button>
           </form>
@@ -70,15 +78,8 @@ export function UsernamePrompt({ children }: { children: React.ReactNode }) {
     <div className="relative">
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
         <span className="text-sm text-muted-foreground">
-          Signed in as <strong>{username}</strong>
+          <strong onClick={handleChangeUsername}>{username}</strong>
         </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleChangeUsername}
-        >
-          Change
-        </Button>
       </div>
       {children}
     </div>

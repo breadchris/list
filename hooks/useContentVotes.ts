@@ -92,8 +92,10 @@ export const useIsDownvoted = (contentId: string) => {
  * Reduces N queries to 1 query
  */
 export const useBatchUserVotes = (contentIds: string[], userId: string | null) => {
+  // Serialize contentIds to prevent reference-based query key comparisons
+  const contentIdsKey = contentIds.slice().sort().join(',');
   return useQuery({
-    queryKey: ['batch-user-votes', contentIds, userId],
+    queryKey: ['batch-user-votes', contentIdsKey, userId],
     queryFn: async () => {
       if (!userId || contentIds.length === 0) return new Map<string, Content | null>();
 
@@ -132,8 +134,10 @@ export const useBatchUserVotes = (contentIds: string[], userId: string | null) =
  * Reduces N queries to 1 query
  */
 export const useBatchContentVotes = (contentIds: string[]) => {
+  // Serialize contentIds to prevent reference-based query key comparisons
+  const contentIdsKey = contentIds.slice().sort().join(',');
   return useQuery({
-    queryKey: ['batch-content-votes', contentIds],
+    queryKey: ['batch-content-votes', contentIdsKey],
     queryFn: async () => {
       if (contentIds.length === 0) return new Map<string, Content[]>();
 

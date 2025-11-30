@@ -59,8 +59,8 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
   useEffect(() => {
     if (!generatedObject) return;
 
-    if (appConfig.renderMode === "card") {
-      // For card mode (recipes), add to chat history
+    if (appConfig.renderMode === "card" || appConfig.renderMode === "calendar") {
+      // For card/calendar mode (recipes, calendar events), add to chat history
       // Use transaction to batch delete+push as a single sync update
       doc.transact(() => {
         const messages = chatHistory.toArray();

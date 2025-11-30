@@ -110,15 +110,7 @@ export function buildBotContext(
       break;
 
     case "thread":
-      // Include all messages in the current thread before the trigger
-      for (const msg of threadMessages) {
-        if (msg.id === triggerMessage.id) break;
-        contextMessages.push(msg);
-      }
-      break;
-
-    case "full":
-      // Include parent message first, then thread messages
+      // Include parent message and all thread messages before the trigger
       if (parentMessage) {
         contextMessages.push(parentMessage);
       }
@@ -160,4 +152,46 @@ export function formatContextForPrompt(context: BotContext): string {
   lines.push(`[${context.trigger_message.username}]: ${context.cleaned_content}`);
 
   return lines.join("\n");
+}
+
+/**
+ * Bot definition message pattern: @mention - Description
+ * Allows leading/trailing whitespace for flexibility
+ */
+const BOT_DEFINITION_REGEX = /^\s*@(\w+)\s+-\s+(.+?)\s*$/;
+
+/**
+ * Parse a bot definition message
+ * Returns null if message doesn't match pattern
+ */
+export function parseBotDefinition(content: string): {
+  mention: string;
+  description: string;
+} | null {
+  const match = content.match(BOT_DEFINITION_REGEX);
+  if (!match) return null;
+
+  return {
+    mention: match[1],
+    description: match[2].trim(),
+  };
+}
+
+/**
+ * Check if a message is a bot definition message
+ */
+export function isBotDefinitionMessage(content: string): boolean {
+  return BOT_DEFINITION_REGEX.test(content);
+}
+
+/**
+ * Build system prompt from thread messages
+ * Concatenates all message content with double newlines
+ */
+export function buildSystemPromptFromMessages(messages: ChatMessage[]): string {
+  if (messages.length === 0) {
+    return "You are a helpful assistant.";
+  }
+
+  return messages.map(msg => msg.content).join("\n\n");
 }

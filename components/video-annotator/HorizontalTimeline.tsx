@@ -704,19 +704,263 @@ export function HorizontalTimeline({
 
   return (
     <div className="w-full border-t relative bg-white" ref={containerRef}>
+      {/* Timeline Container */}
+      <div
+        ref={timelineRef}
+        className={`w-full h-16 relative overflow-x-auto border-b cursor-pointer select-none touch-pan-x`}
+        onClick={handleTimelineClick}
+        onMouseDown={(e) => {
+          handleMouseDown(e);
+          handleTimelineDragStart(e);
+        }}
+        onMouseMove={(e) => {
+          handleMouseMove(e);
+          handleTimelineDragMove(e);
+        }}
+        onMouseUp={(e) => {
+          handleMouseUp();
+          handleTimelineDragEnd();
+        }}
+        onMouseLeave={(e) => {
+          handleTimelineLeave();
+        }}
+        onWheel={handleWheel}
+      >
+        {/* Timeline Content with Padding */}
+        <div
+          ref={timelineContentRef}
+          className="relative h-full w-full"
+        >
+          {/* Timeline Line */}
+          <div className="absolute left-[40px] right-[40px] top-1/2 h-0.5 bg-gray-300" />
+
+          {/* Left Padding Area with Start Time Label */}
+          <div className="timeline-padding absolute left-0 top-0 h-full w-[40px] bg-gradient-to-r from-white to-transparent z-5 flex items-center justify-center">
+            <div className="absolute left-1 top-1/2 -translate-y-1/2 bg-white/90 px-1 py-0.5 rounded text-xs font-medium">
+              {formatTime(visibleStartTime)}
+            </div>
+          </div>
+
+          {/* Right Padding Area with End Time Label */}
+          <div className="timeline-padding absolute right-0 top-0 h-full w-[40px] bg-gradient-to-l from-white to-transparent z-5 flex items-center justify-center">
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 bg-white/90 px-1 py-0.5 rounded text-xs font-medium">
+              {formatTime(Math.min(visibleStartTime + visibleDuration, duration))}
+            </div>
+          </div>
+
+          {/* Hover Time Indicator */}
+          {showHoverIndicator && hoverTime !== null && getTimePosition(hoverTime) && (
+            <div className="absolute top-0 bottom-0 w-0.5 bg-secondary/50 z-20 pointer-events-none"
+                 style={{ left: getTimePosition(hoverTime) }}>
+              <div className="absolute left-0 -translate-x-1/2 bottom-0 px-1 py-0.5 bg-white/90 border shadow-sm rounded text-xs">
+                {formatTime(hoverTime)}
+              </div>
+
+              {/* Snap indicator */}
+              {snappedToTimestamp && (
+                <div className="absolute left-0 -translate-x-1/2 top-0 px-1 py-0.5 bg-blue-100 text-blue-800 border border-blue-300 shadow-sm rounded-full text-xs">
+                  Snap
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Current Time Indicator */}
+          {isTimeVisible(currentTime) && getTimePosition(currentTime) && (
+            <div
+              className="absolute top-0 bottom-0 w-0.5 bg-primary z-30 pointer-events-none"
+              style={{ left: getTimePosition(currentTime) }}
+            >
+              <div className="absolute left-1/2 -translate-x-1/2 top-0 rounded-b-full bg-black w-5 h-5 flex items-center justify-center">
+                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+              </div>
+            </div>
+          )}
+
+          {/* Selection Area */}
+          {selectionStart !== null && selectionEnd !== null &&
+           getTimePosition(minSelectionTime!) && getTimePosition(maxSelectionTime!) && (
+            <>
+              <div
+                className={`absolute top-2 bottom-2 border-x ${isLooping ? 'bg-green-200/30 border-green-400' : 'bg-primary/20 border-primary'}`}
+                style={{
+                  left: getTimePosition(minSelectionTime!),
+                  width: `${Math.abs(
+                    parseInt(getTimePosition(maxSelectionTime!)!) -
+                    parseInt(getTimePosition(minSelectionTime!)!)
+                  )}px`
+                }}
+              >
+                {isLooping && (
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 px-1 py-0.5 bg-green-100 text-green-800 rounded-b-md text-xs flex items-center shadow-sm">
+                    <Repeat className="w-3 h-3 mr-1" /> Loop
+                  </div>
+                )}
+              </div>
+
+              {/* Selection Resize Handles */}
+              <div
+                className="absolute top-1 bottom-1 w-4 -ml-2 bg-transparent cursor-ew-resize z-40 selection-handle"
+                style={{ left: getTimePosition(minSelectionTime!) }}
+                onMouseDown={(e) => handleSelectionResizeStart(e, 'start')}
+                title="Drag to adjust selection start"
+              >
+                <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 mx-auto w-4 h-8 rounded-full bg-primary/90 border border-white flex items-center justify-center">
+                  <MoveHorizontal className="w-3 h-3 text-white" />
+                </div>
+              </div>
+
+              <div
+                className="absolute top-1 bottom-1 w-4 -ml-2 bg-transparent cursor-ew-resize z-40 selection-handle"
+                style={{ left: getTimePosition(maxSelectionTime!) }}
+                onMouseDown={(e) => handleSelectionResizeStart(e, 'end')}
+                title="Drag to adjust selection end"
+              >
+                <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 mx-auto w-4 h-8 rounded-full bg-primary/90 border border-white flex items-center justify-center">
+                  <MoveHorizontal className="w-3 h-3 text-white" />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Sections */}
+          {sections.map(section => {
+            const startPos = getTimePosition(section.startTime);
+            const endPos = getTimePosition(section.endTime);
+
+            // Only render if at least partially visible
+            if (!startPos && !endPos) return null;
+
+            const isActive = activeSection === section.id;
+
+            return (
+              <div key={section.id}>
+                <div
+                  className={`section-indicator absolute top-3 bottom-3 rounded cursor-pointer transition-all z-10
+                    ${isActive ? 'bg-green-300/60 border-2 border-green-600' : 'bg-blue-200/40 border border-blue-400'}
+                    hover:bg-green-200/70 hover:border-green-500`}
+                  style={{
+                    left: startPos || '0px',
+                    width: endPos && startPos
+                      ? `${parseInt(endPos) - parseInt(startPos)}px`
+                      : 'auto',
+                    right: !startPos ? '0px' : 'auto'
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSectionClick(section);
+                  }}
+                  title={`${section.title} (${formatTime(section.startTime)} - ${formatTime(section.endTime)})`}
+                >
+                  <div className={`absolute left-2 top-1 text-xs font-medium truncate max-w-[calc(100%-16px)]
+                    ${isActive ? 'text-green-800' : 'text-blue-700'}`}>
+                    {section.title}
+                  </div>
+                </div>
+
+                {/* Section Resize Handles (only for active section) */}
+                {isActive && startPos && (
+                  <div
+                    className="absolute top-2 bottom-2 w-4 -ml-2 bg-transparent cursor-ew-resize z-40 selection-handle"
+                    style={{ left: startPos }}
+                    onMouseDown={(e) => handleSectionResizeStart(e, section.id, 'start')}
+                    title="Drag to adjust section start"
+                  >
+                    <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 mx-auto w-4 h-8 rounded-full bg-green-600 border-2 border-white flex items-center justify-center shadow-md">
+                      <MoveHorizontal className="w-3 h-3 text-white" />
+                    </div>
+                  </div>
+                )}
+
+                {isActive && endPos && (
+                  <div
+                    className="absolute top-2 bottom-2 w-4 -ml-2 bg-transparent cursor-ew-resize z-40 selection-handle"
+                    style={{ left: endPos }}
+                    onMouseDown={(e) => handleSectionResizeStart(e, section.id, 'end')}
+                    title="Drag to adjust section end"
+                  >
+                    <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 mx-auto w-4 h-8 rounded-full bg-green-600 border-2 border-white flex items-center justify-center shadow-md">
+                      <MoveHorizontal className="w-3 h-3 text-white" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Time Markers (responsive interval based on screen width and zoom) */}
+          {(() => {
+            const markerInterval = getMarkerInterval();
+            return Array.from({ length: Math.ceil(visibleDuration / markerInterval) + 1 }).map((_, i) => {
+              const markerTime = Math.floor(visibleStartTime / markerInterval) * markerInterval + (i * markerInterval);
+              if (markerTime <= duration && isTimeVisible(markerTime) && getTimePosition(markerTime)) {
+                return (
+                  <div
+                    key={`marker-${markerTime}`}
+                    className="absolute top-1/2 -translate-y-1/2 h-3 w-px bg-gray-400 pointer-events-none"
+                    style={{ left: getTimePosition(markerTime) }}
+                  >
+                    <span className="absolute left-0 -translate-x-1/2 top-4 text-xs text-gray-500">
+                      {formatTime(markerTime)}
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            });
+          })()}
+
+          {/* Annotations */}
+          {sortedAnnotations.map(annotation => {
+            if (!isTimeVisible(annotation.timestamp) || !getTimePosition(annotation.timestamp)) return null;
+
+            const isInSelection =
+              selectionStart !== null &&
+              selectionEnd !== null &&
+              annotation.timestamp >= Math.min(selectionStart, selectionEnd) &&
+              annotation.timestamp <= Math.max(selectionStart, selectionEnd);
+
+            const isSnapped = snappedToTimestamp === annotation.id;
+            const isBeingDragged = draggingTimestampId === annotation.id;
+
+            // Different colors for regular vs selected timestamps
+            const bgColor = isInSelection ? '#3B82F6' : '#EF4444';
+
+            return (
+              <div
+                key={annotation.id}
+                className="timestamp-marker absolute bottom-2 -translate-x-1/2 z-20"
+                style={{ left: getTimePosition(annotation.timestamp) }}
+              >
+                {/* Timestamp marker */}
+                <div
+                  className={`w-3 h-3 rounded-full cursor-move hover:scale-125 transition-transform
+                    ${isSnapped ? 'ring-2 ring-blue-500 ring-offset-1' : ''}
+                    ${isBeingDragged ? 'scale-150 ring-2 ring-yellow-400' : ''}
+                    ${isInSelection ? 'bg-blue-500' : 'bg-red-500'}`}
+                  style={{ backgroundColor: bgColor }}
+                  onMouseDown={(e) => {
+                    // Allow dragging to move timestamp
+                    handleTimestampDragStart(e, annotation.id);
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent timeline click
+                    // Only jump if we're not dragging
+                    if (!isDraggingTimestamp) {
+                      onJumpToTimestamp(annotation.timestamp);
+                    }
+                  }}
+                  title={`${formatTime(annotation.timestamp)} - Drag to move, click to play`}
+                ></div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Header with controls */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-4 py-2 border-b gap-2">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onAddAnnotation(currentTime)}
-            className="flex items-center text-xs sm:text-sm"
-          >
-            <span className="mr-1">+ Timestamp</span>
-            <span className="text-xs text-muted-foreground">({formatTime(currentTime)})</span>
-          </Button>
-
           {/* Selection Mode toggle (mobile only) */}
           {isTouchDevice && (
             <Button
@@ -821,7 +1065,7 @@ export function HorizontalTimeline({
                 onClick={handleCreateSectionFromSelection}
                 size="sm"
                 variant="default"
-                className="ml-1 h-6 px-2 text-xs"
+                className="ml-1 h-6 px-2 text-xs text-white"
               >
                 Create Section
               </Button>
@@ -836,260 +1080,6 @@ export function HorizontalTimeline({
           >
             <ChevronDown className="w-4 h-4" />
           </Button>
-        </div>
-      </div>
-      
-      {/* Timeline Container */}
-      <div
-        ref={timelineRef}
-        className={`w-full h-16 relative overflow-x-auto border-b cursor-pointer select-none touch-pan-x`}
-        onClick={handleTimelineClick}
-        onMouseDown={(e) => {
-          handleMouseDown(e);
-          handleTimelineDragStart(e);
-        }}
-        onMouseMove={(e) => {
-          handleMouseMove(e);
-          handleTimelineDragMove(e);
-        }}
-        onMouseUp={(e) => {
-          handleMouseUp();
-          handleTimelineDragEnd();
-        }}
-        onMouseLeave={(e) => {
-          handleTimelineLeave();
-        }}
-        onWheel={handleWheel}
-      >
-        {/* Timeline Content with Padding */}
-        <div 
-          ref={timelineContentRef}
-          className="relative h-full w-full"
-        >
-          {/* Timeline Line */}
-          <div className="absolute left-[40px] right-[40px] top-1/2 h-0.5 bg-gray-300" />
-          
-          {/* Left Padding Area with Start Time Label */}
-          <div className="timeline-padding absolute left-0 top-0 h-full w-[40px] bg-gradient-to-r from-white to-transparent z-5 flex items-center justify-center">
-            <div className="absolute left-1 top-1/2 -translate-y-1/2 bg-white/90 px-1 py-0.5 rounded text-xs font-medium">
-              {formatTime(visibleStartTime)}
-            </div>
-          </div>
-
-          {/* Right Padding Area with End Time Label */}
-          <div className="timeline-padding absolute right-0 top-0 h-full w-[40px] bg-gradient-to-l from-white to-transparent z-5 flex items-center justify-center">
-            <div className="absolute right-1 top-1/2 -translate-y-1/2 bg-white/90 px-1 py-0.5 rounded text-xs font-medium">
-              {formatTime(Math.min(visibleStartTime + visibleDuration, duration))}
-            </div>
-          </div>
-
-          {/* Hover Time Indicator */}
-          {showHoverIndicator && hoverTime !== null && getTimePosition(hoverTime) && (
-            <div className="absolute top-0 bottom-0 w-0.5 bg-secondary/50 z-20 pointer-events-none"
-                 style={{ left: getTimePosition(hoverTime) }}>
-              <div className="absolute left-0 -translate-x-1/2 bottom-0 px-1 py-0.5 bg-white/90 border shadow-sm rounded text-xs">
-                {formatTime(hoverTime)}
-              </div>
-              
-              {/* Snap indicator */}
-              {snappedToTimestamp && (
-                <div className="absolute left-0 -translate-x-1/2 top-0 px-1 py-0.5 bg-blue-100 text-blue-800 border border-blue-300 shadow-sm rounded-full text-xs">
-                  Snap
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Current Time Indicator */}
-          {isTimeVisible(currentTime) && getTimePosition(currentTime) && (
-            <div 
-              className="absolute top-0 bottom-0 w-0.5 bg-primary z-30 pointer-events-none"
-              style={{ left: getTimePosition(currentTime) }}
-            >
-              <div className="absolute left-1/2 -translate-x-1/2 top-0 rounded-b-full bg-black w-5 h-5 flex items-center justify-center">
-                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-              </div>
-            </div>
-          )}
-
-          {/* Selection Area */}
-          {selectionStart !== null && selectionEnd !== null && 
-           getTimePosition(minSelectionTime!) && getTimePosition(maxSelectionTime!) && (
-            <>
-              <div 
-                className={`absolute top-2 bottom-2 border-x ${isLooping ? 'bg-green-200/30 border-green-400' : 'bg-primary/20 border-primary'}`}
-                style={{ 
-                  left: getTimePosition(minSelectionTime!), 
-                  width: `${Math.abs(
-                    parseInt(getTimePosition(maxSelectionTime!)!) - 
-                    parseInt(getTimePosition(minSelectionTime!)!)
-                  )}px` 
-                }}
-              >
-                {isLooping && (
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 px-1 py-0.5 bg-green-100 text-green-800 rounded-b-md text-xs flex items-center shadow-sm">
-                    <Repeat className="w-3 h-3 mr-1" /> Loop
-                  </div>
-                )}
-              </div>
-              
-              {/* Selection Resize Handles */}
-              <div 
-                className="absolute top-1 bottom-1 w-4 -ml-2 bg-transparent cursor-ew-resize z-40 selection-handle"
-                style={{ left: getTimePosition(minSelectionTime!) }}
-                onMouseDown={(e) => handleSelectionResizeStart(e, 'start')}
-                title="Drag to adjust selection start"
-              >
-                <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 mx-auto w-4 h-8 rounded-full bg-primary/90 border border-white flex items-center justify-center">
-                  <MoveHorizontal className="w-3 h-3 text-white" />
-                </div>
-              </div>
-              
-              <div 
-                className="absolute top-1 bottom-1 w-4 -ml-2 bg-transparent cursor-ew-resize z-40 selection-handle"
-                style={{ left: getTimePosition(maxSelectionTime!) }}
-                onMouseDown={(e) => handleSelectionResizeStart(e, 'end')}
-                title="Drag to adjust selection end"
-              >
-                <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 mx-auto w-4 h-8 rounded-full bg-primary/90 border border-white flex items-center justify-center">
-                  <MoveHorizontal className="w-3 h-3 text-white" />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Sections */}
-          {sections.map(section => {
-            const startPos = getTimePosition(section.startTime);
-            const endPos = getTimePosition(section.endTime);
-            
-            // Only render if at least partially visible
-            if (!startPos && !endPos) return null;
-            
-            const isActive = activeSection === section.id;
-            
-            return (
-              <div key={section.id}>
-                <div
-                  className={`section-indicator absolute top-3 bottom-3 rounded cursor-pointer transition-all z-10
-                    ${isActive ? 'bg-green-300/60 border-2 border-green-600' : 'bg-blue-200/40 border border-blue-400'}
-                    hover:bg-green-200/70 hover:border-green-500`}
-                  style={{
-                    left: startPos || '0px',
-                    width: endPos && startPos 
-                      ? `${parseInt(endPos) - parseInt(startPos)}px`
-                      : 'auto',
-                    right: !startPos ? '0px' : 'auto'
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSectionClick(section);
-                  }}
-                  title={`${section.title} (${formatTime(section.startTime)} - ${formatTime(section.endTime)})`}
-                >
-                  <div className={`absolute left-2 top-1 text-xs font-medium truncate max-w-[calc(100%-16px)]
-                    ${isActive ? 'text-green-800' : 'text-blue-700'}`}>
-                    {section.title}
-                  </div>
-                </div>
-                
-                {/* Section Resize Handles (only for active section) */}
-                {isActive && startPos && (
-                  <div 
-                    className="absolute top-2 bottom-2 w-4 -ml-2 bg-transparent cursor-ew-resize z-40 selection-handle"
-                    style={{ left: startPos }}
-                    onMouseDown={(e) => handleSectionResizeStart(e, section.id, 'start')}
-                    title="Drag to adjust section start"
-                  >
-                    <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 mx-auto w-4 h-8 rounded-full bg-green-600 border-2 border-white flex items-center justify-center shadow-md">
-                      <MoveHorizontal className="w-3 h-3 text-white" />
-                    </div>
-                  </div>
-                )}
-                
-                {isActive && endPos && (
-                  <div 
-                    className="absolute top-2 bottom-2 w-4 -ml-2 bg-transparent cursor-ew-resize z-40 selection-handle"
-                    style={{ left: endPos }}
-                    onMouseDown={(e) => handleSectionResizeStart(e, section.id, 'end')}
-                    title="Drag to adjust section end"
-                  >
-                    <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 mx-auto w-4 h-8 rounded-full bg-green-600 border-2 border-white flex items-center justify-center shadow-md">
-                      <MoveHorizontal className="w-3 h-3 text-white" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Time Markers (responsive interval based on screen width and zoom) */}
-          {(() => {
-            const markerInterval = getMarkerInterval();
-            return Array.from({ length: Math.ceil(visibleDuration / markerInterval) + 1 }).map((_, i) => {
-              const markerTime = Math.floor(visibleStartTime / markerInterval) * markerInterval + (i * markerInterval);
-              if (markerTime <= duration && isTimeVisible(markerTime) && getTimePosition(markerTime)) {
-                return (
-                  <div
-                    key={`marker-${markerTime}`}
-                    className="absolute top-1/2 -translate-y-1/2 h-3 w-px bg-gray-400 pointer-events-none"
-                    style={{ left: getTimePosition(markerTime) }}
-                  >
-                    <span className="absolute left-0 -translate-x-1/2 top-4 text-xs text-gray-500">
-                      {formatTime(markerTime)}
-                    </span>
-                  </div>
-                );
-              }
-              return null;
-            });
-          })()}
-
-          {/* Annotations */}
-          {sortedAnnotations.map(annotation => {
-            if (!isTimeVisible(annotation.timestamp) || !getTimePosition(annotation.timestamp)) return null;
-
-            const isInSelection =
-              selectionStart !== null &&
-              selectionEnd !== null &&
-              annotation.timestamp >= Math.min(selectionStart, selectionEnd) &&
-              annotation.timestamp <= Math.max(selectionStart, selectionEnd);
-
-            const isSnapped = snappedToTimestamp === annotation.id;
-            const isBeingDragged = draggingTimestampId === annotation.id;
-
-            // Different colors for regular vs selected timestamps
-            const bgColor = isInSelection ? '#3B82F6' : '#EF4444';
-
-            return (
-              <div
-                key={annotation.id}
-                className="timestamp-marker absolute bottom-2 -translate-x-1/2 z-20"
-                style={{ left: getTimePosition(annotation.timestamp) }}
-              >
-                {/* Timestamp marker */}
-                <div
-                  className={`w-3 h-3 rounded-full cursor-move hover:scale-125 transition-transform
-                    ${isSnapped ? 'ring-2 ring-blue-500 ring-offset-1' : ''}
-                    ${isBeingDragged ? 'scale-150 ring-2 ring-yellow-400' : ''}
-                    ${isInSelection ? 'bg-blue-500' : 'bg-red-500'}`}
-                  style={{ backgroundColor: bgColor }}
-                  onMouseDown={(e) => {
-                    // Allow dragging to move timestamp
-                    handleTimestampDragStart(e, annotation.id);
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation(); // Prevent timeline click
-                    // Only jump if we're not dragging
-                    if (!isDraggingTimestamp) {
-                      onJumpToTimestamp(annotation.timestamp);
-                    }
-                  }}
-                  title={`${formatTime(annotation.timestamp)} - Drag to move, click to play`}
-                ></div>
-              </div>
-            );
-          })}
         </div>
       </div>
     </div>

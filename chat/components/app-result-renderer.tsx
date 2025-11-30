@@ -2,6 +2,7 @@
 
 import { RecipeCard } from "./recipe-card";
 import { QuestionCard } from "./question-card";
+import { CalendarCard } from "./calendar-card";
 import type { RenderMode } from "@/lib/apps.config";
 
 interface AppResultRendererProps {
@@ -25,6 +26,14 @@ export function AppResultRenderer({
     // Render recipe card
     if (data && data.recipe) {
       return <RecipeCard recipe={data.recipe} />;
+    }
+    return null;
+  }
+
+  if (renderMode === "calendar") {
+    // Render calendar card
+    if (data && data.events) {
+      return <CalendarCard events={data.events} />;
     }
     return null;
   }

@@ -1,11 +1,28 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, MessageSquare } from "lucide-react";
+import { X, MessageSquare, Tag } from "lucide-react";
 import { useArray, useYDoc } from "@y-sweet/react";
+import ReactMarkdown from "react-markdown";
 import { useUsername } from "./username-prompt";
-import { useBotResponse } from "@/hooks/use-bot-response";
-import { parseMentions, buildBotContext, type ChatMessage } from "@/lib/bot-utils";
+import { BotQueueProvider, useBotQueue } from "./bot-queue-provider";
+import {
+  parseMentions,
+  buildBotContext,
+  type ChatMessage,
+  parseBotDefinition,
+  buildSystemPromptFromMessages,
+} from "@/lib/bot-utils";
+import {
+  getAllBots,
+  type BotConfig,
+  setDynamicBots,
+  isReservedMention,
+} from "@/lib/bots.config";
+import { CodeRenderer, parseCodeVariant } from "./code-renderer";
+import { BotMentionSuggestions } from "./bot-mention-suggestions";
+import { InlinePillsVariant } from "./TaggingVariants";
+import { BotBuilderHandler } from "./bot-builder-handler";
 
 interface Message {
   id: string;
@@ -13,6 +30,7 @@ interface Message {
   timestamp: string;
   content: string;
   thread_ids?: string[];
+  tags?: string[];
 }
 
 interface Thread {
@@ -31,13 +49,79 @@ export function ChatInterface() {
   const doc = useYDoc();
   const messages = useArray<Message>("messages");
   const threads = useArray<Thread>("threads");
+  const globalTags = useArray<string>("tags");
+  const dynamicBots = useArray<BotConfig>("dynamicBots");
+
+  return (
+    <BotQueueProvider doc={doc} messagesArray={messages} threadsArray={threads}>
+      <ChatInterfaceInner
+        messages={messages}
+        threads={threads}
+        globalTags={globalTags}
+        dynamicBots={dynamicBots}
+        doc={doc}
+      />
+    </BotQueueProvider>
+  );
+}
+
+interface ChatInterfaceInnerProps {
+  messages: {
+    push: (items: Message[]) => void;
+    toArray: () => Message[];
+    delete: (index: number, length: number) => void;
+    insert: (index: number, items: Message[]) => void;
+  };
+  threads: {
+    push: (items: Thread[]) => void;
+    toArray: () => Thread[];
+    delete: (index: number, length: number) => void;
+    insert: (index: number, items: Thread[]) => void;
+  };
+  globalTags: {
+    push: (items: string[]) => void;
+    toArray: () => string[];
+    delete: (index: number, length: number) => void;
+    insert: (index: number, items: string[]) => void;
+  };
+  dynamicBots: {
+    push: (items: BotConfig[]) => void;
+    toArray: () => BotConfig[];
+    delete: (index: number, length: number) => void;
+    insert: (index: number, items: BotConfig[]) => void;
+  };
+  doc: import("yjs").Doc;
+}
+
+function ChatInterfaceInner({
+  messages,
+  threads,
+  globalTags,
+  dynamicBots,
+  doc,
+}: ChatInterfaceInnerProps) {
   const username = useUsername();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevThreadCountRef = useRef(0);
-  const { invokeBots } = useBotResponse(doc, messages, threads);
+  const { dispatch } = useBotQueue();
 
   // Local state for open threads - each user has their own view
   const [openThreadIds, setOpenThreadIds] = useState<OpenThread[]>([]);
+
+  // Sync dynamic bots with the global bot registry
+  useEffect(() => {
+    const updateBots = () => {
+      setDynamicBots(dynamicBots.toArray());
+    };
+
+    // Initial sync
+    updateBots();
+
+    // Listen for Yjs array changes
+    dynamicBots.observe(updateBots);
+
+    return () => dynamicBots.unobserve(updateBots);
+  }, [dynamicBots]);
 
   // Auto-scroll to the newest thread panel when a thread is opened
   useEffect(() => {
@@ -97,8 +181,243 @@ export function ChatInterface() {
     [getThreadById, getMessageById],
   );
 
+  const addTagToMessage = useCallback(
+    (messageId: string, tag: string) => {
+      doc.transact(() => {
+        // Update message tags
+        const msgArray = messages.toArray();
+        const msgIndex = msgArray.findIndex((m) => m.id === messageId);
+        if (msgIndex !== -1) {
+          const msg = msgArray[msgIndex];
+          const currentTags = msg.tags || [];
+          if (!currentTags.includes(tag)) {
+            const updatedMsg: Message = {
+              ...msg,
+              tags: [...currentTags, tag],
+            };
+            messages.delete(msgIndex, 1);
+            messages.insert(msgIndex, [updatedMsg]);
+          }
+        }
+
+        // Add to global tags if new
+        const existingGlobalTags = globalTags.toArray();
+        if (!existingGlobalTags.includes(tag)) {
+          globalTags.push([tag]);
+        }
+      });
+    },
+    [doc, messages, globalTags],
+  );
+
+  const removeTagFromMessage = useCallback(
+    (messageId: string, tag: string) => {
+      doc.transact(() => {
+        const msgArray = messages.toArray();
+        const msgIndex = msgArray.findIndex((m) => m.id === messageId);
+        if (msgIndex !== -1) {
+          const msg = msgArray[msgIndex];
+          const currentTags = msg.tags || [];
+          const updatedMsg: Message = {
+            ...msg,
+            tags: currentTags.filter((t) => t !== tag),
+          };
+          messages.delete(msgIndex, 1);
+          messages.insert(msgIndex, [updatedMsg]);
+        }
+      });
+    },
+    [doc, messages],
+  );
+
+  // Bot management functions
+  const activateBot = useCallback(
+    (parentMessageId: string, threadId: string): string | null => {
+      const parentMessage = getMessageById(parentMessageId);
+      if (!parentMessage) return "Parent message not found";
+
+      // Check if message has 'bot' tag
+      if (!parentMessage.tags?.includes("bot")) {
+        return "Message must have 'bot' tag";
+      }
+
+      // Parse bot definition from parent message
+      const botDef = parseBotDefinition(parentMessage.content);
+      if (!botDef) {
+        return "Invalid bot definition format. Use: @mention - Description";
+      }
+
+      // Check if mention is reserved
+      if (isReservedMention(botDef.mention)) {
+        return `@${botDef.mention} is a reserved bot name`;
+      }
+
+      // Get thread messages to build system prompt
+      const threadMessages = getMessagesForThread(threadId);
+      const systemPrompt = buildSystemPromptFromMessages(threadMessages);
+
+      // Check if bot already exists (update it)
+      const existingBots = dynamicBots.toArray();
+      const existingIndex = existingBots.findIndex(
+        (b) => b.mention === botDef.mention,
+      );
+
+      const newBot: BotConfig = {
+        id: `dynamic-${botDef.mention}`,
+        mention: botDef.mention,
+        display_name: botDef.description,
+        system_prompt: systemPrompt,
+        model: "gpt-4o-mini",
+        context_mode: "thread",
+        response_type: "object",
+        schema_id: "chat",
+        source_thread_id: threadId,
+        activated_at: new Date().toISOString(),
+      };
+
+      if (existingIndex !== -1) {
+        // Update existing bot
+        dynamicBots.delete(existingIndex, 1);
+        dynamicBots.insert(existingIndex, [newBot]);
+      } else {
+        // Add new bot
+        dynamicBots.push([newBot]);
+      }
+
+      return null; // Success
+    },
+    [getMessageById, getMessagesForThread, dynamicBots],
+  );
+
+  const deactivateBot = useCallback(
+    (mention: string) => {
+      const bots = dynamicBots.toArray();
+      const botIndex = bots.findIndex((b) => b.mention === mention);
+      if (botIndex !== -1) {
+        dynamicBots.delete(botIndex, 1);
+      }
+    },
+    [dynamicBots],
+  );
+
+  const createTestMessage = useCallback(
+    (parentMessageId: string, threadId: string, testPrompt: string) => {
+      const testMessage: Message = {
+        id: generateId(),
+        username: username || "anonymous",
+        timestamp: getCurrentTime(),
+        content: `🧪 Test: ${testPrompt}`,
+      };
+
+      doc.transact(() => {
+        // Add test message to messages array
+        messages.push([testMessage]);
+
+        // Add to thread
+        const threadArray = threads.toArray();
+        const threadIndex = threadArray.findIndex((t) => t.id === threadId);
+        if (threadIndex !== -1) {
+          const thread = threadArray[threadIndex];
+          const updatedThread: Thread = {
+            ...thread,
+            message_ids: [...thread.message_ids, testMessage.id],
+          };
+          threads.delete(threadIndex, 1);
+          threads.insert(threadIndex, [updatedThread]);
+        }
+      });
+
+      // Open sub-thread for this test message
+      handleOpenThread(testMessage.id, openThreadIds.length);
+    },
+    [doc, messages, threads, username, openThreadIds.length],
+  );
+
+  const createBotFromConversation = useCallback(
+    (botData: {
+      mention: string;
+      description: string;
+      personalityLines: string[];
+    }) => {
+      // 1. Create bot definition message with 'bot' tag
+      const botDefMessage: Message = {
+        id: generateId(),
+        username: username || "anonymous",
+        timestamp: getCurrentTime(),
+        content: `@${botData.mention} - ${botData.description}`,
+        tags: ["bot"],
+      };
+
+      // 2. Create thread
+      const threadId = generateId();
+      const thread: Thread = {
+        id: threadId,
+        parent_message_id: botDefMessage.id,
+        message_ids: [],
+      };
+
+      // 3. Create personality messages
+      const personalityMessages: Message[] = botData.personalityLines.map(
+        (line) => ({
+          id: generateId(),
+          username: username || "anonymous",
+          timestamp: getCurrentTime(),
+          content: line,
+        }),
+      );
+
+      doc.transact(() => {
+        // Add bot definition message
+        messages.push([botDefMessage]);
+
+        // Add personality messages
+        for (const msg of personalityMessages) {
+          messages.push([msg]);
+        }
+
+        // Update bot def message with thread reference
+        const msgIndex = messages.toArray().findIndex((m) => m.id === botDefMessage.id);
+        if (msgIndex !== -1) {
+          const updatedBotDefMsg: Message = {
+            ...botDefMessage,
+            thread_ids: [threadId],
+          };
+          messages.delete(msgIndex, 1);
+          messages.insert(msgIndex, [updatedBotDefMsg]);
+        }
+
+        // Create thread with personality message IDs
+        const threadWithMessages: Thread = {
+          ...thread,
+          message_ids: personalityMessages.map((m) => m.id),
+        };
+        threads.push([threadWithMessages]);
+      });
+
+      // 4. Activate the bot (after transaction commits)
+      setTimeout(() => {
+        const error = activateBot(botDefMessage.id, threadId);
+        if (error) {
+          console.error("Failed to activate bot:", error);
+          // TODO: Show user-facing error message
+        }
+      }, 0);
+
+      // 5. Open the thread to show the user
+      handleOpenThread(botDefMessage.id, openThreadIds.length);
+    },
+    [
+      doc,
+      messages,
+      threads,
+      username,
+      activateBot,
+      openThreadIds.length,
+    ],
+  );
+
   const handleSendMessage = useCallback(
-    (content: string, threadId?: string) => {
+    (content: string, threadId?: string, autoRespondBot?: BotConfig) => {
       if (!content.trim()) return;
       const effectiveUsername = username || "anonymous";
 
@@ -129,11 +448,25 @@ export function ChatInterface() {
         }
       });
 
-      // Check for bot mentions and invoke them
+      // Check for bot mentions and dispatch to queue
       const mentions = parseMentions(content);
-      if (mentions.length > 0) {
-        // Build context for each bot
-        const invocations = mentions.map((mention) => {
+
+      // Determine which bots to invoke:
+      // 1. Explicit @mentions in the message
+      // 2. Auto-respond bot (if enabled and no explicit mention of that bot)
+      const botsToInvoke: BotConfig[] = mentions.map((m) => m.bot);
+
+      // Add auto-respond bot if enabled and not already explicitly mentioned
+      if (
+        autoRespondBot &&
+        !botsToInvoke.some((b) => b.id === autoRespondBot.id)
+      ) {
+        botsToInvoke.push(autoRespondBot);
+      }
+
+      if (botsToInvoke.length > 0) {
+        // Build context and dispatch each bot invocation
+        for (const bot of botsToInvoke) {
           // Get thread messages for context
           let threadMessages: ChatMessage[] = [];
           let parentMessage: ChatMessage | null = null;
@@ -153,7 +486,9 @@ export function ChatInterface() {
                 }));
 
               // Get parent message
-              const parent = messages.toArray().find((m) => m.id === thread.parent_message_id);
+              const parent = messages
+                .toArray()
+                .find((m) => m.id === thread.parent_message_id);
               if (parent) {
                 parentMessage = {
                   id: parent.id,
@@ -176,27 +511,25 @@ export function ChatInterface() {
             triggerChatMessage,
             threadMessages,
             parentMessage,
-            mention.bot,
-            mentions
+            bot,
+            mentions,
           );
 
-          return {
-            bot: mention.bot,
-            triggerMessage: newMessage,
-            threadId,
-            contextMessages: botContext.context_messages.map((m) => ({
+          // Dispatch to queue - all bots handled uniformly
+          dispatch({
+            bot,
+            prompt: `[${newMessage.username}]: ${botContext.cleaned_content}`,
+            trigger_message_id: newMessage.id,
+            existing_thread_id: threadId,
+            context_messages: botContext.context_messages.map((m) => ({
               username: m.username,
               content: m.content,
             })),
-            cleanedContent: botContext.cleaned_content,
-          };
-        });
-
-        // Invoke all mentioned bots in parallel
-        invokeBots(invocations);
+          });
+        }
       }
     },
-    [doc, messages, threads, username, invokeBots],
+    [doc, messages, threads, username, dispatch],
   );
 
   const handleOpenThread = useCallback(
@@ -308,7 +641,10 @@ export function ChatInterface() {
         updated[depth] = {
           ...openThread,
           thread_id: newThread.id,
-          available_thread_ids: [...openThread.available_thread_ids, newThread.id],
+          available_thread_ids: [
+            ...openThread.available_thread_ids,
+            newThread.id,
+          ],
         };
         return updated;
       });
@@ -329,7 +665,7 @@ export function ChatInterface() {
   });
 
   return (
-    <div className="h-[calc(100vh-64px)] bg-neutral-950 text-neutral-100 overflow-hidden">
+    <div className="h-screen bg-neutral-950 text-neutral-100 overflow-hidden">
       <div
         className="h-full flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory scroll-smooth"
         ref={scrollContainerRef}
@@ -339,9 +675,15 @@ export function ChatInterface() {
           messages={mainMessages}
           title="let's chat!"
           onOpenThread={(messageId) => handleOpenThread(messageId, 0)}
-          onSendMessage={(content) => handleSendMessage(content)}
+          onSendMessage={(content, autoBot) =>
+            handleSendMessage(content, undefined, autoBot)
+          }
           showClose={false}
           getThreadsForMessage={getThreadsForMessage}
+          globalTags={globalTags.toArray()}
+          onAddTag={addTagToMessage}
+          onRemoveTag={removeTagFromMessage}
+          onCreateBot={createBotFromConversation}
         />
 
         {/* Thread panels */}
@@ -357,12 +699,13 @@ export function ChatInterface() {
               key={openThread.thread_id}
               messages={threadMessages}
               parentMessage={parentMessage}
+              threadId={openThread.thread_id}
               title="Thread"
               onOpenThread={(messageId) =>
                 handleOpenThread(messageId, index + 1)
               }
-              onSendMessage={(content) =>
-                handleSendMessage(content, openThread.thread_id)
+              onSendMessage={(content, autoBot) =>
+                handleSendMessage(content, openThread.thread_id, autoBot)
               }
               onClose={() => handleCloseThread(index)}
               showClose={true}
@@ -371,6 +714,13 @@ export function ChatInterface() {
               totalThreads={openThread.available_thread_ids.length}
               onSwitchThread={(idx) => handleSwitchThread(index, idx)}
               onCreateNewThread={() => handleCreateNewThread(index)}
+              globalTags={globalTags.toArray()}
+              onAddTag={addTagToMessage}
+              onRemoveTag={removeTagFromMessage}
+              onActivateBot={activateBot}
+              onDeactivateBot={deactivateBot}
+              onTestBot={createTestMessage}
+              onCreateBot={createBotFromConversation}
             />
           );
         })}
@@ -383,8 +733,9 @@ interface ChatPanelProps {
   messages: Message[];
   title: string;
   parentMessage?: Message;
+  threadId?: string;
   onOpenThread: (messageId: string) => void;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, autoRespondBot?: BotConfig) => void;
   onClose?: () => void;
   showClose: boolean;
   getThreadsForMessage: (messageId: string) => Thread[];
@@ -392,12 +743,28 @@ interface ChatPanelProps {
   totalThreads?: number;
   onSwitchThread?: (threadIndex: number) => void;
   onCreateNewThread?: () => void;
+  globalTags: string[];
+  onAddTag: (messageId: string, tag: string) => void;
+  onRemoveTag: (messageId: string, tag: string) => void;
+  onActivateBot?: (parentMessageId: string, threadId: string) => string | null;
+  onDeactivateBot?: (mention: string) => void;
+  onTestBot?: (
+    parentMessageId: string,
+    threadId: string,
+    testPrompt: string,
+  ) => void;
+  onCreateBot?: (botData: {
+    mention: string;
+    description: string;
+    personalityLines: string[];
+  }) => void;
 }
 
 function ChatPanel({
   messages,
   title,
   parentMessage,
+  threadId,
   onOpenThread,
   onSendMessage,
   onClose,
@@ -407,21 +774,156 @@ function ChatPanel({
   totalThreads,
   onSwitchThread,
   onCreateNewThread,
+  globalTags,
+  onAddTag,
+  onRemoveTag,
+  onActivateBot,
+  onDeactivateBot,
+  onTestBot,
+  onCreateBot,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState("");
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState("");
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const [mentionStartIndex, setMentionStartIndex] = useState(-1);
+  const [autoRespondEnabled, setAutoRespondEnabled] = useState(true);
+  const [testPrompt, setTestPrompt] = useState("");
+  const [showTestInput, setShowTestInput] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isInitialRender = useRef(true);
+  const allBots = getAllBots();
+
+  // Detect bot from @mentions in the parent message
+  const threadBot = parentMessage
+    ? parseMentions(parentMessage.content)[0]?.bot
+    : undefined;
+
+  // Detect if this is a bot definition thread
+  const isBotDefinitionThread =
+    parentMessage?.tags?.includes("bot") &&
+    parseBotDefinition(parentMessage.content) !== null;
+  const botDefinition = isBotDefinitionThread
+    ? parseBotDefinition(parentMessage.content!)
+    : null;
 
   // Auto-scroll to bottom when new messages arrive
+  // Use instant scroll on initial load, smooth scroll for new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({
+      behavior: isInitialRender.current ? "instant" : "smooth",
+    });
+    isInitialRender.current = false;
   }, [messages.length]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputValue.trim()) {
-      onSendMessage(inputValue);
+      // Pass auto-respond bot if enabled and in a bot thread
+      const autoBot = threadBot && autoRespondEnabled ? threadBot : undefined;
+      onSendMessage(inputValue, autoBot);
       setInputValue("");
+      setShowMentions(false);
+      setMentionFilter("");
+      setMentionStartIndex(-1);
     }
+  };
+
+  // Filter bots based on current mention filter
+  const filteredBots = allBots.filter((bot) =>
+    bot.mention.toLowerCase().startsWith(mentionFilter.toLowerCase()),
+  );
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart || 0;
+    setInputValue(value);
+
+    // Find if we're in a mention context (after @)
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const lastAtIndex = textBeforeCursor.lastIndexOf("@");
+
+    if (lastAtIndex !== -1) {
+      // Check if there's a space between @ and cursor
+      const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
+      if (!textAfterAt.includes(" ")) {
+        // We're in a mention context
+        setShowMentions(true);
+        setMentionFilter(textAfterAt);
+        setMentionStartIndex(lastAtIndex);
+        setSelectedMentionIndex(0);
+        return;
+      }
+    }
+
+    // Not in mention context
+    setShowMentions(false);
+    setMentionFilter("");
+    setMentionStartIndex(-1);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showMentions || filteredBots.length === 0) return;
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setSelectedMentionIndex((prev) =>
+          prev < filteredBots.length - 1 ? prev + 1 : 0,
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setSelectedMentionIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredBots.length - 1,
+        );
+        break;
+      case "Enter":
+        if (showMentions && filteredBots[selectedMentionIndex]) {
+          e.preventDefault();
+          handleSelectBot(filteredBots[selectedMentionIndex]);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setShowMentions(false);
+        setMentionFilter("");
+        setMentionStartIndex(-1);
+        break;
+      case "Tab":
+        if (showMentions && filteredBots[selectedMentionIndex]) {
+          e.preventDefault();
+          handleSelectBot(filteredBots[selectedMentionIndex]);
+        }
+        break;
+    }
+  };
+
+  const handleSelectBot = (bot: (typeof allBots)[0]) => {
+    // Replace @filter with @mention
+    const beforeMention = inputValue.slice(0, mentionStartIndex);
+    const afterMention = inputValue.slice(
+      mentionStartIndex + 1 + mentionFilter.length,
+    );
+    const newValue = `${beforeMention}@${bot.mention} ${afterMention}`;
+    setInputValue(newValue);
+    setShowMentions(false);
+    setMentionFilter("");
+    setMentionStartIndex(-1);
+
+    // Set cursor position after the mention
+    // Focus is preserved via onMouseDown preventDefault on the button
+    if (inputRef.current) {
+      const newCursorPos = beforeMention.length + bot.mention.length + 2; // +2 for @ and space
+      inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+    }
+  };
+
+  const handleCloseMentions = () => {
+    setShowMentions(false);
+    setMentionFilter("");
+    setMentionStartIndex(-1);
   };
 
   return (
@@ -445,48 +947,137 @@ function ChatPanel({
       {parentMessage && (
         <div className="px-4 py-3 bg-neutral-900 border-b border-neutral-800">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-neutral-500 text-sm">Thread started by:</div>
-            {onCreateNewThread && (
-              <button
-                onClick={onCreateNewThread}
-                className="text-xs px-1 text-neutral-600 hover:text-neutral-400 font-mono transition-colors"
-              >
-                + new thread
-              </button>
-            )}
+            <div className="text-neutral-500 text-sm">
+              {parentMessage.content.startsWith("🧪 Test:")
+                ? "Test thread:"
+                : "Thread started by:"}
+            </div>
+            <div className="flex gap-2">
+              {parentMessage.content.startsWith("🧪 Test:") &&
+                onCreateNewThread && (
+                  <button
+                    onClick={onCreateNewThread}
+                    className="text-xs px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 rounded font-mono transition-colors"
+                  >
+                    🔄 Rerun Test
+                  </button>
+                )}
+              {onCreateNewThread && (
+                <button
+                  onClick={onCreateNewThread}
+                  className="text-xs px-1 text-neutral-600 hover:text-neutral-400 font-mono transition-colors"
+                >
+                  +
+                </button>
+              )}
+            </div>
           </div>
           <div className="font-mono text-sm">
             <span className="text-neutral-400">{parentMessage.timestamp}</span>
             <span className="text-neutral-300 mx-2">
               &lt;{parentMessage.username}&gt;
             </span>
-            <span className="text-neutral-400">{parentMessage.content}</span>
+            <CollapsibleContent
+              content={parentMessage.content}
+              className="text-neutral-400"
+            />
           </div>
-          {/* Thread tabs - show if multiple threads */}
-          {totalThreads !== undefined &&
-            totalThreads > 1 &&
-            onSwitchThread && (
-              <div className="mt-3 -mx-4 px-4 overflow-x-auto">
-                <div className="flex gap-0 border-b border-neutral-800">
-                  {Array.from({ length: totalThreads }, (_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => onSwitchThread(i)}
-                      className={`px-3 py-1.5 text-xs font-mono whitespace-nowrap transition-colors relative ${
-                        i === currentThreadIndex
-                          ? "text-neutral-300"
-                          : "text-neutral-600 hover:text-neutral-400"
-                      }`}
-                    >
-                      Thread {i + 1}
-                      {i === currentThreadIndex && (
-                        <div className="absolute bottom-0 left-0 right-0 h-px bg-neutral-400" />
-                      )}
-                    </button>
-                  ))}
+
+          {/* Bot Builder Toolbar */}
+          {isBotDefinitionThread &&
+            botDefinition &&
+            threadId &&
+            onActivateBot &&
+            onTestBot && (
+              <div className="mt-3 pt-3 border-t border-neutral-800">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-mono text-neutral-500">
+                    📝 Bot Definition: @{botDefinition.mention}
+                  </div>
                 </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const error = onActivateBot(parentMessage.id, threadId);
+                      if (error) {
+                        alert(error);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-blue-100 rounded text-xs font-mono transition-colors"
+                  >
+                    ⚡ Activate Bot
+                  </button>
+                  <button
+                    onClick={() => setShowTestInput(!showTestInput)}
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 rounded text-xs font-mono transition-colors"
+                  >
+                    🧪 Test Bot
+                  </button>
+                  {onDeactivateBot && (
+                    <button
+                      onClick={() => onDeactivateBot(botDefinition.mention)}
+                      className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-neutral-700 rounded text-xs font-mono transition-colors"
+                    >
+                      🗑️ Delete
+                    </button>
+                  )}
+                </div>
+                {showTestInput && (
+                  <div className="mt-2">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (testPrompt.trim()) {
+                          onTestBot(parentMessage.id, threadId, testPrompt);
+                          setTestPrompt("");
+                          setShowTestInput(false);
+                        }
+                      }}
+                      className="flex gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={testPrompt}
+                        onChange={(e) => setTestPrompt(e.target.value)}
+                        placeholder="What should the bot respond to?"
+                        className="flex-1 bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs font-mono text-neutral-300 placeholder-neutral-600 focus:outline-none focus:border-neutral-700"
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-blue-100 rounded text-xs font-mono transition-colors"
+                      >
+                        Create Test
+                      </button>
+                    </form>
+                  </div>
+                )}
               </div>
             )}
+
+          {/* Thread tabs - show if multiple threads */}
+          {totalThreads !== undefined && totalThreads > 1 && onSwitchThread && (
+            <div className="mt-3 -mx-4 px-4 overflow-x-auto">
+              <div className="flex gap-0 border-b border-neutral-800">
+                {Array.from({ length: totalThreads }, (_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onSwitchThread(i)}
+                    className={`px-3 py-1.5 text-xs font-mono whitespace-nowrap transition-colors relative ${
+                      i === currentThreadIndex
+                        ? "text-neutral-300"
+                        : "text-neutral-600 hover:text-neutral-400"
+                    }`}
+                  >
+                    Thread {i + 1}
+                    {i === currentThreadIndex && (
+                      <div className="absolute bottom-0 left-0 right-0 h-px bg-neutral-400" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -499,6 +1090,10 @@ function ChatPanel({
               message={message}
               onOpenThread={onOpenThread}
               getThreadsForMessage={getThreadsForMessage}
+              globalTags={globalTags}
+              onAddTag={onAddTag}
+              onRemoveTag={onRemoveTag}
+              onCreateBot={onCreateBot}
             />
           ))}
           <div ref={messagesEndRef} />
@@ -507,17 +1102,133 @@ function ChatPanel({
 
       {/* Input */}
       <div className="border-t border-neutral-800 px-4 py-3">
-        <form onSubmit={handleSubmit}>
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder={`Message ${title}`}
-            className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 font-mono text-neutral-300 placeholder-neutral-600 focus:outline-none focus:border-neutral-700"
+        <div className="relative">
+          <BotMentionSuggestions
+            bots={allBots}
+            filter={mentionFilter}
+            selectedIndex={selectedMentionIndex}
+            visible={showMentions && filteredBots.length > 0}
+            onSelect={handleSelectBot}
+            onClose={handleCloseMentions}
           />
-        </form>
+          <form onSubmit={handleSubmit}>
+            <div className="flex items-center gap-2">
+              {/* Auto-respond bot indicator */}
+              {threadBot && autoRespondEnabled && (
+                <button
+                  type="button"
+                  onClick={() => setAutoRespondEnabled(false)}
+                  className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-neutral-700 rounded text-xs font-mono text-neutral-400 hover:text-neutral-300 hover:border-neutral-600 transition-colors shrink-0"
+                  title="Click to disable auto-respond"
+                >
+                  <span className="text-blue-400">@{threadBot.mention}</span>
+                  <span className="text-neutral-600">×</span>
+                </button>
+              )}
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  threadBot && autoRespondEnabled
+                    ? `Message @${threadBot.mention}...`
+                    : `Message ${title}`
+                }
+                className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 font-mono text-neutral-300 placeholder-neutral-600 focus:outline-none focus:border-neutral-700"
+              />
+            </div>
+          </form>
+        </div>
       </div>
     </div>
+  );
+}
+
+interface CollapsibleContentProps {
+  content: string;
+  className?: string;
+}
+
+function CollapsibleContent({
+  content,
+  className = "",
+}: CollapsibleContentProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Simple heuristic: content with newlines or >150 chars is likely long
+  const isLongContent = content.includes("\n") || content.length > 150;
+
+  const markdownContent = (
+    <ReactMarkdown
+      components={{
+        p: ({ children }) => <span className="block my-1">{children}</span>,
+        strong: ({ children }) => (
+          <strong className="font-bold">{children}</strong>
+        ),
+        em: ({ children }) => <em className="italic">{children}</em>,
+        code: ({ children }) => (
+          <code className="bg-neutral-800 px-1 py-0.5 rounded text-sm font-mono">
+            {children}
+          </code>
+        ),
+        pre: ({ children }) => (
+          <pre className="bg-neutral-800 p-2 rounded my-1 overflow-x-auto text-sm">
+            {children}
+          </pre>
+        ),
+        ul: ({ children }) => (
+          <ul className="list-disc list-inside my-1">{children}</ul>
+        ),
+        ol: ({ children }) => (
+          <ol className="list-decimal list-inside my-1">{children}</ol>
+        ),
+        li: ({ children }) => <li className="my-0.5">{children}</li>,
+        a: ({ href, children }) => (
+          <a
+            href={href}
+            className="text-blue-400 hover:underline"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {children}
+          </a>
+        ),
+        h1: ({ children }) => (
+          <span className="font-bold text-lg block my-1">{children}</span>
+        ),
+        h2: ({ children }) => (
+          <span className="font-bold text-base block my-1">{children}</span>
+        ),
+        h3: ({ children }) => (
+          <span className="font-semibold block my-1">{children}</span>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+
+  if (!isLongContent) {
+    return <span className={className}>{markdownContent}</span>;
+  }
+
+  return (
+    <span className={className}>
+      <span className={isExpanded ? "" : "line-clamp-3"}>
+        {markdownContent}
+      </span>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsExpanded(!isExpanded);
+        }}
+        className="ml-1 text-neutral-500 hover:text-neutral-300 text-xs font-mono transition-colors"
+      >
+        {isExpanded ? "[less]" : "[more]"}
+      </button>
+    </span>
   );
 }
 
@@ -525,12 +1236,24 @@ interface MessageRowProps {
   message: Message;
   onOpenThread: (messageId: string) => void;
   getThreadsForMessage: (messageId: string) => Thread[];
+  globalTags: string[];
+  onAddTag: (messageId: string, tag: string) => void;
+  onRemoveTag: (messageId: string, tag: string) => void;
+  onCreateBot?: (botData: {
+    mention: string;
+    description: string;
+    personalityLines: string[];
+  }) => void;
 }
 
 function MessageRow({
   message,
   onOpenThread,
   getThreadsForMessage,
+  globalTags,
+  onAddTag,
+  onRemoveTag,
+  onCreateBot,
 }: MessageRowProps) {
   const threads = getThreadsForMessage(message.id);
   const hasThreads = threads.length > 0;
@@ -539,6 +1262,95 @@ function MessageRow({
     0,
   );
 
+  // Check if this is a thinking/reasoning message
+  if (message.username.endsWith(":thinking")) {
+    return <ThinkingMessage content={message.content} />;
+  }
+
+  // Check if this is a Bot Builder message
+  const isBotBuilder = message.username === "Bot Builder";
+
+  if (isBotBuilder) {
+    return (
+      <div className="group">
+        <div className="font-mono px-2 py-1 text-neutral-500">
+          <span>{message.timestamp}</span>
+          <span className="mx-2">&lt;{message.username}&gt;</span>
+        </div>
+        <div className="px-2">
+          <BotBuilderHandler
+            botMessageId={message.id}
+            onCreateBot={onCreateBot}
+          />
+        </div>
+
+        {/* Thread indicator / reply button and tags */}
+        <div className="ml-2 mt-1 sm:opacity-0 sm:group-hover:opacity-100 opacity-100">
+          <div className="flex items-start gap-3">
+            <button
+              onClick={() => onOpenThread(message.id)}
+              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              {hasThreads && <span className="text-xs">{totalReplies}</span>}
+            </button>
+
+            {/* Tag editor */}
+            <InlinePillsVariant
+              messageId={message.id}
+              existingTags={globalTags}
+              messageTags={message.tags || []}
+              onAddTag={(tag) => onAddTag(message.id, tag)}
+              onRemoveTag={(tag) => onRemoveTag(message.id, tag)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if this is a code variant message (from @code or @claude bots)
+  const isCodeBot =
+    message.username === "code" || message.username === "claude";
+  const codeVariant = isCodeBot ? parseCodeVariant(message.content) : null;
+
+  if (codeVariant) {
+    // Render code variant with live preview
+    return (
+      <div className="group">
+        <div className="font-mono px-2 py-1 text-neutral-500">
+          <span>{message.timestamp}</span>
+          <span className="mx-2">&lt;{message.username}&gt;</span>
+        </div>
+        <div className="px-2">
+          <CodeRenderer variant={codeVariant} />
+        </div>
+
+        {/* Thread indicator / reply button and tags */}
+        <div className="ml-2 mt-1 sm:opacity-0 sm:group-hover:opacity-100 opacity-100">
+          {/* Icon row with grid to allow tag selector to span full width below */}
+          <div className="grid grid-cols-[auto_auto_1fr] gap-3 items-start">
+            <button
+              onClick={() => onOpenThread(message.id)}
+              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Tag editor - button in row, expanded panel below */}
+            <InlinePillsVariant
+              messageId={message.id}
+              existingTags={globalTags}
+              messageTags={message.tags || []}
+              onAddTag={(tag) => onAddTag(message.id, tag)}
+              onRemoveTag={(tag) => onRemoveTag(message.id, tag)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="group">
       <div className="font-mono px-2 py-1 rounded transition-colors hover:bg-neutral-900">
@@ -546,22 +1358,59 @@ function MessageRow({
         <span className="text-neutral-400 mx-2">
           &lt;{message.username}&gt;
         </span>
-        <span className="text-neutral-300">{message.content}</span>
+        <CollapsibleContent
+          content={message.content}
+          className="text-neutral-300"
+        />
       </div>
 
-      {/* Thread indicator / reply button */}
-      <div className="ml-2 mt-1">
-        <button
-          onClick={() => onOpenThread(message.id)}
-          className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono sm:opacity-0 sm:group-hover:opacity-100 opacity-100"
-        >
-          <MessageSquare className="w-3.5 h-3.5" />
-          {hasThreads && (
-            <span className="text-xs">
-              {totalReplies} {totalReplies === 1 ? "reply" : "replies"}
-            </span>
-          )}
-        </button>
+      {/* Thread indicator / reply button and tags */}
+      <div className="ml-2 mt-1 sm:opacity-0 sm:group-hover:opacity-100 opacity-100">
+        {/* Icon row with grid to allow tag selector to span full width below */}
+        <div className="grid grid-cols-[auto_auto_1fr] gap-3 items-start">
+          <button
+            onClick={() => onOpenThread(message.id)}
+            className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Tag editor - button in row, expanded panel below */}
+          <InlinePillsVariant
+            messageId={message.id}
+            existingTags={globalTags}
+            messageTags={message.tags || []}
+            onAddTag={(tag) => onAddTag(message.id, tag)}
+            onRemoveTag={(tag) => onRemoveTag(message.id, tag)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders a thinking/reasoning message with muted text in a small scrollable viewport
+ */
+function ThinkingMessage({ content }: { content: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom as content streams in
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [content]);
+
+  return (
+    <div className="px-2 py-1">
+      <div
+        ref={containerRef}
+        className="max-h-24 overflow-y-auto bg-neutral-900/50 rounded border border-neutral-800 px-3 py-2"
+      >
+        <p className="text-xs text-neutral-500 font-mono whitespace-pre-wrap leading-relaxed">
+          {content}
+        </p>
       </div>
     </div>
   );

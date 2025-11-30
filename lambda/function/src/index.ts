@@ -385,11 +385,20 @@ Current message:
 						// Include created content IDs in result for cache invalidation
 						content_ids = createdContentIds;
 
+						// Extract TSX files and convert to base64 for JSON serialization
+						const tsxFiles = (claudeResult.outputFiles || [])
+							.filter(file => file.path.endsWith('.tsx') && !file.path.startsWith('.session/'))
+							.map(file => ({
+								path: file.path,
+								content: Buffer.from(file.content).toString('base64')
+							}));
+
 						result = {
 							success: claudeResult.status === 'completed',
 							session_id: claudeResult.session_id,
 							messages: claudeResult.messages,
 							s3_url,
+							tsx_files: tsxFiles,
 							error: claudeResult.error,
 							stdout: claudeResult.stdout,
 							stderr: claudeResult.stderr,

@@ -286,22 +286,42 @@ export const ContentMasonry: React.FC<ContentMasonryProps> = ({
   }, [groupId, newContent, parentContentId, queryClient]);
 
   // Set up real-time subscription for content_tags changes
+  // Targeted invalidation: only refetch if the changed content is visible
   useEffect(() => {
     if (!groupId) return;
 
     const tagsSubscription = contentRepository.subscribeToContentTags(
       groupId,
       (payload) => {
-        // When tags change, invalidate content queries to refetch with updated tags
-        queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContentId) });
-        queryClient.invalidateQueries({ queryKey: QueryKeys.contentSearch(groupId) });
+        // Extract content_id from the changed row
+        const changedContentId = payload.new?.content_id || payload.old?.content_id;
+        if (!changedContentId) return;
+
+        // Always invalidate the specific content item by ID
+        queryClient.invalidateQueries({ queryKey: QueryKeys.contentById(changedContentId) });
+
+        // Check if this content item is currently visible in our list
+        const contentItems = contentData?.pages.flatMap(page => page.items) ?? [];
+        const searchItems = searchData?.pages.flatMap(page => page.items) ?? [];
+        const tagItems = tagData?.pages.flatMap(page => page.items) ?? [];
+        const currentItems = isSearching ? searchItems : (isTagFilterActive ? tagItems : contentItems);
+        const isContentVisible = currentItems.some(item => item.id === changedContentId);
+
+        // Only invalidate list queries if the changed content is visible
+        if (isContentVisible) {
+          if (isSearching) {
+            queryClient.invalidateQueries({ queryKey: QueryKeys.contentSearch(groupId, searchQuery, parentContentId) });
+          } else {
+            queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContentId) });
+          }
+        }
       }
     );
 
     return () => {
       tagsSubscription.unsubscribe();
     };
-  }, [groupId, parentContentId, queryClient]);
+  }, [groupId, parentContentId, queryClient, isSearching, searchQuery, contentData, searchData, tagData, isTagFilterActive]);
 
   // Set up real-time subscription for job status changes
   useEffect(() => {

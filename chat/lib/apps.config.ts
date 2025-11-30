@@ -2,12 +2,15 @@ import {
   ChefHat,
   HelpCircle,
   MessageSquare,
+  Calendar,
+  FileText,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
-import { recipeSchemaObject, questionsSchemaObject } from "./schema";
+import { recipeSchemaObject, questionsSchemaObject, calendarSchemaObject } from "./schema";
 import type { z } from "zod";
 
-export type RenderMode = "card" | "question" | "list" | "chat";
+export type RenderMode = "card" | "question" | "list" | "chat" | "calendar" | "editor" | "reader";
 
 export interface AppConfig {
   id: string;
@@ -63,6 +66,42 @@ export const apps: AppConfig[] = [
     bgColor: "bg-cyan-400/10",
     placeholder: "Type a message...",
     renderMode: "chat",
+  },
+  {
+    id: "calendar",
+    name: "Calendar",
+    description:
+      "Generate calendar events from your plans and ideas",
+    icon: Calendar,
+    color: "text-blue-400",
+    bgColor: "bg-blue-400/10",
+    schema: calendarSchemaObject,
+    apiEndpoint: "/api/object",
+    placeholder: "Describe your plans... (e.g., 'Plan a week of workouts', 'Schedule a 3-day conference')",
+    loadingText: "Generating calendar events...",
+    renderMode: "calendar",
+  },
+  {
+    id: "editor",
+    name: "Markdown Editor",
+    description:
+      "Collaborative note-taking with markdown support and real-time sync",
+    icon: FileText,
+    color: "text-green-400",
+    bgColor: "bg-green-400/10",
+    placeholder: "Start typing...",
+    renderMode: "editor",
+  },
+  {
+    id: "reader",
+    name: "EPUB Reader",
+    description:
+      "Read and annotate EPUB files with collaborative highlights and real-time sync",
+    icon: BookOpen,
+    color: "text-amber-400",
+    bgColor: "bg-amber-400/10",
+    placeholder: "Upload an EPUB file to start reading...",
+    renderMode: "reader",
   },
 ];
 

@@ -35,6 +35,7 @@ import { useContentPieMenu } from '../hooks/useContentPieMenu';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useContentFocus } from '../hooks/useContentFocus';
 import { FocusActionBar } from './FocusActionBar';
+import { ContentItemBody } from './ContentItemBody';
 
 interface ContentListProps {
   groupId: string;
@@ -334,22 +335,41 @@ export const ContentList: React.FC<ContentListProps> = ({
   }, [groupId, newContent, parentContentId, queryClient]);
 
   // Set up real-time subscription for content_tags changes
+  // Targeted invalidation: only refetch if the changed content is visible
   useEffect(() => {
     if (!groupId) return;
 
     const tagsSubscription = contentRepository.subscribeToContentTags(
       groupId,
       (payload) => {
-        // When tags change, invalidate content queries to refetch with updated tags
-        queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContentId) });
-        queryClient.invalidateQueries({ queryKey: QueryKeys.contentSearch(groupId) });
+        // Extract content_id from the changed row
+        const changedContentId = payload.new?.content_id || payload.old?.content_id;
+        if (!changedContentId) return;
+
+        // Always invalidate the specific content item by ID
+        queryClient.invalidateQueries({ queryKey: QueryKeys.contentById(changedContentId) });
+
+        // Check if this content item is currently visible in our list
+        const contentItems = contentData?.pages.flatMap(page => page.items) ?? [];
+        const searchItems = searchData?.pages.flatMap(page => page.items) ?? [];
+        const currentItems = isSearching ? searchItems : contentItems;
+        const isContentVisible = currentItems.some(item => item.id === changedContentId);
+
+        // Only invalidate list queries if the changed content is visible
+        if (isContentVisible) {
+          if (isSearching) {
+            queryClient.invalidateQueries({ queryKey: QueryKeys.contentSearch(groupId, searchQuery, parentContentId) });
+          } else {
+            queryClient.invalidateQueries({ queryKey: QueryKeys.contentByParent(groupId, parentContentId) });
+          }
+        }
       }
     );
 
     return () => {
       tagsSubscription.unsubscribe();
     };
-  }, [groupId, parentContentId, queryClient]);
+  }, [groupId, parentContentId, queryClient, isSearching, searchQuery, contentData, searchData]);
 
   // Set up real-time subscription for job status changes
   useEffect(() => {
@@ -1453,7 +1473,17 @@ export const ContentList: React.FC<ContentListProps> = ({
                   )}
                   <div className="flex items-start gap-2">
                     {/* Main content area */}
-                    <ItemContent />
+                    <ContentItemBody
+                      item={item}
+                      isDownvoted={batchVoteScoresMap?.get(item.id)?.isDownvoted || false}
+                      isSelectionMode={selection.isSelectionMode}
+                      jobs={jobsByContentId.get(item.id) || []}
+                      groupId={groupId}
+                      loadedTsxComponents={loadedTsxComponents}
+                      onLoadTsxComponent={(id) => setLoadedTsxComponents(prev => new Set(prev).add(id))}
+                      onContentClick={handleContentClick}
+                      onInvalidateQueries={(key) => queryClient.invalidateQueries({ queryKey: key })}
+                    />
 
                   {/* Right gutter for icons and actions */}
                   {!selection.isSelectionMode && (

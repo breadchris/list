@@ -11,7 +11,7 @@ interface AppHeaderProps {
 
 export function AppHeader({ title, showBackButton = false }: AppHeaderProps) {
   return (
-    <div className="border-b border-neutral-800 bg-neutral-900 px-8 py-4">
+    <div className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-900 px-8 py-4">
       <div className="max-w-5xl mx-auto flex items-center gap-4">
         {showBackButton && (
           <Link href="/">
