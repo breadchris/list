@@ -98,11 +98,15 @@ export function BotBuilderHandler({
   return (
     <div className="space-y-3">
       {/* Main message from bot */}
-      {botData.message && (
+      {botData.message ? (
         <div className="bg-neutral-900 border border-neutral-800 rounded p-3 prose prose-invert prose-sm max-w-none">
           <ReactMarkdown>
             {botData.message}
           </ReactMarkdown>
+        </div>
+      ) : (
+        <div className="text-neutral-500 text-sm font-mono animate-pulse">
+          Thinking...
         </div>
       )}
 

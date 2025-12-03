@@ -26,7 +26,9 @@ export async function POST(req: Request) {
     }
 
     if (!bot.schema_id) {
-      return new Response(`Bot ${bot_id} has no schema_id configured`, { status: 400 });
+      return new Response(`Bot ${bot_id} has no schema_id configured`, {
+        status: 400,
+      });
     }
 
     const schemaConfig = getBotSchema(bot.schema_id);
@@ -58,7 +60,7 @@ export async function POST(req: Request) {
   const result = streamObject({
     schema: recipeSchemaObject,
     output: "object",
-    model: openai("gpt-4o-mini"),
+    model: openai("gpt-4.1"),
     prompt: prompt,
   });
 

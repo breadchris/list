@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { experimental_useObject as useObject } from "ai/react";
+import { experimental_useObject as useObject } from "@ai-sdk/react";
 import type { Doc } from "yjs";
 import { generateId, getCurrentTime } from "@/lib/bot-queue";
 import type { BotConfig } from "@/lib/bots.config";
@@ -99,7 +99,7 @@ export function ObjectBotHandler({
         threadsArray.insert(threadIndex, [updatedThread]);
       }
     },
-    [threadsArray, threadId]
+    [threadsArray, threadId],
   );
 
   // Submit on mount
@@ -118,7 +118,15 @@ export function ObjectBotHandler({
       prompt,
       context_messages: contextMessages,
     });
-  }, [bot.id, bot.schema_id, prompt, contextMessages, schemaConfig, onFail, submit]);
+  }, [
+    bot.id,
+    bot.schema_id,
+    prompt,
+    contextMessages,
+    schemaConfig,
+    onFail,
+    submit,
+  ]);
 
   // Handle error
   useEffect(() => {
@@ -169,6 +177,26 @@ export function ObjectBotHandler({
         });
       }
 
+      // Debug logging for bot builder updates
+      const responseObj = typedObject.response as
+        | Record<string, unknown>
+        | undefined;
+      console.log("Bot Builder Update:", {
+        messageId: botBuilderMessageIdRef.current,
+        step: responseObj?.step,
+        hasMessage: !!responseObj?.message,
+        messageLength:
+          typeof responseObj?.message === "string"
+            ? responseObj.message.length
+            : 0,
+        hasMention: !!responseObj?.bot_mention,
+        hasDescription: !!responseObj?.bot_description,
+        hasPersonality: Array.isArray(responseObj?.personality_lines)
+          ? responseObj.personality_lines.length
+          : 0,
+        partialObject: typedObject,
+      });
+
       // Dispatch objectUpdate event with message ID
       const event: ObjectUpdateEvent = new CustomEvent("objectUpdate", {
         detail: {
@@ -205,7 +233,7 @@ export function ObjectBotHandler({
           doc.transact(() => {
             const msgArray = messagesArray.toArray();
             const msgIndex = msgArray.findIndex(
-              (m) => m.id === chatMessageIdRef.current
+              (m) => m.id === chatMessageIdRef.current,
             );
             if (msgIndex !== -1) {
               const updatedMessage: Message = {
@@ -243,7 +271,7 @@ export function ObjectBotHandler({
           doc.transact(() => {
             const msgArray = messagesArray.toArray();
             const msgIndex = msgArray.findIndex(
-              (m) => m.id === reasoningMessageIdRef.current
+              (m) => m.id === reasoningMessageIdRef.current,
             );
             if (msgIndex !== -1) {
               const updatedMessage: Message = {
@@ -335,11 +363,27 @@ export function ObjectBotHandler({
       // Update previous state
       previousItemsStateRef.current = currentItemsState;
     }
-  }, [object, bot.schema_id, bot.display_name, isLoading, schemaConfig, doc, messagesArray, addMessageToThread, invocationId]);
+  }, [
+    object,
+    bot.schema_id,
+    bot.display_name,
+    isLoading,
+    schemaConfig,
+    doc,
+    messagesArray,
+    addMessageToThread,
+    invocationId,
+  ]);
 
   // Handle completion
   useEffect(() => {
-    if (!isLoading && hasSubmittedRef.current && !error && !hasFailedRef.current && object) {
+    if (
+      !isLoading &&
+      hasSubmittedRef.current &&
+      !error &&
+      !hasFailedRef.current &&
+      object
+    ) {
       onComplete();
     }
   }, [isLoading, error, object, onComplete]);

@@ -5,12 +5,13 @@ import {
   Calendar,
   FileText,
   BookOpen,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
 import { recipeSchemaObject, questionsSchemaObject, calendarSchemaObject } from "./schema";
 import type { z } from "zod";
 
-export type RenderMode = "card" | "question" | "list" | "chat" | "calendar" | "editor" | "reader";
+export type RenderMode = "card" | "question" | "list" | "chat" | "calendar" | "editor" | "reader" | "uploads";
 
 export interface AppConfig {
   id: string;
@@ -102,6 +103,17 @@ export const apps: AppConfig[] = [
     bgColor: "bg-amber-400/10",
     placeholder: "Upload an EPUB file to start reading...",
     renderMode: "reader",
+  },
+  {
+    id: "uploads",
+    name: "File Uploads",
+    description:
+      "Upload and manage your files. Supports documents, images, audio, video, and more",
+    icon: Upload,
+    color: "text-pink-400",
+    bgColor: "bg-pink-400/10",
+    placeholder: "Drop files here or click to upload...",
+    renderMode: "uploads",
   },
 ];
 

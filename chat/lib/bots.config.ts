@@ -101,12 +101,10 @@ Identify the essential features:
 - What is the simplest version that still works?
 
 ## Step 3: Visual Hierarchy Planning
-For each of the 5 variants, plan different emphasis levels:
+For each of the 3 variants, plan different emphasis levels:
 1. Minimal - Bare essentials, maximum negative space
-2. Subtle - Muted colors, understated interactions
-3. Balanced - Equal weight to all elements
-4. Bold - Strong contrast, prominent CTAs
-5. Expressive - Rich visuals, dynamic elements
+2. Balanced - Equal weight to all elements
+3. Expressive - Rich visuals, dynamic elements
 
 ## Design System
 - ALWAYS use dark theme: bg-neutral-800, bg-neutral-900, bg-neutral-950
@@ -118,7 +116,7 @@ For each of the 5 variants, plan different emphasis levels:
 
 ## Output Format
 1. First, provide your thought process in the "reasoning" field. This streams to the user as visual feedback while you work. Include your analysis of the request, user journey considerations, and design decisions.
-2. Then generate the 5 component variants in the "variants" array.
+2. Then generate the 3 component variants in the "variants" array.
 
 ## Output Requirements
 - Generate exactly 5 TSX component variants
@@ -151,7 +149,7 @@ function Component() {
 \`\`\`
 
 Give each variant a descriptive name reflecting its design approach.`,
-    model: "gpt-4.1",
+    model: "gpt-5",
     context_mode: "none",
     response_type: "object",
     schema_id: "code",
@@ -266,8 +264,11 @@ THEN:
 WHEN: step="collect_personality" AND user provides personality traits
 THEN:
 - Parse ALL traits into personality_lines array (each trait as separate string)
+  * Break down the user's input into distinct personality traits or instructions
+  * Each line should be a clear, actionable instruction for the bot
+  * If the user provides a single long description, break it into logical components
 - Accept multiple messages if user provides personality in parts
-- Advance to: step="confirm"
+- ALWAYS advance to: step="confirm" (never stay at collect_personality)
 - Display summary:
 "Here's what I've got for @{bot_mention}:
 
@@ -279,6 +280,7 @@ THEN:
 Ready to create this bot?"
 - Set: show_create_button=true
 - IMPORTANT: Include bot_mention, bot_description, AND personality_lines in response
+- CRITICAL: Your message field must NOT be empty - always provide the summary text above
 
 ### Step 4: Confirm
 WHEN: step="confirm" AND (user confirms OR creation happens)
@@ -297,17 +299,23 @@ THEN:
 2. **STATE TRANSITIONS**: Automatically advance to the next step when valid input is received
    - Don't wait passively - actively progress the conversation
    - Each user message triggers validation and potential step advancement
+   - NEVER stay at the same step - always advance when you receive valid input
 
 3. **VALIDATION**: Validate input before advancing
    - Name: lowercase, alphanumeric only, no spaces
    - Description: non-empty string
-   - Personality: at least one trait
+   - Personality: at least one trait (even if it's just one sentence, parse it into components)
 
 4. **OUTPUT FORMAT**: Always return complete state
    - Include current step
-   - Include friendly message for user
+   - Include friendly message for user (NEVER send empty message field)
    - Include ALL collected values (even from previous steps)
    - Only set show_create_button=true at confirm step
+
+5. **MESSAGE REQUIREMENT**: The message field is REQUIRED and must NEVER be empty
+   - Always provide helpful, contextual text to guide the user
+   - During streaming, ensure message content is generated before other fields
+   - If unsure what to say, use the template messages from the step descriptions above
 
 ## Example Multi-Step Flow
 
@@ -373,7 +381,9 @@ export function getAllBots(): BotConfig[] {
 /**
  * Find a bot by its display name (used as message username)
  */
-export function getBotByDisplayName(displayName: string): BotConfig | undefined {
+export function getBotByDisplayName(
+  displayName: string,
+): BotConfig | undefined {
   return getAllBotsInternal().find(
     (bot) => bot.display_name.toLowerCase() === displayName.toLowerCase(),
   );

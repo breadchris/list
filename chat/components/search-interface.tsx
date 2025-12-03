@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { experimental_useObject as useObject } from "ai/react";
+import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { useRef, useEffect, useCallback } from "react";
 import { AppResultRenderer } from "./app-result-renderer";
 import ProjectOverview from "./project-overview";
@@ -28,13 +28,17 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
 
   // Validate required fields for SearchInterface
   if (!appConfig.apiEndpoint || !appConfig.schema) {
-    throw new Error(`SearchInterface requires apiEndpoint and schema for app: ${appConfig.id}`);
+    throw new Error(
+      `SearchInterface requires apiEndpoint and schema for app: ${appConfig.id}`,
+    );
   }
 
   // Get shared state values (with defaults)
   const inputValue = (sharedState.get("inputValue") as string) || "";
-  const currentQuestionIndex = (sharedState.get("currentQuestionIndex") as number) || 0;
-  const activeQuestions = (sharedState.get("activeQuestions") as any[] | null) || null;
+  const currentQuestionIndex =
+    (sharedState.get("currentQuestionIndex") as number) || 0;
+  const activeQuestions =
+    (sharedState.get("activeQuestions") as any[] | null) || null;
 
   const {
     object: generatedObject,
@@ -48,8 +52,12 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
   // Auto-scroll to bottom when new messages arrive (not on every content update)
   const messageCount = chatHistory.length;
   useEffect(() => {
-    if (chatContainerRef.current && messageCount > prevMessageCountRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    if (
+      chatContainerRef.current &&
+      messageCount > prevMessageCountRef.current
+    ) {
+      chatContainerRef.current.scrollTop =
+        chatContainerRef.current.scrollHeight;
     }
     prevMessageCountRef.current = messageCount;
   }, [messageCount]);
@@ -59,12 +67,18 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
   useEffect(() => {
     if (!generatedObject) return;
 
-    if (appConfig.renderMode === "card" || appConfig.renderMode === "calendar") {
+    if (
+      appConfig.renderMode === "card" ||
+      appConfig.renderMode === "calendar"
+    ) {
       // For card/calendar mode (recipes, calendar events), add to chat history
       // Use transaction to batch delete+push as a single sync update
       doc.transact(() => {
         const messages = chatHistory.toArray();
-        if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+        if (
+          messages.length > 0 &&
+          messages[messages.length - 1].role === "assistant"
+        ) {
           // Replace last assistant message
           chatHistory.delete(messages.length - 1, 1);
         }
@@ -127,7 +141,8 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
       chatHistory.push([
         {
           role: "assistant",
-          content: "🎉 All questions completed! Check the console for your answers.",
+          content:
+            "🎉 All questions completed! Check the console for your answers.",
         },
       ]);
       sharedState.set("activeQuestions", null);
@@ -151,7 +166,9 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
           ref={chatContainerRef}
           className="flex-1 overflow-y-auto space-y-6 mb-6"
         >
-          {chatHistory.length === 0 && !isLoading && !activeQuestions && <ProjectOverview />}
+          {chatHistory.length === 0 && !isLoading && !activeQuestions && (
+            <ProjectOverview />
+          )}
 
           {chatHistory.toArray().map((message, index) => (
             <div key={index} className="space-y-2">
@@ -203,7 +220,9 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
                 onAnswer={handleAnswer}
                 questionIndex={currentQuestionIndex}
                 totalQuestions={activeQuestions.length}
-                isLastQuestion={currentQuestionIndex === activeQuestions.length - 1}
+                isLastQuestion={
+                  currentQuestionIndex === activeQuestions.length - 1
+                }
               />
             </div>
           )}
@@ -232,7 +251,9 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
             <Button
               type="submit"
               variant="outline"
-              disabled={isLoading || !inputValue.trim() || activeQuestions !== null}
+              disabled={
+                isLoading || !inputValue.trim() || activeQuestions !== null
+              }
             >
               Send
             </Button>

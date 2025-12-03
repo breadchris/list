@@ -21,6 +21,8 @@ export type {
   AnyEvent,
 } from "./yjs/observer";
 
+import type { ObservedEvent as _ObservedEvent } from "./yjs/observer";
+
 /**
  * CLI command types
  */
@@ -39,5 +41,5 @@ export interface CommandResult {
   success: boolean;
   data?: any;
   error?: string;
-  events?: ObservedEvent[];
+  events?: _ObservedEvent[];
 }

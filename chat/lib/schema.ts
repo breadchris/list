@@ -71,7 +71,7 @@ export const botBuilderSchema = z.object({
   bot_mention: z.string().optional().describe("The bot's mention name (without @)"),
   bot_description: z.string().optional().describe("Brief description of what the bot does"),
   personality_lines: z.array(z.string()).optional().describe("List of personality traits/instructions"),
-  message: z.string().describe("Message to show the user"),
+  message: z.string().min(1).describe("Message to show the user (must not be empty)"),
   show_create_button: z.boolean().optional().describe("Whether to show the create bot button"),
 });
 

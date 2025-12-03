@@ -371,6 +371,101 @@ export class ContentRepository {
     };
   }
 
+  async getParentsForContent(contentId: string): Promise<Content[]> {
+    const { data, error } = await supabase
+      .from("content_relationships")
+      .select(
+        `
+        from_content_id,
+        parent:content!inner!from_content_id (
+          *
+        )
+      `,
+      )
+      .eq("to_content_id", contentId)
+      .not("from_content_id", "is", null);
+
+    if (error) {
+      console.error("Error fetching parents for content:", error);
+      throw new Error(error.message);
+    }
+
+    // Extract parent content
+    return (data || [])
+      .map((item: any) => item.parent)
+      .filter(Boolean);
+  }
+
+  async createRelationship(relationship: {
+    from_content_id: string;
+    to_content_id: string;
+    display_order?: number;
+  }): Promise<{ from_content_id: string; to_content_id: string; display_order?: number }> {
+    const { data, error } = await supabase
+      .from("content_relationships")
+      .insert([relationship])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating relationship:", error);
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  async deleteRelationship(relationshipId: string): Promise<void> {
+    const { error } = await supabase
+      .from("content_relationships")
+      .delete()
+      .eq("id", relationshipId);
+
+    if (error) {
+      console.error("Error deleting relationship:", error);
+      throw new Error(error.message);
+    }
+  }
+
+  async getPublicContentChildren(parentId: string): Promise<Content[]> {
+    const { data, error } = await supabase
+      .from("content_relationships")
+      .select(
+        `
+        child:content!inner!to_content_id (
+          *,
+          content_tags!left (
+            tags (
+              id,
+              created_at,
+              name,
+              color,
+              user_id
+            )
+          )
+        )
+      `,
+      )
+      .eq("from_content_id", parentId)
+      .order("display_order", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching public content children:", error);
+      throw new Error(error.message);
+    }
+
+    // Extract child content and transform tags
+    const childData = (data || []).map((item: any) => item.child);
+
+    return childData.map((item: any) => ({
+      ...item,
+      tags:
+        (item as any).content_tags
+          ?.map((ct: any) => ct.tags)
+          .filter(Boolean) || [],
+    }));
+  }
+
   async getContentByParentAndTag(
     groupId: string,
     parentId: string | null,
@@ -784,6 +879,66 @@ export class ContentRepository {
     return data;
   }
 
+  async generateUrlPreview(
+    contentId: string,
+    url: string
+  ): Promise<{ success: boolean; screenshot_url?: string; error?: string }> {
+    try {
+      const response = await LambdaClient.invoke({
+        action: "generate-screenshot",
+        payload: { content_id: contentId, url },
+        sync: true,
+      });
+
+      if (!response.success) {
+        return { success: false, error: response.error || "Unknown error" };
+      }
+
+      return {
+        success: true,
+        screenshot_url: response.data?.screenshot_url,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, error: message };
+    }
+  }
+
+  async updateContentUrlPreview(
+    contentId: string,
+    screenshotUrl: string
+  ): Promise<void> {
+    const { error } = await supabase
+      .from("content")
+      .update({
+        metadata: supabase.rpc("jsonb_set_nested", {
+          target: "metadata",
+          path: ["screenshot_url"],
+          value: screenshotUrl,
+        }),
+      })
+      .eq("id", contentId);
+
+    if (error) {
+      // Fallback: fetch content, merge metadata, update
+      const { data: content } = await supabase
+        .from("content")
+        .select("metadata")
+        .eq("id", contentId)
+        .single();
+
+      await supabase
+        .from("content")
+        .update({
+          metadata: {
+            ...(content?.metadata || {}),
+            screenshot_url: screenshotUrl,
+          },
+        })
+        .eq("id", contentId);
+    }
+  }
+
   async deleteContent(id: string): Promise<void> {
     const { error } = await supabase.from("content").delete().eq("id", id);
 
@@ -802,6 +957,47 @@ export class ContentRepository {
       console.error("Error bulk deleting content:", error);
       throw new Error(error.message);
     }
+  }
+
+  async deleteImage(fileUrl: string): Promise<void> {
+    // Extract the path from the storage URL
+    // URL format: https://[project].supabase.co/storage/v1/object/public/[bucket]/[path]
+    const urlParts = fileUrl.split("/storage/v1/object/public/");
+    if (urlParts.length !== 2) {
+      console.warn("Invalid storage URL format:", fileUrl);
+      return;
+    }
+
+    const pathParts = urlParts[1].split("/");
+    const bucket = pathParts[0];
+    const filePath = pathParts.slice(1).join("/");
+
+    const { error } = await supabase.storage.from(bucket).remove([filePath]);
+
+    if (error) {
+      console.error("Error deleting image:", error);
+      throw new Error(error.message);
+    }
+  }
+
+  async uploadFile(file: File, contentId: string): Promise<string> {
+    const bucket = "uploads";
+    const filePath = `${contentId}/${file.name}`;
+
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (error) {
+      console.error("Error uploading file:", error);
+      throw new Error(error.message);
+    }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
+    return data.publicUrl;
   }
 
   async copyContentToGroup(
@@ -1598,1445 +1794,6 @@ export class ContentRepository {
         error:
           error instanceof Error ? error.message : "Unknown error occurred",
       };
-    }
-  }
-
-  // TMDb search functionality (search-only mode)
-  async searchTMDb(
-    contentId: string,
-    searchType: "movie" | "tv" | "multi" = "multi",
-    searchQuery?: string,
-  ): Promise<{
-    content_id: string;
-    success: boolean;
-    results: Array<{
-      tmdb_id: number;
-      media_type: string;
-      title: string;
-      year: string;
-      overview: string;
-      poster_url: string | null;
-      backdrop_url: string | null;
-      vote_average: number;
-      vote_count: number;
-      popularity: number;
-    }>;
-    total_results: number;
-    errors?: string[];
-  }> {
-    try {
-      let contentItem: Content;
-
-      if (searchQuery) {
-        // Create temp content object with search query
-        contentItem = {
-          id: contentId,
-          data: searchQuery,
-          type: "text",
-          group_id: "", // Not needed for search-only mode
-          user_id: "", // Not needed for search-only mode
-          parent_content_id: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          has_children: false,
-          is_public: false,
-        };
-      } else {
-        // Fetch from database as before
-        contentItem = await this.getContentById(contentId);
-        if (!contentItem) {
-          throw new Error("Content not found");
-        }
-      }
-
-      const result = await LambdaClient.invoke({
-        action: "tmdb-search",
-        payload: {
-          selectedContent: [contentItem],
-          searchType,
-          mode: "search-only",
-        },
-        sync: true, // Execute immediately and return search results
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || "TMDb search failed");
-      }
-
-      const data = result.data?.[0];
-      if (data) {
-        return {
-          content_id: data.content_id || contentId,
-          success: data.success || false,
-          results: data.tmdb_results || [],
-          total_results: data.total_results || 0,
-          errors: data.errors || [],
-        };
-      }
-
-      return {
-        content_id: contentId,
-        success: true,
-        results: [],
-        total_results: 0,
-        errors: [],
-      };
-    } catch (error) {
-      console.error("Failed to search TMDb:", error);
-      throw error;
-    }
-  }
-
-  // TMDb add selected results functionality (add-selected mode)
-  async addTMDbResults(
-    groupId: string,
-    tmdbIds: number[],
-    searchType: "movie" | "tv" | "multi" = "multi",
-  ): Promise<{
-    content_id: string;
-    success: boolean;
-    results_created: number;
-    tmdb_children?: Content[];
-    errors?: string[];
-  }> {
-    try {
-      // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      // Create a minimal content object representing the group context
-      // The Lambda will create new content items in this group
-      const contentItem: Content = {
-        id: "", // Not used - Lambda will create new UUIDs
-        data: "", // Not used for add-selected mode
-        type: "text",
-        group_id: groupId,
-        user_id: user.id,
-        parent_content_id: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        has_children: false,
-        is_public: false,
-      };
-
-      const result = await LambdaClient.invoke({
-        action: "tmdb-search",
-        payload: {
-          selectedContent: [contentItem],
-          searchType,
-          mode: "add-selected",
-          selectedResults: tmdbIds,
-        },
-        sync: true, // Execute immediately for user feedback
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || "TMDb add results failed");
-      }
-
-      const data = result.data?.[0];
-      if (data) {
-        return {
-          content_id: data.content_id || "",
-          success: data.success || false,
-          results_created: data.results_created || 0,
-          tmdb_children: data.tmdb_children || [],
-          errors: data.errors || [],
-        };
-      }
-
-      return {
-        content_id: "",
-        success: true,
-        results_created: 0,
-        tmdb_children: [],
-        errors: [],
-      };
-    } catch (error) {
-      console.error("Failed to add TMDb results:", error);
-      throw error;
-    }
-  }
-
-  // Libgen Book Search
-  async searchLibgen(
-    selectedContent: Content[],
-    searchType?: "default" | "title" | "author",
-    topics?: string[],
-    filters?: Record<string, string>,
-    maxResults?: number,
-    autoCreate?: boolean,
-  ): Promise<{
-    success: boolean;
-    data: Array<{
-      content_id: string;
-      success: boolean;
-      books_found: number;
-      books_created: number;
-      error?: string;
-    }>;
-  }> {
-    try {
-      // Call Lambda content endpoint
-      const response = await LambdaClient.invoke({
-        action: "libgen-search",
-        payload: {
-          selectedContent,
-          searchType: searchType || "default",
-          topics: topics || ["libgen"],
-          filters,
-          maxResults: maxResults || 10,
-          autoCreate: autoCreate !== false, // Default to true for backward compatibility
-        },
-        sync: true, // Execute immediately for user feedback
-      });
-
-      if (!response.success) {
-        throw new Error(response.error || "Libgen search failed");
-      }
-
-      return {
-        success: true,
-        data: response.data,
-      };
-    } catch (error) {
-      console.error("Failed to search Libgen:", error);
-      throw error;
-    }
-  }
-
-  // Public Content Sharing Methods
-
-  // Toggle content public sharing
-  async toggleContentSharing(
-    contentId: string,
-    isPublic: boolean,
-  ): Promise<SharingResponse> {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      const { data, error } = await supabase.rpc("toggle_content_sharing", {
-        content_id: contentId,
-        is_public: isPublic,
-        user_id: user.id,
-      });
-
-      if (error) {
-        console.error("Error toggling content sharing:", error);
-        throw new Error(error.message);
-      }
-
-      return data as SharingResponse;
-    } catch (error) {
-      console.error("Failed to toggle content sharing:", error);
-      throw error;
-    }
-  }
-
-  // Get public content by ID (accessible to anonymous users)
-  async getPublicContent(contentId: string): Promise<Content | null> {
-    try {
-      const { data, error } = await supabase
-        .from("public_content")
-        .select(
-          `
-          id,
-          created_at,
-          updated_at,
-          type,
-          data,
-          metadata,
-          parent_content_id,
-          shared_at,
-          shared_by
-        `,
-        )
-        .eq("id", contentId)
-        .single();
-
-      if (error) {
-        if (error.code === "PGRST116") {
-          // Not found or not public
-          return null;
-        }
-        console.error("Error fetching public content:", error);
-        throw new Error(error.message);
-      }
-
-      return {
-        ...data,
-        group_id: "", // Not exposed for public content
-        user_id: data.shared_by || "", // Use shared_by as user_id
-        parent_content_id: data.parent_content_id || null,
-        tags: [], // Tags not exposed for public content
-      };
-    } catch (error) {
-      console.error("Failed to fetch public content:", error);
-      throw error;
-    }
-  }
-
-  // Get public content children (accessible to anonymous users)
-  async getPublicContentChildren(parentId: string): Promise<Content[]> {
-    try {
-      // Query from content_relationships join table
-      // Join to content table (not public_content view) to leverage RLS policy
-      const { data, error } = await supabase
-        .from("content_relationships")
-        .select(
-          `
-          display_order,
-          child:content!inner!to_content_id (
-            id,
-            created_at,
-            updated_at,
-            type,
-            data,
-            metadata,
-            parent_content_id,
-            group_id,
-            user_id
-          )
-        `,
-        )
-        .eq("from_content_id", parentId)
-        .order("child(created_at)", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching public content children:", error);
-        throw new Error(error.message);
-      }
-
-      // Extract child content from relationship records
-      // RLS policy filters to only public content
-      return (data || []).map((item: any) => ({
-        ...item.child,
-        tags: [], // Tags not exposed for public content
-      }));
-    } catch (error) {
-      console.error("Failed to fetch public content children:", error);
-      throw error;
-    }
-  }
-
-  // Get sharing status for content
-  async getContentSharingStatus(
-    contentId: string,
-  ): Promise<{ isPublic: boolean; publicUrl?: string }> {
-    try {
-      const { data, error } = await supabase
-        .from("content")
-        .select("metadata")
-        .eq("id", contentId)
-        .single();
-
-      if (error) {
-        console.error("Error fetching content sharing status:", error);
-        throw new Error(error.message);
-      }
-
-      const sharingData = data.metadata?.sharing as SharingMetadata;
-      const isPublic = sharingData?.isPublic || false;
-
-      let publicUrl: string | undefined;
-      if (isPublic) {
-        // Generate public URL
-        publicUrl = `${window.location.origin}/public/content/${contentId}`;
-      }
-
-      return {
-        isPublic,
-        publicUrl,
-      };
-    } catch (error) {
-      console.error("Failed to fetch content sharing status:", error);
-      throw error;
-    }
-  }
-
-  // Check if user can modify content sharing (must be owner)
-  async canModifyContentSharing(contentId: string): Promise<boolean> {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        return false;
-      }
-
-      const { data, error } = await supabase
-        .from("content")
-        .select("user_id")
-        .eq("id", contentId)
-        .single();
-
-      if (error || !data) {
-        return false;
-      }
-
-      return data.user_id === user.id;
-    } catch (error) {
-      console.error("Failed to check content sharing permissions:", error);
-      return false;
-    }
-  }
-
-  // URL Preview / Screenshot functionality using consolidated content function
-  async generateUrlPreview(
-    contentId: string,
-    url: string,
-    useQueue: boolean = true,
-  ): Promise<{
-    success: boolean;
-    screenshot_url?: string;
-    error?: string;
-    queued?: boolean;
-    job_id?: string;
-    status?: string;
-  }> {
-    try {
-      console.log(
-        `Generating URL preview for content ${contentId} with URL: ${url}`,
-      );
-
-      const result = await LambdaClient.invoke({
-        action: "screenshot-queue",
-        payload: {
-          jobs: [
-            {
-              contentId: contentId,
-              url: url,
-            },
-          ],
-        },
-      });
-
-      if (!result.success && !result.job_id) {
-        console.error("Screenshot generation failed:", result.error);
-        return {
-          success: false,
-          error: result.error || "Screenshot generation failed",
-        };
-      }
-
-      // Job was queued successfully
-      if (result.job_id) {
-        console.log(
-          `Screenshot job queued for content ${contentId}: ${result.job_id}`,
-        );
-        return {
-          success: true,
-          queued: true,
-          job_id: result.job_id,
-          status: result.status || "pending",
-        };
-      }
-
-      if (result.queued) {
-        console.log(`Screenshot job queued for content ${contentId}`);
-        return {
-          success: true,
-          queued: true,
-        };
-      }
-
-      // For immediate processing (if useQueue was false), we'd get the result here
-      console.log(`Screenshot processing initiated for content ${contentId}`);
-      return {
-        success: true,
-        queued: result.queued || false,
-      };
-    } catch (error) {
-      console.error("Failed to generate URL preview:", error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
-  }
-
-  // Batch screenshot generation for multiple URLs
-  async generateBatchUrlPreviews(
-    jobs: Array<{ contentId: string; url: string }>,
-  ): Promise<{
-    success: boolean;
-    error?: string;
-    queued?: boolean;
-    jobCount?: number;
-  }> {
-    try {
-      console.log(`Generating batch URL previews for ${jobs.length} jobs`);
-
-      const result = await LambdaClient.invoke({
-        action: "screenshot-queue",
-        payload: {
-          jobs: jobs,
-        },
-      });
-
-      if (!result.success) {
-        console.error("Batch screenshot generation failed:", result.error);
-        return {
-          success: false,
-          error: result.error || "Batch screenshot generation failed",
-        };
-      }
-
-      console.log(`${jobs.length} screenshot jobs queued successfully`);
-      return {
-        success: true,
-        queued: true,
-        jobCount: jobs.length,
-      };
-    } catch (error) {
-      console.error("Failed to generate batch URL previews:", error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
-  }
-
-  // Update content metadata with URL preview
-  async updateContentUrlPreview(
-    contentId: string,
-    screenshotUrl: string,
-  ): Promise<void> {
-    try {
-      // First get current metadata
-      const { data: content, error: fetchError } = await supabase
-        .from("content")
-        .select("metadata")
-        .eq("id", contentId)
-        .single();
-
-      if (fetchError) {
-        throw new Error(`Failed to fetch content: ${fetchError.message}`);
-      }
-
-      // Update metadata with url_preview
-      const updatedMetadata = {
-        ...content.metadata,
-        url_preview: screenshotUrl,
-      };
-
-      const { error: updateError } = await supabase
-        .from("content")
-        .update({ metadata: updatedMetadata })
-        .eq("id", contentId);
-
-      if (updateError) {
-        throw new Error(`Failed to update metadata: ${updateError.message}`);
-      }
-
-      console.log(
-        `Updated content ${contentId} with url_preview: ${screenshotUrl}`,
-      );
-    } catch (error) {
-      console.error("Failed to update content URL preview:", error);
-      throw error;
-    }
-  }
-
-  // Job Status Query Methods
-
-  /**
-   * Get all active jobs for a group (optimized - single query)
-   * More efficient than querying per content item
-   */
-  async getActiveJobsForGroup(
-    groupId: string,
-    statusFilter?: string[],
-  ): Promise<any[]> {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      let query = supabase
-        .from("content_processing_jobs")
-        .select("*")
-        .eq("group_id", groupId)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (statusFilter && statusFilter.length > 0) {
-        query = query.in("status", statusFilter);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        throw error;
-      }
-
-      return data || [];
-    } catch (error) {
-      console.error("Error fetching active jobs for group:", error);
-      return [];
-    }
-  }
-
-  /**
-   * Get all jobs related to a specific content item
-   */
-  async getJobsForContent(
-    contentId: string,
-    statusFilter?: string[],
-  ): Promise<any[]> {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      let query = supabase
-        .from("content_processing_jobs")
-        .select("*")
-        .contains("content_ids", [contentId])
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (statusFilter && statusFilter.length > 0) {
-        query = query.in("status", statusFilter);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        throw error;
-      }
-
-      return data || [];
-    } catch (error) {
-      console.error("Error fetching jobs for content:", error);
-      return [];
-    }
-  }
-
-  /**
-   * Subscribe to job status updates for a specific content item
-   * Returns unsubscribe function
-   */
-  subscribeToContentJobs(
-    contentId: string,
-    callback: (job: any) => void,
-  ): () => void {
-    const channel = supabase
-      .channel(`content-jobs-${contentId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "content_processing_jobs",
-        },
-        (payload) => {
-          // Client-side filter for this specific content
-          const job = payload.new as any;
-          if (
-            job.content_ids &&
-            Array.isArray(job.content_ids) &&
-            job.content_ids.includes(contentId)
-          ) {
-            callback(job);
-          }
-        },
-      )
-      .subscribe();
-
-    // Return unsubscribe function
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }
-
-  // Claude Code Session Management Methods
-
-  /**
-   * Store Claude Code session metadata in content
-   */
-  async storeClaudeCodeSession(
-    contentId: string,
-    sessionData: {
-      session_id: string;
-      s3_url?: string;
-      r2_url?: string; // Deprecated - kept for backward compatibility
-      initial_prompt: string;
-      last_updated_at?: string;
-    },
-  ): Promise<void> {
-    try {
-      // First get current metadata
-      const { data: content, error: fetchError } = await supabase
-        .from("content")
-        .select("metadata")
-        .eq("id", contentId)
-        .single();
-
-      if (fetchError) {
-        throw new Error(`Failed to fetch content: ${fetchError.message}`);
-      }
-
-      // Update metadata with Claude Code session
-      const updatedMetadata = {
-        ...content.metadata,
-        claude_code_session: {
-          session_id: sessionData.session_id,
-          s3_url: sessionData.s3_url,
-          r2_url: sessionData.r2_url, // Keep for backward compatibility
-          initial_prompt: sessionData.initial_prompt,
-          created_at:
-            content.metadata?.claude_code_session?.created_at ||
-            new Date().toISOString(),
-          last_updated_at:
-            sessionData.last_updated_at || new Date().toISOString(),
-        },
-      };
-
-      const { error: updateError } = await supabase
-        .from("content")
-        .update({ metadata: updatedMetadata })
-        .eq("id", contentId);
-
-      if (updateError) {
-        throw new Error(`Failed to update metadata: ${updateError.message}`);
-      }
-
-      console.log(
-        `Stored Claude Code session for content ${contentId}:`,
-        sessionData.session_id,
-      );
-    } catch (error) {
-      console.error("Failed to store Claude Code session:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get Claude Code session from content or traverse up to parent
-   */
-  async getClaudeCodeSession(contentId: string): Promise<{
-    session_id: string;
-    s3_url?: string;
-    r2_url?: string; // Deprecated - kept for backward compatibility
-    initial_prompt: string;
-    created_at: string;
-    last_updated_at?: string;
-  } | null> {
-    try {
-      let currentContentId: string | null = contentId;
-      let depth = 0;
-      const maxDepth = 10; // Prevent infinite loops
-
-      while (currentContentId && depth < maxDepth) {
-        const content = await this.getContentById(currentContentId);
-
-        if (!content) {
-          return null;
-        }
-
-        // Check if this content has a Claude Code session
-        if (content.metadata?.claude_code_session) {
-          const session = content.metadata.claude_code_session;
-
-          // Validate session has required fields - support both s3_url (new) and r2_url (legacy)
-          if (session.session_id && (session.s3_url || session.r2_url)) {
-            return {
-              session_id: session.session_id,
-              s3_url: session.s3_url,
-              r2_url: session.r2_url, // Keep for backward compatibility
-              initial_prompt: session.initial_prompt || "",
-              created_at: session.created_at || new Date().toISOString(),
-              last_updated_at: session.last_updated_at,
-            };
-          }
-        }
-
-        // Move up to parent
-        currentContentId = content.parent_content_id || null;
-        depth++;
-      }
-
-      return null;
-    } catch (error) {
-      console.error("Failed to get Claude Code session:", error);
-      return null;
-    }
-  }
-
-  /**
-   * Check if content or its ancestors have a Claude Code session
-   */
-  async hasClaudeCodeSession(contentId: string): Promise<boolean> {
-    const session = await this.getClaudeCodeSession(contentId);
-    return session !== null;
-  }
-
-  // Image Upload Methods
-
-  /**
-   * Upload an image to Supabase storage with content UUID prefix
-   * Path pattern: <content-uuid>/<filename>
-   * Returns the public URL of the uploaded image
-   */
-  async uploadImage(file: File, contentId: string): Promise<string> {
-    try {
-      // Generate filename with timestamp to avoid conflicts
-      const timestamp = Date.now();
-      const fileExtension = file.name.split(".").pop() || "jpg";
-      const fileName = `${timestamp}.${fileExtension}`;
-
-      // Path pattern: <content-uuid>/<filename>
-      const filePath = `${contentId}/${fileName}`;
-
-      console.log(`Uploading image to: ${filePath}`);
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("content")
-        .upload(filePath, file, {
-          contentType: file.type,
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw new Error(`Failed to upload image: ${uploadError.message}`);
-      }
-
-      console.log("Upload successful:", uploadData);
-
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from("content")
-        .getPublicUrl(filePath);
-
-      const publicUrl = publicUrlData.publicUrl;
-      console.log(`Image uploaded successfully: ${publicUrl}`);
-
-      return publicUrl;
-    } catch (error) {
-      console.error("Failed to upload image:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Delete an image from Supabase storage
-   * Extracts the path from the public URL and deletes the file
-   */
-  async deleteImage(publicUrl: string): Promise<void> {
-    try {
-      // Extract the path from the public URL
-      // URL format: https://<project>.supabase.co/storage/v1/object/public/content/<path>
-      const urlParts = publicUrl.split("/content/");
-      if (urlParts.length !== 2) {
-        throw new Error("Invalid image URL format");
-      }
-
-      const filePath = urlParts[1];
-
-      const { error } = await supabase.storage
-        .from("content")
-        .remove([filePath]);
-
-      if (error) {
-        console.error("Delete error:", error);
-        throw new Error(`Failed to delete image: ${error.message}`);
-      }
-
-      console.log(`Image deleted successfully: ${filePath}`);
-    } catch (error) {
-      console.error("Failed to delete image:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Upload an epub file to Supabase storage
-   * Path pattern: <content-uuid>/book.epub
-   * Returns the public URL of the uploaded epub
-   */
-  async uploadEpub(file: File, contentId: string): Promise<string> {
-    try {
-      // Path pattern: <content-uuid>/book.epub
-      const filePath = `${contentId}/book.epub`;
-
-      console.log(`Uploading epub to: ${filePath}`);
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("content")
-        .upload(filePath, file, {
-          contentType: "application/epub+zip",
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw new Error(`Failed to upload epub: ${uploadError.message}`);
-      }
-
-      console.log("Upload successful:", uploadData);
-
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from("content")
-        .getPublicUrl(filePath);
-
-      const publicUrl = publicUrlData.publicUrl;
-      console.log(`Epub uploaded successfully: ${publicUrl}`);
-
-      return publicUrl;
-    } catch (error) {
-      console.error("Failed to upload epub:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Upload an audio file to Supabase storage
-   * Path pattern: <content-uuid>/<timestamp>.<ext>
-   * Returns the public URL of the uploaded audio
-   */
-  async uploadAudio(file: File, contentId: string): Promise<string> {
-    try {
-      // Generate filename with timestamp to avoid conflicts
-      const timestamp = Date.now();
-      const fileExtension = file.name.split(".").pop() || "mp3";
-      const fileName = `${timestamp}.${fileExtension}`;
-
-      // Path pattern: <content-uuid>/<filename>
-      const filePath = `${contentId}/${fileName}`;
-
-      console.log(`Uploading audio to: ${filePath}`);
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("content")
-        .upload(filePath, file, {
-          contentType: file.type,
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw new Error(`Failed to upload audio: ${uploadError.message}`);
-      }
-
-      console.log("Upload successful:", uploadData);
-
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from("content")
-        .getPublicUrl(filePath);
-
-      const publicUrl = publicUrlData.publicUrl;
-      console.log(`Audio uploaded successfully: ${publicUrl}`);
-
-      return publicUrl;
-    } catch (error) {
-      console.error("Failed to upload audio:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Upload a file to Supabase storage (generic method for any file type)
-   * Path pattern: <content-uuid>/<timestamp>-<sanitized-filename>
-   * Returns the public URL of the uploaded file
-   */
-  async uploadFile(file: File, contentId: string): Promise<string> {
-    try {
-      // Generate filename with timestamp to avoid conflicts
-      const timestamp = Date.now();
-      const fileExtension = file.name.split(".").pop() || "bin";
-
-      // Sanitize filename: only allow alphanumeric, hyphens, and underscores
-      const baseName = file.name
-        .substring(0, file.name.lastIndexOf('.'))
-        .replace(/[^a-zA-Z0-9_-]/g, '-')  // Replace all special chars with hyphen
-        .replace(/-+/g, '-')  // Collapse multiple hyphens into one
-        .replace(/^-|-$/g, '')  // Remove leading/trailing hyphens
-        .substring(0, 100); // Limit length
-
-      // Use simple filename if sanitization results in empty string
-      const safeName = baseName || 'file';
-      const fileName = `${timestamp}-${safeName}.${fileExtension}`;
-
-      // Path pattern: <content-uuid>/<filename>
-      const filePath = `${contentId}/${fileName}`;
-
-      console.log(`Uploading file to: ${filePath}`);
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("content")
-        .upload(filePath, file, {
-          contentType: file.type || "application/octet-stream",
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw new Error(`Failed to upload file: ${uploadError.message}`);
-      }
-
-      console.log("Upload successful:", uploadData);
-
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from("content")
-        .getPublicUrl(filePath);
-
-      const publicUrl = publicUrlData.publicUrl;
-      console.log(`File uploaded successfully: ${publicUrl}`);
-
-      return publicUrl;
-    } catch (error) {
-      console.error("Failed to upload file:", error);
-      throw error;
-    }
-  }
-
-  // Job Management Methods
-
-  /**
-   * Get a specific job by ID
-   */
-  async getJob(job_id: string): Promise<any> {
-    try {
-      const result = await LambdaClient.invoke({
-        action: "get-job",
-        payload: {
-          job_id,
-        },
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || "Failed to get job");
-      }
-
-      return result.job;
-    } catch (error) {
-      console.error("Failed to get job:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * List jobs for the current user
-   */
-  async listJobs(params?: {
-    status?: string | string[];
-    limit?: number;
-    offset?: number;
-  }): Promise<any[]> {
-    try {
-      // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      const result = await LambdaClient.invoke({
-        action: "list-jobs",
-        payload: {
-          user_id: user.id,
-          ...params,
-        },
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || "Failed to list jobs");
-      }
-
-      return result.jobs || [];
-    } catch (error) {
-      console.error("Failed to list jobs:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Cancel a pending job
-   */
-  async cancelJob(job_id: string): Promise<boolean> {
-    try {
-      // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      const result = await LambdaClient.invoke({
-        action: "cancel-job",
-        payload: {
-          job_id,
-          user_id: user.id,
-        },
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || "Failed to cancel job");
-      }
-
-      return result.cancelled;
-    } catch (error) {
-      console.error("Failed to cancel job:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Subscribe to job updates for realtime notifications
-   */
-  subscribeToJobs(userId: string, callback: (payload: any) => void) {
-    return supabase
-      .channel(`jobs:${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "content_processing_jobs",
-          filter: `user_id=eq.${userId}`,
-        },
-        callback,
-      )
-      .subscribe();
-  }
-
-  // Audio Transcription Methods
-
-  /**
-   * Transcribe audio files using Deepgram API
-   * Creates transcript content items as children of the audio content
-   */
-  async transcribeAudio(
-    selectedContent: Content[],
-    useQueue: boolean = true,
-  ): Promise<{
-    success: boolean;
-    data: Array<{
-      content_id: string;
-      success: boolean;
-      transcript_content_id?: string;
-      error?: string;
-    }>;
-    error?: string;
-    queued?: boolean;
-  }> {
-    try {
-      const result = await LambdaClient.invoke({
-        action: "transcribe-audio",
-        payload: {
-          selectedContent,
-        },
-        sync: !useQueue,
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || "Audio transcription failed");
-      }
-
-      if (result.queued) {
-        return {
-          success: true,
-          data: [],
-          queued: true,
-        };
-      }
-
-      return {
-        success: true,
-        data: result.data || [],
-      };
-    } catch (error) {
-      console.error("Failed to transcribe audio:", error);
-      throw error;
-    }
-  }
-
-  // Spotify Import Methods
-
-  /**
-   * Import a Spotify playlist as content
-   * Creates a parent content item for the playlist and child items for each track
-   */
-  async importSpotifyPlaylist(
-    groupId: string,
-    playlist: {
-      id: string;
-      name: string;
-      description: string | null;
-      images: Array<{ url: string }>;
-      tracks: { total: number };
-      external_urls: { spotify: string };
-    },
-    tracks: Array<{
-      id: string;
-      name: string;
-      artists: Array<{ name: string }>;
-      album: { name: string; images: Array<{ url: string }> };
-      duration_ms: number;
-      external_urls: { spotify: string };
-    }>,
-    onProgress?: (current: number, total: number) => void,
-  ): Promise<{
-    playlist_content: Content;
-    tracks_created: number;
-    track_children: Content[];
-  }> {
-    try {
-      console.log(
-        `Importing Spotify playlist: ${playlist.name} with ${tracks.length} tracks`,
-      );
-
-      // Create the parent content item for the playlist
-      const playlistMetadata = {
-        title: playlist.name,
-        description: playlist.description,
-        image: playlist.images[0]?.url,
-        spotify_playlist_id: playlist.id,
-        spotify_url: playlist.external_urls.spotify,
-        track_count: playlist.tracks.total,
-        type: "spotify_playlist",
-      };
-
-      const playlistContent = await this.createContent({
-        type: "text",
-        data: `Spotify Playlist: ${playlist.name}`,
-        group_id: groupId,
-        parent_content_id: null,
-        metadata: playlistMetadata,
-      });
-
-      console.log(`Created playlist content: ${playlistContent.id}`);
-
-      // Create child content items for each track
-      const trackChildren: Content[] = [];
-      let tracksCreated = 0;
-
-      for (let i = 0; i < tracks.length; i++) {
-        const track = tracks[i];
-
-        try {
-          const trackMetadata = {
-            title: track.name,
-            artist: track.artists.map((a) => a.name).join(", "),
-            album: track.album.name,
-            image: track.album.images[0]?.url,
-            spotify_track_id: track.id,
-            spotify_url: track.external_urls.spotify,
-            duration_ms: track.duration_ms,
-            type: "spotify_track",
-            track_number: i + 1,
-          };
-
-          const trackContent = await this.createContent({
-            type: "text",
-            data: `${track.name} - ${track.artists.map((a) => a.name).join(", ")}`,
-            group_id: groupId,
-            parent_content_id: playlistContent.id,
-            metadata: trackMetadata,
-          });
-
-          trackChildren.push(trackContent);
-          tracksCreated++;
-
-          // Report progress
-          if (onProgress) {
-            onProgress(i + 1, tracks.length);
-          }
-        } catch (trackError) {
-          console.error(
-            `Failed to create track content for: ${track.name}`,
-            trackError,
-          );
-          // Continue with next track even if one fails
-        }
-      }
-
-      console.log(
-        `Successfully imported playlist ${playlist.name} with ${tracksCreated} tracks`,
-      );
-
-      return {
-        playlist_content: playlistContent,
-        tracks_created: tracksCreated,
-        track_children: trackChildren,
-      };
-    } catch (error) {
-      console.error("Failed to import Spotify playlist:", error);
-      throw error;
-    }
-  }
-
-  // ============================================================================
-  // Content Relationships Methods
-  // ============================================================================
-
-  /**
-   * Create a relationship between two content items
-   * Used during dual-write period to maintain both parent_content_id and join table
-   */
-  async createRelationship(relationship: {
-    from_content_id: string;
-    to_content_id: string;
-    display_order?: number;
-  }): Promise<ContentRelationship> {
-    const { data, error } = await supabase
-      .from("content_relationships")
-      .insert([
-        {
-          from_content_id: relationship.from_content_id,
-          to_content_id: relationship.to_content_id,
-          display_order: relationship.display_order ?? 0,
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error creating content relationship:", error);
-      throw new Error(error.message);
-    }
-
-    return data;
-  }
-
-  /**
-   * Get all parent content items for a given content ID
-   * Returns array of parent content with their relationship metadata
-   */
-  async getParentsForContent(
-    contentId: string,
-  ): Promise<Array<Content & { relationship: ContentRelationship }>> {
-    const { data, error } = await supabase
-      .from("content_relationships")
-      .select(
-        `
-        *,
-        parent:content!from_content_id (
-          id,
-          created_at,
-          updated_at,
-          type,
-          data,
-          group_id,
-          user_id,
-          parent_content_id,
-          metadata
-        )
-      `,
-      )
-      .eq("to_content_id", contentId)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching parent relationships:", error);
-      throw new Error(error.message);
-    }
-
-    // Transform the data to include both content and relationship info
-    return (data || []).map((item: any) => ({
-      ...item.parent,
-      relationship: {
-        id: item.id,
-        from_content_id: item.from_content_id,
-        to_content_id: item.to_content_id,
-        display_order: item.display_order,
-        created_at: item.created_at,
-      },
-    }));
-  }
-
-  /**
-   * Update a relationship's display order
-   */
-  async updateRelationshipOrder(
-    relationshipId: string,
-    displayOrder: number,
-  ): Promise<ContentRelationship> {
-    const { data, error } = await supabase
-      .from("content_relationships")
-      .update({ display_order: displayOrder })
-      .eq("id", relationshipId)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error updating relationship order:", error);
-      throw new Error(error.message);
-    }
-
-    return data;
-  }
-
-  /**
-   * Delete a relationship between two content items
-   */
-  async deleteRelationship(relationshipId: string): Promise<void> {
-    const { error } = await supabase
-      .from("content_relationships")
-      .delete()
-      .eq("id", relationshipId);
-
-    if (error) {
-      console.error("Error deleting relationship:", error);
-      throw new Error(error.message);
-    }
-  }
-
-  /**
-   * Delete all relationships for a content item (both as parent and child)
-   * Called when deleting content to clean up relationships
-   */
-  async deleteAllRelationshipsForContent(contentId: string): Promise<void> {
-    // Delete where content is parent
-    const { error: parentError } = await supabase
-      .from("content_relationships")
-      .delete()
-      .eq("from_content_id", contentId);
-
-    if (parentError) {
-      console.error("Error deleting parent relationships:", parentError);
-      throw new Error(parentError.message);
-    }
-
-    // Delete where content is child
-    const { error: childError } = await supabase
-      .from("content_relationships")
-      .delete()
-      .eq("to_content_id", contentId);
-
-    if (childError) {
-      console.error("Error deleting child relationships:", childError);
-      throw new Error(childError.message);
     }
   }
 }

@@ -1,11 +1,13 @@
 "use client";
 
+import { Doc } from "yjs";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, MessageSquare, Tag } from "lucide-react";
+import { X, MessageSquare, Tag, FileText } from "lucide-react";
 import { useArray, useYDoc } from "@y-sweet/react";
 import ReactMarkdown from "react-markdown";
 import { useUsername } from "./username-prompt";
 import { BotQueueProvider, useBotQueue } from "./bot-queue-provider";
+import { BlockNoteEditorAppInterface } from "./blocknote-editor-app-interface";
 import {
   parseMentions,
   buildBotContext,
@@ -43,6 +45,19 @@ interface OpenThread {
   thread_id: string;
   parent_message_id: string;
   available_thread_ids: string[];
+}
+
+type PanelType = "thread" | "editor";
+
+interface OpenPanel {
+  type: PanelType;
+  panel_id: string;
+  parent_message_id: string;
+  // For threads
+  thread_id?: string;
+  available_thread_ids?: string[];
+  // For editor
+  editor_message_id?: string;
 }
 
 export function ChatInterface() {
@@ -89,8 +104,10 @@ interface ChatInterfaceInnerProps {
     toArray: () => BotConfig[];
     delete: (index: number, length: number) => void;
     insert: (index: number, items: BotConfig[]) => void;
+    observe: (callback: () => void) => void;
+    unobserve: (callback: () => void) => void;
   };
-  doc: import("yjs").Doc;
+  doc: Doc;
 }
 
 function ChatInterfaceInner({
@@ -105,8 +122,8 @@ function ChatInterfaceInner({
   const prevThreadCountRef = useRef(0);
   const { dispatch } = useBotQueue();
 
-  // Local state for open threads - each user has their own view
-  const [openThreadIds, setOpenThreadIds] = useState<OpenThread[]>([]);
+  // Local state for open panels (threads and editors) - each user has their own view
+  const [openPanels, setOpenPanels] = useState<OpenPanel[]>([]);
 
   // Sync dynamic bots with the global bot registry
   useEffect(() => {
@@ -123,10 +140,10 @@ function ChatInterfaceInner({
     return () => dynamicBots.unobserve(updateBots);
   }, [dynamicBots]);
 
-  // Auto-scroll to the newest thread panel when a thread is opened
+  // Auto-scroll to the newest panel when opened
   useEffect(() => {
     if (
-      openThreadIds.length > prevThreadCountRef.current &&
+      openPanels.length > prevThreadCountRef.current &&
       scrollContainerRef.current
     ) {
       const container = scrollContainerRef.current;
@@ -137,8 +154,8 @@ function ChatInterfaceInner({
         });
       }, 50);
     }
-    prevThreadCountRef.current = openThreadIds.length;
-  }, [openThreadIds.length]);
+    prevThreadCountRef.current = openPanels.length;
+  }, [openPanels.length]);
 
   const getCurrentTime = () => {
     const now = new Date();
@@ -328,9 +345,9 @@ function ChatInterfaceInner({
       });
 
       // Open sub-thread for this test message
-      handleOpenThread(testMessage.id, openThreadIds.length);
+      handleOpenThread(testMessage.id, openPanels.length);
     },
-    [doc, messages, threads, username, openThreadIds.length],
+    [doc, messages, threads, username, openPanels.length],
   );
 
   const createBotFromConversation = useCallback(
@@ -376,7 +393,9 @@ function ChatInterfaceInner({
         }
 
         // Update bot def message with thread reference
-        const msgIndex = messages.toArray().findIndex((m) => m.id === botDefMessage.id);
+        const msgIndex = messages
+          .toArray()
+          .findIndex((m) => m.id === botDefMessage.id);
         if (msgIndex !== -1) {
           const updatedBotDefMsg: Message = {
             ...botDefMessage,
@@ -404,16 +423,9 @@ function ChatInterfaceInner({
       }, 0);
 
       // 5. Open the thread to show the user
-      handleOpenThread(botDefMessage.id, openThreadIds.length);
+      handleOpenThread(botDefMessage.id, openPanels.length);
     },
-    [
-      doc,
-      messages,
-      threads,
-      username,
-      activateBot,
-      openThreadIds.length,
-    ],
+    [doc, messages, threads, username, activateBot, openPanels.length],
   );
 
   const handleSendMessage = useCallback(
@@ -570,33 +582,41 @@ function ChatInterfaceInner({
         availableThreadIds = existingThreads.map((t) => t.id);
       }
 
-      // Update local open threads - truncate to depth and add new
-      setOpenThreadIds((prev) => {
-        const newOpenThreads = prev.slice(0, depth);
-        newOpenThreads.push({
-          thread_id: threadId,
+      // Update local open panels - truncate to depth and add new thread panel
+      setOpenPanels((prev) => {
+        const newOpenPanels = prev.slice(0, depth);
+        newOpenPanels.push({
+          type: "thread",
+          panel_id: threadId,
           parent_message_id: messageId,
+          thread_id: threadId,
           available_thread_ids: availableThreadIds,
         });
-        return newOpenThreads;
+        return newOpenPanels;
       });
     },
     [doc, threads, messages, getThreadsForMessage],
   );
 
-  const handleCloseThread = useCallback((depth: number) => {
-    setOpenThreadIds((prev) => prev.slice(0, depth));
+  const handleClosePanel = useCallback((depth: number) => {
+    setOpenPanels((prev) => prev.slice(0, depth));
   }, []);
 
   const handleSwitchThread = useCallback(
     (depth: number, threadIndex: number) => {
-      setOpenThreadIds((prev) => {
+      setOpenPanels((prev) => {
         const updated = [...prev];
-        const openThread = updated[depth];
-        if (openThread && openThread.available_thread_ids[threadIndex]) {
+        const openPanel = updated[depth];
+        if (
+          openPanel &&
+          openPanel.type === "thread" &&
+          openPanel.available_thread_ids &&
+          openPanel.available_thread_ids[threadIndex]
+        ) {
           updated[depth] = {
-            ...openThread,
-            thread_id: openThread.available_thread_ids[threadIndex],
+            ...openPanel,
+            thread_id: openPanel.available_thread_ids[threadIndex],
+            panel_id: openPanel.available_thread_ids[threadIndex],
           };
         }
         return updated;
@@ -607,12 +627,12 @@ function ChatInterfaceInner({
 
   const handleCreateNewThread = useCallback(
     (depth: number) => {
-      const openThread = openThreadIds[depth];
-      if (!openThread) return;
+      const openPanel = openPanels[depth];
+      if (!openPanel || openPanel.type !== "thread") return;
 
       const newThread: Thread = {
         id: generateId(),
-        parent_message_id: openThread.parent_message_id,
+        parent_message_id: openPanel.parent_message_id,
         message_ids: [],
       };
 
@@ -622,7 +642,7 @@ function ChatInterfaceInner({
         // Update parent message's thread_ids
         const msgArray = messages.toArray();
         const msgIndex = msgArray.findIndex(
-          (m) => m.id === openThread.parent_message_id,
+          (m) => m.id === openPanel.parent_message_id,
         );
         if (msgIndex !== -1) {
           const msg = msgArray[msgIndex];
@@ -636,21 +656,38 @@ function ChatInterfaceInner({
       });
 
       // Switch to the new thread locally
-      setOpenThreadIds((prev) => {
+      setOpenPanels((prev) => {
         const updated = [...prev];
         updated[depth] = {
-          ...openThread,
+          ...openPanel,
           thread_id: newThread.id,
+          panel_id: newThread.id,
           available_thread_ids: [
-            ...openThread.available_thread_ids,
+            ...(openPanel.available_thread_ids || []),
             newThread.id,
           ],
         };
         return updated;
       });
     },
-    [doc, threads, messages, openThreadIds],
+    [doc, threads, messages, openPanels],
   );
+
+  const handleOpenEditor = useCallback((messageId: string, depth: number) => {
+    const editorId = `editor-${messageId}`;
+
+    // Update local open panels - truncate to depth and add new editor panel
+    setOpenPanels((prev) => {
+      const newOpenPanels = prev.slice(0, depth);
+      newOpenPanels.push({
+        type: "editor",
+        panel_id: editorId,
+        parent_message_id: messageId,
+        editor_message_id: messageId,
+      });
+      return newOpenPanels;
+    });
+  }, []);
 
   // Main channel messages (not in any thread)
   const mainMessages = messages.toArray().filter((m) => {
@@ -675,6 +712,7 @@ function ChatInterfaceInner({
           messages={mainMessages}
           title="let's chat!"
           onOpenThread={(messageId) => handleOpenThread(messageId, 0)}
+          onOpenEditor={(messageId) => handleOpenEditor(messageId, 0)}
           onSendMessage={(content, autoBot) =>
             handleSendMessage(content, undefined, autoBot)
           }
@@ -686,43 +724,60 @@ function ChatInterfaceInner({
           onCreateBot={createBotFromConversation}
         />
 
-        {/* Thread panels */}
-        {openThreadIds.map((openThread, index) => {
-          const threadMessages = getMessagesForThread(openThread.thread_id);
-          const parentMessage = getMessageById(openThread.parent_message_id);
-          const currentThreadIndex = openThread.available_thread_ids.indexOf(
-            openThread.thread_id,
-          );
+        {/* Panel rendering - threads and editors */}
+        {openPanels.map((panel, index) => {
+          if (panel.type === "thread" && panel.thread_id) {
+            const threadMessages = getMessagesForThread(panel.thread_id);
+            const parentMessage = getMessageById(panel.parent_message_id);
+            const currentThreadIndex = (
+              panel.available_thread_ids || []
+            ).indexOf(panel.thread_id);
 
-          return (
-            <ChatPanel
-              key={openThread.thread_id}
-              messages={threadMessages}
-              parentMessage={parentMessage}
-              threadId={openThread.thread_id}
-              title="Thread"
-              onOpenThread={(messageId) =>
-                handleOpenThread(messageId, index + 1)
-              }
-              onSendMessage={(content, autoBot) =>
-                handleSendMessage(content, openThread.thread_id, autoBot)
-              }
-              onClose={() => handleCloseThread(index)}
-              showClose={true}
-              getThreadsForMessage={getThreadsForMessage}
-              currentThreadIndex={currentThreadIndex}
-              totalThreads={openThread.available_thread_ids.length}
-              onSwitchThread={(idx) => handleSwitchThread(index, idx)}
-              onCreateNewThread={() => handleCreateNewThread(index)}
-              globalTags={globalTags.toArray()}
-              onAddTag={addTagToMessage}
-              onRemoveTag={removeTagFromMessage}
-              onActivateBot={activateBot}
-              onDeactivateBot={deactivateBot}
-              onTestBot={createTestMessage}
-              onCreateBot={createBotFromConversation}
-            />
-          );
+            return (
+              <ChatPanel
+                key={panel.panel_id}
+                messages={threadMessages}
+                parentMessage={parentMessage}
+                threadId={panel.thread_id}
+                title="Thread"
+                onOpenThread={(messageId) =>
+                  handleOpenThread(messageId, index + 1)
+                }
+                onOpenEditor={(messageId) =>
+                  handleOpenEditor(messageId, index + 1)
+                }
+                onSendMessage={(content, autoBot) =>
+                  handleSendMessage(content, panel.thread_id, autoBot)
+                }
+                onClose={() => handleClosePanel(index)}
+                showClose={true}
+                getThreadsForMessage={getThreadsForMessage}
+                currentThreadIndex={currentThreadIndex}
+                totalThreads={panel.available_thread_ids?.length || 0}
+                onSwitchThread={(idx) => handleSwitchThread(index, idx)}
+                onCreateNewThread={() => handleCreateNewThread(index)}
+                globalTags={globalTags.toArray()}
+                onAddTag={addTagToMessage}
+                onRemoveTag={removeTagFromMessage}
+                onActivateBot={activateBot}
+                onDeactivateBot={deactivateBot}
+                onTestBot={createTestMessage}
+                onCreateBot={createBotFromConversation}
+              />
+            );
+          } else if (panel.type === "editor" && panel.editor_message_id) {
+            // Editor panel - uses main doc with unique messageId binding
+            const parentMessage = getMessageById(panel.parent_message_id);
+            return (
+              <BlockNoteEditorAppInterface
+                key={panel.panel_id}
+                messageId={panel.editor_message_id}
+                parentMessage={parentMessage}
+                onClose={() => handleClosePanel(index)}
+              />
+            );
+          }
+          return null;
         })}
       </div>
     </div>
@@ -735,6 +790,7 @@ interface ChatPanelProps {
   parentMessage?: Message;
   threadId?: string;
   onOpenThread: (messageId: string) => void;
+  onOpenEditor: (messageId: string) => void;
   onSendMessage: (content: string, autoRespondBot?: BotConfig) => void;
   onClose?: () => void;
   showClose: boolean;
@@ -766,6 +822,7 @@ function ChatPanel({
   parentMessage,
   threadId,
   onOpenThread,
+  onOpenEditor,
   onSendMessage,
   onClose,
   showClose,
@@ -804,8 +861,8 @@ function ChatPanel({
   const isBotDefinitionThread =
     parentMessage?.tags?.includes("bot") &&
     parseBotDefinition(parentMessage.content) !== null;
-  const botDefinition = isBotDefinitionThread
-    ? parseBotDefinition(parentMessage.content!)
+  const botDefinition = isBotDefinitionThread && parentMessage
+    ? parseBotDefinition(parentMessage.content)
     : null;
 
   // Auto-scroll to bottom when new messages arrive
@@ -927,9 +984,9 @@ function ChatPanel({
   };
 
   return (
-    <div className="min-w-full sm:min-w-[400px] w-full sm:w-[400px] h-full flex flex-col border-r border-neutral-800 snap-start">
+    <div className="min-w-full sm:min-w-[400px] w-full sm:w-[400px] h-full flex flex-col snap-start">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 bg-neutral-950">
+      <div className="flex items-center justify-between px-4 py-3 bg-neutral-950">
         <div className="flex items-center gap-2">
           <span className="text-neutral-400">{title}</span>
         </div>
@@ -945,7 +1002,7 @@ function ChatPanel({
 
       {/* Parent message context for threads */}
       {parentMessage && (
-        <div className="px-4 py-3 bg-neutral-900 border-b border-neutral-800">
+        <div className="px-4 py-3 bg-neutral-900">
           <div className="flex items-center justify-between mb-2">
             <div className="text-neutral-500 text-sm">
               {parentMessage.content.startsWith("🧪 Test:")
@@ -1089,6 +1146,7 @@ function ChatPanel({
               key={message.id}
               message={message}
               onOpenThread={onOpenThread}
+              onOpenEditor={onOpenEditor}
               getThreadsForMessage={getThreadsForMessage}
               globalTags={globalTags}
               onAddTag={onAddTag}
@@ -1101,7 +1159,7 @@ function ChatPanel({
       </div>
 
       {/* Input */}
-      <div className="border-t border-neutral-800 px-4 py-3">
+      <div className="px-4 py-3">
         <div className="relative">
           <BotMentionSuggestions
             bots={allBots}
@@ -1235,6 +1293,7 @@ function CollapsibleContent({
 interface MessageRowProps {
   message: Message;
   onOpenThread: (messageId: string) => void;
+  onOpenEditor: (messageId: string) => void;
   getThreadsForMessage: (messageId: string) => Thread[];
   globalTags: string[];
   onAddTag: (messageId: string, tag: string) => void;
@@ -1249,6 +1308,7 @@ interface MessageRowProps {
 function MessageRow({
   message,
   onOpenThread,
+  onOpenEditor,
   getThreadsForMessage,
   globalTags,
   onAddTag,
@@ -1295,6 +1355,14 @@ function MessageRow({
               {hasThreads && <span className="text-xs">{totalReplies}</span>}
             </button>
 
+            <button
+              onClick={() => onOpenEditor(message.id)}
+              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+              title="Edit in Lexical"
+            >
+              <FileText className="w-3.5 h-3.5" />
+            </button>
+
             {/* Tag editor */}
             <InlinePillsVariant
               messageId={message.id}
@@ -1329,12 +1397,20 @@ function MessageRow({
         {/* Thread indicator / reply button and tags */}
         <div className="ml-2 mt-1 sm:opacity-0 sm:group-hover:opacity-100 opacity-100">
           {/* Icon row with grid to allow tag selector to span full width below */}
-          <div className="grid grid-cols-[auto_auto_1fr] gap-3 items-start">
+          <div className="grid grid-cols-[auto_auto_auto_1fr] gap-3 items-start">
             <button
               onClick={() => onOpenThread(message.id)}
               className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
             >
               <MessageSquare className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={() => onOpenEditor(message.id)}
+              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+              title="Edit in Lexical"
+            >
+              <FileText className="w-3.5 h-3.5" />
             </button>
 
             {/* Tag editor - button in row, expanded panel below */}
@@ -1367,12 +1443,20 @@ function MessageRow({
       {/* Thread indicator / reply button and tags */}
       <div className="ml-2 mt-1 sm:opacity-0 sm:group-hover:opacity-100 opacity-100">
         {/* Icon row with grid to allow tag selector to span full width below */}
-        <div className="grid grid-cols-[auto_auto_1fr] gap-3 items-start">
+        <div className="grid grid-cols-[auto_auto_auto_1fr] gap-3 items-start">
           <button
             onClick={() => onOpenThread(message.id)}
             className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
           >
             <MessageSquare className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            onClick={() => onOpenEditor(message.id)}
+            className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+            title="Edit in Lexical"
+          >
+            <FileText className="w-3.5 h-3.5" />
           </button>
 
           {/* Tag editor - button in row, expanded panel below */}

@@ -43,9 +43,8 @@ export async function connectToYSweet(
   );
 
   // Create Y-Sweet provider using the official client
-  const provider = createYjsProvider(doc, token, {
-    WebSocketPolyfill: WebSocket as any,
-  });
+  // Type assertion needed because local YSweetClientToken matches y-sweet ClientToken shape
+  const provider = createYjsProvider(doc, token as any, {} as any);
 
   // Set up connection promise
   const connected = new Promise<void>((resolve, reject) => {

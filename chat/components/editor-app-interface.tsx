@@ -3,10 +3,11 @@
 import { useEffect, useState, useMemo } from "react";
 import { normalizeNodeId } from "platejs";
 import { Plate, usePlateEditor } from "platejs/react";
-import { useYjsProvider } from "@y-sweet/react";
+import { useYDoc, useYjsProvider } from "@y-sweet/react";
 import { YjsPlugin } from "@platejs/yjs/react";
 import { YjsEditor } from "@slate-yjs/core";
 import * as Y from "yjs";
+import { X } from "lucide-react";
 
 import { BasicBlocksKit } from "@/components/editor/plugins/basic-blocks-kit";
 import { BasicMarksKit } from "@/components/editor/plugins/basic-marks-kit";
@@ -15,13 +16,20 @@ import { CollaborationKit } from "@/components/editor/plugins/collaboration-kit"
 import { Editor, EditorContainer } from "@/components/ui/editor";
 import { YSweetProviderWrapper } from "@/components/editor/ysweet-provider-wrapper";
 
-// Initial empty document
-const initialValue = normalizeNodeId([
-  {
-    type: "p",
-    children: [{ text: "" }],
-  },
-]);
+interface Message {
+  id: string;
+  username: string;
+  timestamp: string;
+  content: string;
+  thread_ids?: string[];
+  tags?: string[];
+}
+
+interface EditorAppInterfaceProps {
+  messageId?: string;
+  parentMessage?: Message;
+  onClose?: () => void;
+}
 
 // Generate a random user color
 const generateUserColor = () => {
@@ -47,7 +55,11 @@ const generateUserName = () => {
   return `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${nouns[Math.floor(Math.random() * nouns.length)]}`;
 };
 
-export function EditorAppInterface() {
+export function EditorAppInterface({
+  messageId,
+  parentMessage,
+  onClose,
+}: EditorAppInterfaceProps = {}) {
   const ysweetProvider = useYjsProvider();
   const [userName] = useState(() => generateUserName());
   const [userColor] = useState(() => generateUserColor());
@@ -56,13 +68,17 @@ export function EditorAppInterface() {
   // Get doc and awareness from the Y-Sweet provider's own instances
   // This ensures we use the exact same object references
   const awareness = ysweetProvider?.awareness;
-  const doc = awareness?.doc;
+  const doc = useYDoc();
+
+  // Determine if we're in panel mode (has messageId and onClose)
+  const isPanelMode = Boolean(messageId && onClose);
 
   // Create shared type for editor content
+  // Use messageId for unique binding per message, or "content" for standalone app
   const sharedType = useMemo(() => {
     if (!doc) return null;
-    return doc.get("content", Y.XmlText);
-  }, [doc]);
+    return doc.get(messageId || "content", Y.XmlText);
+  }, [doc, messageId]);
 
   // Wrap Y-Sweet provider to match Plate.js UnifiedProvider interface
   const wrappedProvider = useMemo(() => {
@@ -127,6 +143,65 @@ export function EditorAppInterface() {
     };
   }, [editor, doc, awareness, sharedType, wrappedProvider, isInitialized]);
 
+  // Panel mode layout
+  if (isPanelMode) {
+    return (
+      <div className="min-w-full sm:min-w-[400px] w-full sm:w-[400px] h-full flex flex-col border-r border-neutral-800 snap-start bg-neutral-950">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+          <div className="flex items-center gap-2">
+            <span className="text-neutral-400 text-sm">Plate Editor</span>
+            {parentMessage && (
+              <span className="text-neutral-600 text-xs">
+                {parentMessage.username}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-neutral-500 hover:text-neutral-300 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Parent message context */}
+        {parentMessage && (
+          <div className="px-4 py-2 bg-neutral-900 border-b border-neutral-800">
+            <div className="text-neutral-500 text-xs mb-1">
+              Editing message:
+            </div>
+            <div className="font-mono text-xs">
+              <span className="text-neutral-400">
+                {parentMessage.timestamp}
+              </span>
+              <span className="text-neutral-300 mx-2">
+                &lt;{parentMessage.username}&gt;
+              </span>
+              <span className="text-neutral-400 line-clamp-1">
+                {parentMessage.content}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Editor */}
+        <div className="flex-1 overflow-hidden">
+          <Plate editor={editor}>
+            <EditorContainer className="h-full">
+              <Editor
+                className="h-full w-full px-4 py-4 outline-none text-neutral-300"
+                placeholder="Start typing... Use Tab to indent, Shift+Tab to outdent"
+                autoFocus
+              />
+            </EditorContainer>
+          </Plate>
+        </div>
+      </div>
+    );
+  }
+
+  // Full-screen mode layout
   return (
     <div className="h-screen w-full bg-background">
       <Plate editor={editor}>

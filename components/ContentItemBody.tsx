@@ -14,6 +14,7 @@ import { TsxRenderer } from './TsxRenderer';
 import { PluginRenderer } from './PluginRenderer';
 import { TruncatedContent } from './TruncatedContent';
 import { ContentJobsIndicator } from './ContentJobsIndicator';
+import { FinanceAccountView } from './FinanceAccountView';
 import { QueryKeys } from '../hooks/queryKeys';
 
 // Inline TagDisplay to avoid circular imports
@@ -109,6 +110,18 @@ export const ContentItemBody: React.FC<ContentItemBodyProps> = ({
                     </svg>
                   </div>
                 )}
+              </div>
+            </div>
+          ) : item.type === 'finance/account' ? (
+            <div>
+              <FinanceAccountView
+                content={item}
+                onClick={() => onContentClick(item)}
+              />
+              <TagDisplay tags={item.tags || []} isVisible={true} />
+              <ContentJobsIndicator jobs={jobs} className="mt-2" />
+              <div className="flex items-center gap-2 mt-2">
+                <p className="text-xs text-gray-500">{formatRelativeTime(item.created_at)}</p>
               </div>
             </div>
           ) : item.type === 'js' ? (

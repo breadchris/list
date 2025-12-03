@@ -1,9 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Calendar as CalendarIcon, MapPin, Clock, Check, X } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  MapPin,
+  Clock,
+  Check,
+  X,
+} from "lucide-react";
 import { useArray, useYDoc } from "@y-sweet/react";
-import { experimental_useObject as useObject } from "ai/react";
+import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { useUsername } from "./username-prompt";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -28,13 +34,7 @@ export function CalendarChatInterface() {
   const messages = useArray<Message>("calendarMessages");
   const events = useArray<StoredEvent>("calendarEvents");
 
-  return (
-    <CalendarChatInner
-      messages={messages}
-      events={events}
-      doc={doc}
-    />
-  );
+  return <CalendarChatInner messages={messages} events={events} doc={doc} />;
 }
 
 interface CalendarChatInnerProps {
@@ -52,11 +52,7 @@ interface CalendarChatInnerProps {
   doc: import("yjs").Doc;
 }
 
-function CalendarChatInner({
-  messages,
-  events,
-  doc,
-}: CalendarChatInnerProps) {
+function CalendarChatInner({ messages, events, doc }: CalendarChatInnerProps) {
   const username = useUsername();
   const [inputValue, setInputValue] = useState("");
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -121,7 +117,8 @@ function CalendarChatInner({
         id: generateId(),
         username: "Calendar",
         timestamp: getCurrentTime(),
-        content: "I couldn't find any calendar events in your message. Try describing your plans with dates and times.",
+        content:
+          "I couldn't find any calendar events in your message. Try describing your plans with dates and times.",
       };
       messages.push([assistantMessage]);
     }
@@ -179,7 +176,7 @@ function CalendarChatInner({
         }
       });
     },
-    [doc, events, messages]
+    [doc, events, messages],
   );
 
   const handleDeclineEvents = useCallback(
@@ -197,7 +194,7 @@ function CalendarChatInner({
         messages.insert(msgIndex, [updatedMsg]);
       }
     },
-    [messages]
+    [messages],
   );
 
   const handleRemoveEvent = useCallback(
@@ -208,7 +205,7 @@ function CalendarChatInner({
         events.delete(eventIndex, 1);
       }
     },
-    [events]
+    [events],
   );
 
   // Compute highlighted dates from events
@@ -226,7 +223,7 @@ function CalendarChatInner({
 
   const highlightedDates = useMemo(() => {
     return Array.from(eventDates.keys()).map(
-      (dateStr) => new Date(dateStr + "T00:00:00")
+      (dateStr) => new Date(dateStr + "T00:00:00"),
     );
   }, [eventDates]);
 
@@ -262,7 +259,8 @@ function CalendarChatInner({
           <div className="space-y-4">
             {messages.toArray().length === 0 && (
               <div className="text-neutral-500 text-sm">
-                Describe your plans and I&apos;ll help you add them to your calendar.
+                Describe your plans and I&apos;ll help you add them to your
+                calendar.
                 <br />
                 <br />
                 Try something like:
@@ -319,7 +317,8 @@ function CalendarChatInner({
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
           <span className="text-neutral-300">Your Calendar</span>
           <span className="text-neutral-500 text-sm">
-            {events.toArray().length} event{events.toArray().length !== 1 ? "s" : ""}
+            {events.toArray().length} event
+            {events.toArray().length !== 1 ? "s" : ""}
           </span>
         </div>
 
@@ -387,7 +386,9 @@ function CalendarChatInner({
 
                       {!selectedDate && event.date && (
                         <div className="text-sm text-neutral-400 mt-1">
-                          {new Date(event.date + "T00:00:00").toLocaleDateString()}
+                          {new Date(
+                            event.date + "T00:00:00",
+                          ).toLocaleDateString()}
                         </div>
                       )}
 
@@ -439,9 +440,7 @@ function MessageBubble({
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-[80%] rounded-lg px-4 py-2 ${
-          isUser
-            ? "bg-blue-600 text-white"
-            : "bg-neutral-800 text-neutral-100"
+          isUser ? "bg-blue-600 text-white" : "bg-neutral-800 text-neutral-100"
         }`}
       >
         <div className="text-sm">{message.content}</div>

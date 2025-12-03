@@ -31,6 +31,7 @@ export interface LambdaResponse {
   success: boolean;
   data?: any;
   error?: string;
+  queued?: boolean;
 }
 
 export class LambdaClient {
@@ -43,7 +44,11 @@ export class LambdaClient {
     try {
       const config = await getConfig();
       // Priority: runtime config > build-time constant
-      const endpoint = config.lambda_endpoint || BUILD_TIME_LAMBDA_ENDPOINT;
+      const endpoint = config?.lambda_endpoint || BUILD_TIME_LAMBDA_ENDPOINT;
+
+      if (!endpoint) {
+        throw new Error("Lambda endpoint not configured");
+      }
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -79,7 +84,11 @@ export class LambdaClient {
     try {
       const config = await getConfig();
       // Priority: runtime config > build-time constant
-      const endpoint = config.lambda_endpoint || BUILD_TIME_LAMBDA_ENDPOINT;
+      const endpoint = config?.lambda_endpoint || BUILD_TIME_LAMBDA_ENDPOINT;
+
+      if (!endpoint) {
+        return false;
+      }
 
       const response = await fetch(endpoint, {
         method: "POST",

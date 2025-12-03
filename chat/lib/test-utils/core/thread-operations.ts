@@ -5,6 +5,9 @@
 import { generateId } from "@/lib/bot-queue";
 import type { Message, Thread } from "./message-operations";
 
+// Re-export Thread type for convenience
+export type { Thread } from "./message-operations";
+
 /**
  * Create a new thread
  */

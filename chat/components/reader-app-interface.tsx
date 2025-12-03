@@ -39,11 +39,50 @@ export function ReaderAppInterface() {
   const [epubUrl, setEpubUrl] = useState<string | null>(null);
   const [rendition, setRendition] = useState<Rendition | undefined>(undefined);
   const [location, setLocation] = useState<string | number>(0);
-  const [currentSelection, setCurrentSelection] = useState<EpubSelection | null>(null);
+  const [currentSelection, setCurrentSelection] =
+    useState<EpubSelection | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Check for fileUrl query parameter and fetch the file
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fileUrl = params.get("fileUrl");
+
+    if (fileUrl) {
+      // Fetch the EPUB file from the URL and convert to blob
+      const loadRemoteEpub = async () => {
+        try {
+          setUploading(true);
+          setUploadProgress(0);
+
+          const response = await fetch(fileUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch EPUB: ${response.statusText}`);
+          }
+
+          // Get the file as a blob
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+
+          setUploadProgress(100);
+          setEpubUrl(objectUrl);
+          setIsLoaded(true);
+        } catch (err) {
+          console.error("Failed to load EPUB from URL:", err);
+          setError(
+            err instanceof Error ? err.message : "Failed to load EPUB file",
+          );
+        } finally {
+          setUploading(false);
+        }
+      };
+
+      loadRemoteEpub();
+    }
+  }, []);
 
   // Get Yjs doc and awareness
   const awareness = ysweetProvider?.awareness;
@@ -89,8 +128,8 @@ export function ReaderAppInterface() {
 
     const highlights = highlightsArray.toArray();
 
-    // Clear existing highlights
-    rendition.annotations.remove(undefined, "highlight");
+    // Clear existing highlights (using type assertion - epubjs accepts undefined at runtime)
+    rendition.annotations.remove(undefined as unknown as string, "highlight");
 
     // Re-add all highlights
     highlights.forEach((highlight) => {
@@ -105,7 +144,7 @@ export function ReaderAppInterface() {
           fill: color,
           "fill-opacity": "0.3",
           "mix-blend-mode": "multiply",
-        }
+        },
       );
     });
 
@@ -114,7 +153,7 @@ export function ReaderAppInterface() {
       const updatedHighlights = highlightsArray.toArray();
 
       // Clear and re-render all highlights
-      rendition.annotations.remove(undefined, "highlight");
+      rendition.annotations.remove(undefined as unknown as string, "highlight");
       updatedHighlights.forEach((highlight) => {
         const color = highlight.color || "#FCD34D";
         rendition.annotations.add(
@@ -127,7 +166,7 @@ export function ReaderAppInterface() {
             fill: color,
             "fill-opacity": "0.3",
             "mix-blend-mode": "multiply",
-          }
+          },
         );
       });
     };
@@ -281,7 +320,7 @@ export function ReaderAppInterface() {
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-sm text-amber-100 line-clamp-2">
-                "{currentSelection.text}"
+                {currentSelection.text}
               </p>
             </div>
             <div className="flex gap-2">
