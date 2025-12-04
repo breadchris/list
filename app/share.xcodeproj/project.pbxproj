@@ -58,6 +58,7 @@
 		4C5AE8742E8B652B005D092E /* DebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugView.swift; sourceTree = "<group>"; };
 		4C5AE8762E8B6574005D092E /* TESTING_GUIDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TESTING_GUIDE.md; sourceTree = "<group>"; };
 		4C5AE8782E8B657E005D092E /* setup_testing.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = setup_testing.sh; sourceTree = "<group>"; };
+		4C5C09AB2EE13066004C3D24 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		4C6D28462CE5CCAF00FCED19 /* share.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = share.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4C6D28492CE5CCAF00FCED19 /* shareApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = shareApp.swift; sourceTree = "<group>"; };
 		4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -110,6 +111,7 @@
 		4C6D28482CE5CCAF00FCED19 /* share */ = {
 			isa = PBXGroup;
 			children = (
+				4C5C09AB2EE13066004C3D24 /* Info.plist */,
 				4CC4D5502E6BF5FC007C1BF4 /* share.entitlements */,
 				4C6D28492CE5CCAF00FCED19 /* shareApp.swift */,
 				4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */,
@@ -424,6 +426,7 @@
 				DEVELOPMENT_TEAM = GXTMGDAFNK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = share/Info.plist;
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -459,6 +462,7 @@
 				DEVELOPMENT_TEAM = GXTMGDAFNK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = share/Info.plist;
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

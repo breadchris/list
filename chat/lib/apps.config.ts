@@ -4,6 +4,7 @@ import {
   FileText,
   BookOpen,
   Upload,
+  List,
   type LucideIcon,
 } from "lucide-react";
 import { calendarSchemaObject } from "./schema";
@@ -26,6 +27,17 @@ export interface AppConfig {
 }
 
 export const apps: AppConfig[] = [
+  {
+    id: "list",
+    name: "List",
+    description:
+      "Hierarchical content management with real-time collaboration",
+    icon: List,
+    color: "text-purple-400",
+    bgColor: "bg-purple-400/10",
+    placeholder: "Add content...",
+    renderMode: "list",
+  },
   {
     id: "chat",
     name: "chat",

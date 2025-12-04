@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useState } from "react";
-import { notFound } from "next/navigation";
+import { use, useState, useEffect } from "react";
+import { notFound, useRouter } from "next/navigation";
 import { SearchInterface } from "@/components/search-interface";
 import { ChatInterface } from "@/components/chat-interface";
 import { CalendarChatInterface } from "@/components/calendar-chat-interface";
@@ -16,9 +16,22 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   const { app } = use(params);
   const appConfig = getAppById(app);
   const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
+  const router = useRouter();
+
+  // Redirect list app to its dedicated route
+  useEffect(() => {
+    if (appConfig?.renderMode === "list") {
+      router.replace("/list");
+    }
+  }, [appConfig, router]);
 
   if (!appConfig) {
     notFound();
+  }
+
+  // List app has its own route structure
+  if (appConfig.renderMode === "list") {
+    return null; // Will redirect
   }
 
   // Create app-specific document ID for isolated collaborative rooms
