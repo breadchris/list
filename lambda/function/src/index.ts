@@ -18,7 +18,10 @@ import {
 	handleLibgenSearch,
 	handleScreenshotQueue,
 	handleTSXTranspile,
-	handleTranscribeAudio
+	handleTranscribeAudio,
+	handleTellerAccounts,
+	handleTellerBalances,
+	handleTellerTransactions
 } from './content-handlers.js';
 import { handleMapKitTokenRequest } from './mapkit-token-handler.js';
 import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
@@ -248,6 +251,26 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 								.filter((item: any) => item.success)
 								.map((item: any) => item.transcript_content_id)
 								.filter((id: string) => id);
+						}
+						break;
+
+					case 'teller-accounts':
+						result = await handleTellerAccounts(supabase, payload);
+						if (result.data) {
+							content_ids = result.data
+								.flatMap((item: any) => item.account_children || []);
+						}
+						break;
+
+					case 'teller-balances':
+						result = await handleTellerBalances(supabase, payload);
+						break;
+
+					case 'teller-transactions':
+						result = await handleTellerTransactions(supabase, payload);
+						if (result.data) {
+							content_ids = result.data
+								.flatMap((item: any) => item.transaction_children || []);
 						}
 						break;
 
@@ -1113,6 +1136,18 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 
 					case 'transcribe-audio':
 						result = await handleTranscribeAudio(supabase, payload);
+						break;
+
+					case 'teller-accounts':
+						result = await handleTellerAccounts(supabase, payload);
+						break;
+
+					case 'teller-balances':
+						result = await handleTellerBalances(supabase, payload);
+						break;
+
+					case 'teller-transactions':
+						result = await handleTellerTransactions(supabase, payload);
 						break;
 
 					case 'claude-code': {

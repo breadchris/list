@@ -165,6 +165,7 @@ export class ContentRepository {
     type: string;
     data: string;
     group_id: string;
+    user_id: string;
     parent_content_id?: string;
   }): Promise<Content> {
     // Dual-write period: write to both parent_content_id and content_relationships table
@@ -391,16 +392,18 @@ export class ContentRepository {
     }
 
     // Extract parent content
-    return (data || [])
-      .map((item: any) => item.parent)
-      .filter(Boolean);
+    return (data || []).map((item: any) => item.parent).filter(Boolean);
   }
 
   async createRelationship(relationship: {
     from_content_id: string;
     to_content_id: string;
     display_order?: number;
-  }): Promise<{ from_content_id: string; to_content_id: string; display_order?: number }> {
+  }): Promise<{
+    from_content_id: string;
+    to_content_id: string;
+    display_order?: number;
+  }> {
     const { data, error } = await supabase
       .from("content_relationships")
       .insert([relationship])
@@ -460,9 +463,8 @@ export class ContentRepository {
     return childData.map((item: any) => ({
       ...item,
       tags:
-        (item as any).content_tags
-          ?.map((ct: any) => ct.tags)
-          .filter(Boolean) || [],
+        (item as any).content_tags?.map((ct: any) => ct.tags).filter(Boolean) ||
+        [],
     }));
   }
 
@@ -881,7 +883,7 @@ export class ContentRepository {
 
   async generateUrlPreview(
     contentId: string,
-    url: string
+    url: string,
   ): Promise<{ success: boolean; screenshot_url?: string; error?: string }> {
     try {
       const response = await LambdaClient.invoke({
@@ -906,7 +908,7 @@ export class ContentRepository {
 
   async updateContentUrlPreview(
     contentId: string,
-    screenshotUrl: string
+    screenshotUrl: string,
   ): Promise<void> {
     const { error } = await supabase
       .from("content")
@@ -981,8 +983,14 @@ export class ContentRepository {
   }
 
   async uploadFile(file: File, contentId: string): Promise<string> {
-    const bucket = "uploads";
-    const filePath = `${contentId}/${file.name}`;
+    const bucket = "content";
+
+    // Sanitize filename: replace invalid chars with underscore, collapse multiples
+    const sanitizedName = file.name
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .replace(/_+/g, "_");
+
+    const filePath = `${contentId}/${sanitizedName}`;
 
     const { error } = await supabase.storage
       .from(bucket)

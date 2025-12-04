@@ -15,6 +15,8 @@ const deepgramApiKey = config.requireSecret('deepgram_api_key');
 const mapkitTeamId = config.require('mapkit_team_id');
 const mapkitKeyId = config.require('mapkit_key_id');
 const mapkitPrivateKey = config.requireSecret('mapkit_private_key');
+const tellerClientCert = config.requireSecret('teller_client_cert');
+const tellerClientKey = config.requireSecret('teller_client_key');
 
 // Create S3 bucket for Claude Code sessions
 const sessionBucket = new aws.s3.Bucket('claude-code-sessions', {
@@ -187,6 +189,8 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			MAPKIT_TEAM_ID: mapkitTeamId,
 			MAPKIT_KEY_ID: mapkitKeyId,
 			MAPKIT_PRIVATE_KEY: mapkitPrivateKey,
+			TELLER_CLIENT_CERT: tellerClientCert,
+			TELLER_CLIENT_KEY: tellerClientKey,
 			HOME: '/tmp', // Claude CLI needs a HOME directory for config
 			IS_SANDBOX: '1' // Enable bypassPermissions mode for Claude CLI
 		}

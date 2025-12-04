@@ -232,12 +232,15 @@ func buildCommand(c *cli.Context) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Create define map with Lambda endpoint for build-time injection
+	// Create define map with Lambda endpoint and Teller config for build-time injection
 	defines := map[string]string{
-		"LAMBDA_ENDPOINT": fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+		"LAMBDA_ENDPOINT":        fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+		"TELLER_APPLICATION_ID":  fmt.Sprintf(`"%s"`, config.TellerApplicationId),
+		"TELLER_ENVIRONMENT":     fmt.Sprintf(`"%s"`, config.TellerEnvironment),
 	}
 
 	fmt.Printf("🔗 Injecting Lambda endpoint: %s\n", config.LambdaEndpoint)
+	fmt.Printf("🏦 Injecting Teller config: app=%s env=%s\n", config.TellerApplicationId, config.TellerEnvironment)
 
 	// Build main app bundle with defines
 	result := buildWithEsbuildAndDefines("./index.tsx", filepath.Join(buildDir, "app.js"), true, defines)
@@ -403,10 +406,12 @@ func handleRenderComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load Lambda endpoint for injection
+	// Load Lambda endpoint and Teller config for injection
 	config, _ := LoadConfig()
 	defines := map[string]string{
-		"LAMBDA_ENDPOINT": fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+		"LAMBDA_ENDPOINT":        fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+		"TELLER_APPLICATION_ID":  fmt.Sprintf(`"%s"`, config.TellerApplicationId),
+		"TELLER_ENVIRONMENT":     fmt.Sprintf(`"%s"`, config.TellerEnvironment),
 	}
 
 	// Build with esbuild for rendering
@@ -471,10 +476,12 @@ func handleServeModule(w http.ResponseWriter, r *http.Request) {
 		sourceCodeStr = injectSupabaseConfig(sourceCodeStr)
 	}
 
-	// Load Lambda endpoint for injection
+	// Load Lambda endpoint and Teller config for injection
 	config, _ := LoadConfig()
 	defines := map[string]string{
-		"LAMBDA_ENDPOINT": fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+		"LAMBDA_ENDPOINT":        fmt.Sprintf(`"%s"`, config.LambdaEndpoint),
+		"TELLER_APPLICATION_ID":  fmt.Sprintf(`"%s"`, config.TellerApplicationId),
+		"TELLER_ENVIRONMENT":     fmt.Sprintf(`"%s"`, config.TellerEnvironment),
 	}
 
 	// Build as ES module for browser consumption
@@ -522,6 +529,8 @@ func buildWithEsbuildAndDefines(inputPath, outputPath string, writeToDisk bool, 
 		Outfile:          outputPath,
 		Format:           api.FormatESModule,
 		Bundle:           true,
+		MinifyIdentifiers: true,
+		MinifySyntax:      true,
 		Write:            writeToDisk,
 		MinifyWhitespace: true,
 		TreeShaking:      api.TreeShakingTrue,
@@ -529,7 +538,7 @@ func buildWithEsbuildAndDefines(inputPath, outputPath string, writeToDisk bool, 
 		JSX:              api.JSXAutomatic,
 		JSXImportSource:  "react",
 		LogLevel:         api.LogLevelInfo,
-		Sourcemap:        api.SourceMapInline,
+		//Sourcemap:        api.SourceMapInline,
 		External:         []string{},
 		Define:           defines,
 		TsconfigRaw: `{
@@ -580,7 +589,7 @@ func buildComponentForRendering(sourceCode, resolveDir, sourcefile string, defin
 		Target:            api.ESNext,
 		JSX:               api.JSXAutomatic,
 		JSXImportSource:   "react",
-		Sourcemap:         api.SourceMapInline,
+		// Sourcemap:         api.SourceMapInline,
 		LogLevel:          api.LogLevelSilent,
 		External:          []string{},
 		Define:            defines,

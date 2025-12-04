@@ -9,11 +9,13 @@ import (
 )
 
 type Config struct {
-	Port           string                 `json:"port"`
-	SupabaseURL    string                 `json:"supabase_url"`
-	SupabaseKey    string                 `json:"supabase_key"`
-	LambdaEndpoint string                 `json:"lambda_endpoint"`
-	Extra          map[string]interface{} `json:"-"` // For additional fields like API keys
+	Port                 string                 `json:"port"`
+	SupabaseURL          string                 `json:"supabase_url"`
+	SupabaseKey          string                 `json:"supabase_key"`
+	LambdaEndpoint       string                 `json:"lambda_endpoint"`
+	TellerApplicationId  string                 `json:"teller_application_id"`
+	TellerEnvironment    string                 `json:"teller_environment"`
+	Extra                map[string]interface{} `json:"-"` // For additional fields like API keys
 }
 
 func LoadConfig() (*Config, error) {
@@ -24,11 +26,13 @@ func LoadConfig() (*Config, error) {
 func LoadConfigFromPath(configPath string) (*Config, error) {
 	// Default configuration
 	config := &Config{
-		Port:           "3002",
-		SupabaseURL:    "https://zazsrepfnamdmibcyenx.supabase.co",
-		SupabaseKey:    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM",
-		LambdaEndpoint: "https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com/content",
-		Extra:          make(map[string]interface{}),
+		Port:                "3002",
+		SupabaseURL:         "https://zazsrepfnamdmibcyenx.supabase.co",
+		SupabaseKey:         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyOTYyNzMsImV4cCI6MjA3MDg3MjI3M30.IG4pzHdSxcbxCtonJ2EiczUDFeR5Lh41CI9MU2YrciM",
+		LambdaEndpoint:      "https://6jvwlnnks2.execute-api.us-east-1.amazonaws.com/content",
+		TellerApplicationId: "app_ploiog4e42q1ho0ol2000",
+		TellerEnvironment:   "sandbox",
+		Extra:               make(map[string]interface{}),
 	}
 
 	// Try to load from config file if it exists
@@ -57,6 +61,12 @@ func LoadConfigFromPath(configPath string) (*Config, error) {
 		if lambdaEndpoint, ok := configMap["lambda_endpoint"].(string); ok {
 			config.LambdaEndpoint = lambdaEndpoint
 		}
+		if tellerAppId, ok := configMap["teller_application_id"].(string); ok {
+			config.TellerApplicationId = tellerAppId
+		}
+		if tellerEnv, ok := configMap["teller_environment"].(string); ok {
+			config.TellerEnvironment = tellerEnv
+		}
 
 		// Store all fields in Extra for access by local stack
 		config.Extra = configMap
@@ -74,6 +84,12 @@ func LoadConfigFromPath(configPath string) (*Config, error) {
 	}
 	if lambdaEndpoint := os.Getenv("LAMBDA_ENDPOINT"); lambdaEndpoint != "" {
 		config.LambdaEndpoint = lambdaEndpoint
+	}
+	if tellerAppId := os.Getenv("TELLER_APPLICATION_ID"); tellerAppId != "" {
+		config.TellerApplicationId = tellerAppId
+	}
+	if tellerEnv := os.Getenv("TELLER_ENVIRONMENT"); tellerEnv != "" {
+		config.TellerEnvironment = tellerEnv
 	}
 
 	return config, nil

@@ -13,7 +13,7 @@ export interface ContentQueueJob {
 }
 
 export interface ContentRequest {
-	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio';
+	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio' | 'teller-accounts' | 'teller-balances' | 'teller-transactions';
 	payload: any;
 	sync?: boolean; // When true, execute immediately and return results. When false/omitted, queue job (default)
 }
@@ -407,4 +407,51 @@ export interface TranscribeAudioResult {
 	success: boolean;
 	transcript_content_id?: string;
 	error?: string;
+}
+
+// Teller Banking Types
+export interface TellerAccountsPayload {
+	selectedContent: ContentItem[]; // Parent enrollment content items
+}
+
+export interface TellerBalancesPayload {
+	selectedContent: ContentItem[]; // Account content items
+}
+
+export interface TellerTransactionsPayload {
+	selectedContent: ContentItem[]; // Account content items
+	count?: number; // Number of transactions to fetch (default 100)
+}
+
+export interface TellerEnrollmentMetadata {
+	enrollment_id: string;
+	access_token: string;
+	institution_id: string;
+	institution_name: string;
+	status: 'connected' | 'disconnected' | 'error';
+	last_synced?: string;
+}
+
+export interface TellerAccountMetadata {
+	account_id: string;
+	enrollment_id: string;
+	institution_name: string;
+	account_type: string;
+	subtype: string;
+	currency: string;
+	last_four: string;
+	balance_available?: number;
+	balance_current?: number;
+	last_synced?: string;
+}
+
+export interface TellerTransactionMetadata {
+	transaction_id: string;
+	account_id: string;
+	amount: number;
+	date: string;
+	category: string;
+	status: string;
+	merchant_name?: string;
+	running_balance?: number;
 }

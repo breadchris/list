@@ -18,6 +18,7 @@ import { ContentDeck } from "./ContentDeck";
 import { ContentInput } from "./ContentInput";
 import { WorkflowActionsDrawer } from "./WorkflowActionsDrawer";
 import { JsEditorView } from "./JsEditorView";
+import { FinanceAccountView } from "./FinanceAccountView";
 import { SavedTagFilterButton } from "./SavedTagFilterButton";
 import { MicroGameOverlay } from "./MicroGameOverlay";
 import { SEOProgressOverlay, SEOProgressItem } from "./SEOProgressOverlay";
@@ -105,6 +106,7 @@ export const ListApp: React.FC = () => {
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [newContent, setNewContent] = useState<Content | undefined>();
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
+  const [currentParentContent, setCurrentParentContent] = useState<Content | null>(null);
   const [currentJsContent, setCurrentJsContent] = useState<Content | null>(
     null,
   );
@@ -2693,6 +2695,7 @@ export const ListApp: React.FC = () => {
     if (parentId === null) {
       // Navigate to root
       setCurrentParentId(null);
+      setCurrentParentContent(null);
       setCurrentJsContent(null);
       setNavigationStack([{ id: null, name: "Root" }]);
 
@@ -2776,6 +2779,9 @@ export const ListApp: React.FC = () => {
     try {
       const content = await contentRepository.getContentById(contentId);
       if (content) {
+        // Save the current parent content for type-specific rendering
+        setCurrentParentContent(content);
+
         // Check if this is JS content - if so, show the JS editor view
         if (content.type === "js") {
           setCurrentJsContent(content);
@@ -2828,6 +2834,7 @@ export const ListApp: React.FC = () => {
       } else if (!contentId && currentParentId) {
         // Navigate to group root
         setCurrentParentId(null);
+        setCurrentParentContent(null);
         setCurrentJsContent(null);
         setNavigationStack([{ id: null, name: "Root" }]);
       }
@@ -2845,6 +2852,7 @@ export const ListApp: React.FC = () => {
   useEffect(() => {
     if (currentGroup && !params.contentId) {
       setCurrentParentId(null);
+      setCurrentParentContent(null);
       setCurrentJsContent(null);
       setNavigationStack([{ id: null, name: "Root" }]);
       setShowInput(false); // Close input when switching groups
@@ -3401,7 +3409,11 @@ export const ListApp: React.FC = () => {
                     )}
 
                     {/* Content List or JS Editor View */}
-                    {currentJsContent ? (
+                    {currentParentContent?.type === 'finance/account' ? (
+                      <div className="flex-1 overflow-auto p-4">
+                        <FinanceAccountView content={currentParentContent} />
+                      </div>
+                    ) : currentJsContent ? (
                       <JsEditorView
                         jsContent={currentJsContent}
                         groupId={currentGroup?.id || ""}

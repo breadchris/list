@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Content, ContentRepository } from './ContentRepository';
+import { Content, contentRepository } from './ContentRepository';
 
 interface TransactionMetadata {
   transaction_date: string;
@@ -23,12 +23,32 @@ export const FinanceAccountView: React.FC<FinanceAccountViewProps> = ({ content,
   const [sortAsc, setSortAsc] = useState(false);
 
   useEffect(() => {
-    const fetchTransactions = async () => {
+    const fetchAllTransactions = async () => {
       try {
-        const repo = ContentRepository.getInstance();
-        // Fetch all transactions (up to 10000)
-        const data = await repo.getContentByParent(content.group_id, content.id, 0, 10000, 'oldest');
-        setTransactions(data);
+        const PAGE_SIZE = 1000;
+        let allTransactions: Content[] = [];
+        let offset = 0;
+        let hasMore = true;
+
+        // Paginate through all transactions
+        while (hasMore) {
+          const data = await contentRepository.getContentByParent(
+            content.group_id,
+            content.id,
+            offset,
+            PAGE_SIZE,
+            'oldest'
+          );
+          allTransactions = [...allTransactions, ...data];
+
+          if (data.length < PAGE_SIZE) {
+            hasMore = false;
+          } else {
+            offset += PAGE_SIZE;
+          }
+        }
+
+        setTransactions(allTransactions);
       } catch (error) {
         console.error('Error fetching transactions:', error);
       } finally {
@@ -36,7 +56,7 @@ export const FinanceAccountView: React.FC<FinanceAccountViewProps> = ({ content,
       }
     };
 
-    fetchTransactions();
+    fetchAllTransactions();
   }, [content.id, content.group_id]);
 
   // Sort transactions

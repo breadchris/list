@@ -1,55 +1,21 @@
 "use client";
 
-import { RecipeCard } from "./recipe-card";
-import { QuestionCard } from "./question-card";
 import { CalendarCard } from "./calendar-card";
 import type { RenderMode } from "@/lib/apps.config";
 
 interface AppResultRendererProps {
   renderMode: RenderMode;
   data: any;
-  onAnswer?: (answer: string) => void;
-  questionIndex?: number;
-  totalQuestions?: number;
-  isLastQuestion?: boolean;
 }
 
 export function AppResultRenderer({
   renderMode,
   data,
-  onAnswer,
-  questionIndex,
-  totalQuestions,
-  isLastQuestion,
 }: AppResultRendererProps) {
-  if (renderMode === "card") {
-    // Render recipe card
-    if (data && data.recipe) {
-      return <RecipeCard recipe={data.recipe} />;
-    }
-    return null;
-  }
-
   if (renderMode === "calendar") {
     // Render calendar card
     if (data && data.events) {
       return <CalendarCard events={data.events} />;
-    }
-    return null;
-  }
-
-  if (renderMode === "question") {
-    // Render question card
-    if (data && onAnswer && questionIndex !== undefined && totalQuestions !== undefined) {
-      return (
-        <QuestionCard
-          question={data.question}
-          questionNumber={questionIndex + 1}
-          totalQuestions={totalQuestions}
-          onAnswer={onAnswer}
-          isLast={isLastQuestion || false}
-        />
-      );
     }
     return null;
   }

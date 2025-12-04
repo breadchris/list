@@ -13,6 +13,7 @@ interface EpubSelection {
   userId: string;
   color: string;
   timestamp: number;
+  epubUrl: string;
 }
 
 // Generate a random user color
@@ -44,6 +45,7 @@ export function ReaderAppInterface() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [bookName, setBookName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Check for fileUrl query parameter and fetch the file
@@ -52,24 +54,84 @@ export function ReaderAppInterface() {
     const fileUrl = params.get("fileUrl");
 
     if (fileUrl) {
-      // Fetch the EPUB file from the URL and convert to blob
+      // Fetch the EPUB file with streaming progress and caching
+      const CACHE_NAME = "epub-cache-v1";
+
       const loadRemoteEpub = async () => {
         try {
           setUploading(true);
           setUploadProgress(0);
 
+          // Check cache first
+          const cache = await caches.open(CACHE_NAME);
+          const cachedResponse = await cache.match(fileUrl);
+
+          if (cachedResponse) {
+            // Load from cache - instant!
+            const blob = await cachedResponse.blob();
+            const objectUrl = URL.createObjectURL(blob);
+
+            setUploadProgress(100);
+            setEpubUrl(objectUrl);
+            setIsLoaded(true);
+
+            const urlPath = new URL(fileUrl).pathname;
+            const fileName = urlPath.split("/").pop() || "Book";
+            setBookName(decodeURIComponent(fileName));
+            return;
+          }
+
+          // Not cached - fetch with streaming progress
           const response = await fetch(fileUrl);
           if (!response.ok) {
             throw new Error(`Failed to fetch EPUB: ${response.statusText}`);
           }
 
-          // Get the file as a blob
-          const blob = await response.blob();
+          const contentLength = response.headers.get("Content-Length");
+          const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+          if (!response.body) {
+            throw new Error("ReadableStream not supported");
+          }
+
+          const reader = response.body.getReader();
+          const chunks: Uint8Array[] = [];
+          let received = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            chunks.push(value);
+            received += value.length;
+
+            if (total > 0) {
+              setUploadProgress(Math.round((received / total) * 100));
+            }
+          }
+
+          const blob = new Blob(chunks as BlobPart[], { type: "application/epub+zip" });
+
+          // Store in cache for next time (graceful - if fails, still works)
+          try {
+            const cacheResponse = new Response(blob, {
+              headers: { "Content-Type": "application/epub+zip" },
+            });
+            await cache.put(fileUrl, cacheResponse);
+          } catch (cacheErr) {
+            // Quota exceeded or other cache error - continue without caching
+            console.warn("Could not cache EPUB:", cacheErr);
+          }
+
           const objectUrl = URL.createObjectURL(blob);
 
           setUploadProgress(100);
           setEpubUrl(objectUrl);
           setIsLoaded(true);
+
+          const urlPath = new URL(fileUrl).pathname;
+          const fileName = urlPath.split("/").pop() || "Book";
+          setBookName(decodeURIComponent(fileName));
         } catch (err) {
           console.error("Failed to load EPUB from URL:", err);
           setError(
@@ -124,9 +186,10 @@ export function ReaderAppInterface() {
 
   // Render all highlights when rendition is ready or highlights change
   useEffect(() => {
-    if (!rendition || !highlightsArray) return;
+    if (!rendition || !highlightsArray || !epubUrl) return;
 
-    const highlights = highlightsArray.toArray();
+    // Filter highlights to only show ones for the current book
+    const highlights = highlightsArray.toArray().filter(h => h.epubUrl === epubUrl);
 
     // Clear existing highlights (using type assertion - epubjs accepts undefined at runtime)
     rendition.annotations.remove(undefined as unknown as string, "highlight");
@@ -150,7 +213,8 @@ export function ReaderAppInterface() {
 
     // Listen for changes
     const observer = () => {
-      const updatedHighlights = highlightsArray.toArray();
+      // Filter to only show highlights for the current book
+      const updatedHighlights = highlightsArray.toArray().filter(h => h.epubUrl === epubUrl);
 
       // Clear and re-render all highlights
       rendition.annotations.remove(undefined as unknown as string, "highlight");
@@ -173,7 +237,7 @@ export function ReaderAppInterface() {
 
     highlightsArray.observe(observer);
     return () => highlightsArray.unobserve(observer);
-  }, [rendition, highlightsArray]);
+  }, [rendition, highlightsArray, epubUrl]);
 
   // Handle text selection in epub
   useEffect(() => {
@@ -188,6 +252,7 @@ export function ReaderAppInterface() {
           userId: awareness?.clientID?.toString() || "unknown",
           color: userColor,
           timestamp: Date.now(),
+          epubUrl: epubUrl || "",
         });
       }
     }
@@ -196,15 +261,29 @@ export function ReaderAppInterface() {
     return () => {
       rendition?.off("selected", setRenderSelection);
     };
-  }, [rendition, awareness, userColor]);
+  }, [rendition, awareness, userColor, epubUrl]);
 
   const handleSaveSelection = () => {
-    if (!currentSelection || !highlightsArray) return;
+    if (!currentSelection || !highlightsArray || !epubUrl) return;
 
-    // Add to shared highlights array
-    highlightsArray.push([currentSelection]);
+    // Add to shared highlights array with epubUrl
+    highlightsArray.push([{ ...currentSelection, epubUrl }]);
 
     setCurrentSelection(null);
+  };
+
+  const handleClearBook = () => {
+    setEpubUrl(null);
+    setIsLoaded(false);
+    setBookName(null);
+    setLocation(0);
+    setRendition(undefined);
+    setCurrentSelection(null);
+
+    if (sharedState) {
+      sharedState.delete("epubUrl");
+    }
+    // Highlights are NOT cleared - they remain associated with their epubUrl
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -241,6 +320,7 @@ export function ReaderAppInterface() {
       sharedState.set("epubUrl", objectUrl);
       setEpubUrl(objectUrl);
       setIsLoaded(true);
+      setBookName(file.name);
     } catch (err) {
       console.error("Upload error:", err);
       setError(err instanceof Error ? err.message : "Failed to load EPUB file");
@@ -314,6 +394,23 @@ export function ReaderAppInterface() {
 
   return (
     <div className="flex flex-col h-screen bg-neutral-900">
+      {/* Book Header */}
+      <div className="bg-neutral-800 border-b border-neutral-700 px-3 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2 min-w-0">
+          <BookOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <span className="text-sm text-neutral-300 truncate">
+            {bookName || "Book loaded"}
+          </span>
+        </div>
+        <button
+          onClick={handleClearBook}
+          className="text-xs text-neutral-400 hover:text-neutral-200 flex items-center gap-1"
+        >
+          <X className="w-3 h-3" />
+          Clear
+        </button>
+      </div>
+
       {/* Current Selection Panel */}
       {currentSelection && (
         <div className="bg-amber-900/20 border-b border-amber-500/30 p-4">
@@ -352,14 +449,6 @@ export function ReaderAppInterface() {
             setRendition(_rendition);
           }}
         />
-      </div>
-
-      {/* Instructions */}
-      <div className="bg-neutral-800 border-t border-neutral-700 p-3">
-        <p className="text-xs text-neutral-400 text-center">
-          💡 <strong className="text-neutral-300">Tip:</strong> Select text to
-          create collaborative highlights that everyone can see
-        </p>
       </div>
     </div>
   );

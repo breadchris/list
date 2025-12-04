@@ -62,16 +62,13 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
     prevMessageCountRef.current = messageCount;
   }, [messageCount]);
 
-  // When generatedObject updates, handle based on render mode
+  // When generatedObject updates, add to chat history
   // Batch YJS operations in a transaction to prevent jitter on receiving clients
   useEffect(() => {
     if (!generatedObject) return;
 
-    if (
-      appConfig.renderMode === "card" ||
-      appConfig.renderMode === "calendar"
-    ) {
-      // For card/calendar mode (recipes, calendar events), add to chat history
+    if (appConfig.renderMode === "calendar") {
+      // For calendar mode, add to chat history
       // Use transaction to batch delete+push as a single sync update
       doc.transact(() => {
         const messages = chatHistory.toArray();
@@ -84,18 +81,8 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
         }
         chatHistory.push([{ role: "assistant", content: generatedObject }]);
       });
-    } else if (appConfig.renderMode === "question") {
-      // For question mode, set active questions
-      // Use transaction to batch state updates
-      doc.transact(() => {
-        const questions = (generatedObject as any).questions;
-        if (questions && questions.length > 0) {
-          sharedState.set("activeQuestions", questions);
-          sharedState.set("currentQuestionIndex", 0);
-        }
-      });
     }
-  }, [generatedObject, appConfig.renderMode, chatHistory, sharedState, doc]);
+  }, [generatedObject, appConfig.renderMode, chatHistory, doc]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,12 +204,6 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
               <AppResultRenderer
                 renderMode={appConfig.renderMode}
                 data={activeQuestions[currentQuestionIndex]}
-                onAnswer={handleAnswer}
-                questionIndex={currentQuestionIndex}
-                totalQuestions={activeQuestions.length}
-                isLastQuestion={
-                  currentQuestionIndex === activeQuestions.length - 1
-                }
               />
             </div>
           )}

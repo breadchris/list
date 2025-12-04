@@ -1,4 +1,3 @@
-import { recipeSchemaObject } from "@/lib/schema";
 import { openai } from "@ai-sdk/openai";
 import { streamObject } from "ai";
 import { getBotById } from "@/lib/bots.config";
@@ -58,7 +57,7 @@ export async function POST(req: Request) {
 
   // Default behavior: use recipe schema (for backwards compatibility)
   const result = streamObject({
-    schema: recipeSchemaObject,
+    schema: {} as any,
     output: "object",
     model: openai("gpt-4.1"),
     prompt: prompt,

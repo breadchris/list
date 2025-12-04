@@ -270,6 +270,7 @@ export const useCreateContentMutation = () => {
       type: string;
       data: string;
       group_id: string;
+      user_id: string;
       parent_content_id?: string;
     }) => {
       // Create the content first

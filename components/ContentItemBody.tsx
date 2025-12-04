@@ -15,6 +15,8 @@ import { PluginRenderer } from './PluginRenderer';
 import { TruncatedContent } from './TruncatedContent';
 import { ContentJobsIndicator } from './ContentJobsIndicator';
 import { FinanceAccountView } from './FinanceAccountView';
+import { TellerEnrollmentView } from './TellerEnrollmentView';
+import { TellerAccountView } from './TellerAccountView';
 import { QueryKeys } from '../hooks/queryKeys';
 
 // Inline TagDisplay to avoid circular imports
@@ -120,6 +122,68 @@ export const ContentItemBody: React.FC<ContentItemBodyProps> = ({
               />
               <TagDisplay tags={item.tags || []} isVisible={true} />
               <ContentJobsIndicator jobs={jobs} className="mt-2" />
+              <div className="flex items-center gap-2 mt-2">
+                <p className="text-xs text-gray-500">{formatRelativeTime(item.created_at)}</p>
+              </div>
+            </div>
+          ) : item.type === 'teller_enrollment' ? (
+            <div>
+              <TellerEnrollmentView
+                content={item}
+                onClick={() => onContentClick(item)}
+              />
+              <TagDisplay tags={item.tags || []} isVisible={true} />
+              <ContentJobsIndicator jobs={jobs} className="mt-2" />
+              <div className="flex items-center gap-2 mt-2">
+                <p className="text-xs text-gray-500">{formatRelativeTime(item.created_at)}</p>
+                {item.child_count && item.child_count > 0 && (
+                  <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} account${item.child_count === 1 ? '' : 's'}`}>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : item.type === 'teller_account' ? (
+            <div>
+              <TellerAccountView
+                content={item}
+                onClick={() => onContentClick(item)}
+              />
+              <TagDisplay tags={item.tags || []} isVisible={true} />
+              <ContentJobsIndicator jobs={jobs} className="mt-2" />
+              <div className="flex items-center gap-2 mt-2">
+                <p className="text-xs text-gray-500">{formatRelativeTime(item.created_at)}</p>
+                {item.child_count && item.child_count > 0 && (
+                  <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} transaction${item.child_count === 1 ? '' : 's'}`}>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : item.type === 'teller_transaction' ? (
+            <div>
+              <div className="flex items-center justify-between p-2 bg-neutral-800 rounded">
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm truncate">
+                    {(item.metadata as any)?.merchant_name || item.data}
+                  </p>
+                  <p className="text-xs text-neutral-400 capitalize">
+                    {(item.metadata as any)?.category || 'uncategorized'}
+                    {(item.metadata as any)?.date && (
+                      <span className="ml-2">{new Date((item.metadata as any).date).toLocaleDateString()}</span>
+                    )}
+                  </p>
+                </div>
+                <p className={`text-sm font-medium ${(item.metadata as any)?.amount > 0 ? 'text-emerald-400' : 'text-white'}`}>
+                  {(item.metadata as any)?.amount > 0 ? '+' : ''}
+                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((item.metadata as any)?.amount || 0)}
+                </p>
+              </div>
+              <TagDisplay tags={item.tags || []} isVisible={true} />
               <div className="flex items-center gap-2 mt-2">
                 <p className="text-xs text-gray-500">{formatRelativeTime(item.created_at)}</p>
               </div>

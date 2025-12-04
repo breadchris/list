@@ -16,6 +16,12 @@ import type {
   TranscribeAudioResult,
   ContentItem,
   OpenAIMessage,
+  TellerAccountsPayload,
+  TellerBalancesPayload,
+  TellerTransactionsPayload,
+  TellerEnrollmentMetadata,
+  TellerAccountMetadata,
+  TellerTransactionMetadata,
 } from "./types.js";
 import {
   extractUrls,
@@ -32,6 +38,11 @@ import {
   generateScreenshot,
 } from "./cloudflare-client.js";
 import { processTMDbSearchForContent } from "./tmdb-client.js";
+import {
+  fetchTellerAccounts,
+  fetchTellerBalances,
+  fetchTellerTransactions,
+} from "./teller-client.js";
 import { searchLibgen, type BookInfo } from "./libgen-client.js";
 import { createClient } from "@deepgram/sdk";
 import { executeGo } from "./go-executor.js";
@@ -1536,4 +1547,315 @@ export async function handleChatV2StreamResponse(payload: ChatV2StreamPayload) {
       Connection: "keep-alive",
     },
   });
+}
+
+// =============================================================================
+// TELLER BANKING
+// =============================================================================
+
+/**
+ * Fetches accounts from Teller API for enrollment content items.
+ * Creates teller_account child content items for each account found.
+ */
+export async function handleTellerAccounts(
+  supabase: any,
+  payload: TellerAccountsPayload,
+): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      // Verify this is a teller_enrollment content type
+      if (contentItem.type !== 'teller_enrollment') {
+        results.push({
+          content_id: contentItem.id,
+          success: false,
+          error: `Expected teller_enrollment type, got ${contentItem.type}`,
+        });
+        continue;
+      }
+
+      const metadata = contentItem.metadata as TellerEnrollmentMetadata;
+      if (!metadata?.access_token) {
+        results.push({
+          content_id: contentItem.id,
+          success: false,
+          error: 'Missing access_token in enrollment metadata',
+        });
+        continue;
+      }
+
+      // Fetch accounts from Teller API
+      const accounts = await fetchTellerAccounts(metadata.access_token);
+      const accountChildren: string[] = [];
+
+      for (const account of accounts) {
+        // Fetch balance for this account
+        let balanceAvailable: number | undefined;
+        let balanceCurrent: number | undefined;
+        try {
+          const balance = await fetchTellerBalances(metadata.access_token, account.id);
+          balanceAvailable = parseFloat(balance.available);
+          balanceCurrent = parseFloat(balance.ledger);
+        } catch (balanceError) {
+          console.warn(`Could not fetch balance for account ${account.id}:`, balanceError);
+        }
+
+        // Create account content item
+        const accountMetadata: TellerAccountMetadata = {
+          account_id: account.id,
+          enrollment_id: account.enrollment_id,
+          institution_name: account.institution.name,
+          account_type: account.type,
+          subtype: account.subtype,
+          currency: account.currency,
+          last_four: account.last_four,
+          balance_available: balanceAvailable,
+          balance_current: balanceCurrent,
+          last_synced: new Date().toISOString(),
+        };
+
+        const { data: accountContent, error: insertError } = await supabase
+          .from('content')
+          .upsert({
+            type: 'teller_account',
+            data: `${account.name} ****${account.last_four}`,
+            group_id: contentItem.group_id,
+            user_id: contentItem.user_id,
+            parent_content_id: contentItem.id,
+            metadata: accountMetadata,
+          }, {
+            onConflict: 'id',
+            ignoreDuplicates: false,
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error(`Error creating account content:`, insertError);
+        } else {
+          accountChildren.push(accountContent.id);
+        }
+      }
+
+      // Update enrollment metadata with last_synced
+      await supabase
+        .from('content')
+        .update({
+          metadata: {
+            ...metadata,
+            last_synced: new Date().toISOString(),
+          },
+        })
+        .eq('id', contentItem.id);
+
+      results.push({
+        content_id: contentItem.id,
+        success: true,
+        accounts_found: accounts.length,
+        account_children: accountChildren,
+      });
+    } catch (error: any) {
+      console.error(`Error fetching Teller accounts for ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  return { success: true, data: results };
+}
+
+/**
+ * Fetches balances from Teller API for account content items.
+ * Updates the account metadata with current balance information.
+ */
+export async function handleTellerBalances(
+  supabase: any,
+  payload: TellerBalancesPayload,
+): Promise<ContentResponse> {
+  const results = [];
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      if (contentItem.type !== 'teller_account') {
+        results.push({
+          content_id: contentItem.id,
+          success: false,
+          error: `Expected teller_account type, got ${contentItem.type}`,
+        });
+        continue;
+      }
+
+      const accountMetadata = contentItem.metadata as TellerAccountMetadata;
+      if (!accountMetadata?.account_id) {
+        results.push({
+          content_id: contentItem.id,
+          success: false,
+          error: 'Missing account_id in metadata',
+        });
+        continue;
+      }
+
+      // Get the parent enrollment to get the access token
+      const { data: parentContent } = await supabase
+        .from('content')
+        .select('metadata')
+        .eq('id', contentItem.parent_content_id)
+        .single();
+
+      if (!parentContent?.metadata?.access_token) {
+        results.push({
+          content_id: contentItem.id,
+          success: false,
+          error: 'Could not find access_token from parent enrollment',
+        });
+        continue;
+      }
+
+      const accessToken = parentContent.metadata.access_token;
+
+      // Fetch balance from Teller API
+      const balance = await fetchTellerBalances(accessToken, accountMetadata.account_id);
+
+      // Update account metadata with new balance
+      const updatedMetadata: TellerAccountMetadata = {
+        ...accountMetadata,
+        balance_available: parseFloat(balance.available),
+        balance_current: parseFloat(balance.ledger),
+        last_synced: new Date().toISOString(),
+      };
+
+      await supabase
+        .from('content')
+        .update({ metadata: updatedMetadata })
+        .eq('id', contentItem.id);
+
+      results.push({
+        content_id: contentItem.id,
+        success: true,
+        balance_available: updatedMetadata.balance_available,
+        balance_current: updatedMetadata.balance_current,
+      });
+    } catch (error: any) {
+      console.error(`Error fetching Teller balance for ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  return { success: true, data: results };
+}
+
+/**
+ * Fetches transactions from Teller API for account content items.
+ * Creates teller_transaction child content items for each transaction.
+ */
+export async function handleTellerTransactions(
+  supabase: any,
+  payload: TellerTransactionsPayload,
+): Promise<ContentResponse> {
+  const results = [];
+  const count = payload.count || 100;
+
+  for (const contentItem of payload.selectedContent) {
+    try {
+      if (contentItem.type !== 'teller_account') {
+        results.push({
+          content_id: contentItem.id,
+          success: false,
+          error: `Expected teller_account type, got ${contentItem.type}`,
+        });
+        continue;
+      }
+
+      const accountMetadata = contentItem.metadata as TellerAccountMetadata;
+      if (!accountMetadata?.account_id) {
+        results.push({
+          content_id: contentItem.id,
+          success: false,
+          error: 'Missing account_id in metadata',
+        });
+        continue;
+      }
+
+      // Get the parent enrollment to get the access token
+      const { data: parentContent } = await supabase
+        .from('content')
+        .select('metadata')
+        .eq('id', contentItem.parent_content_id)
+        .single();
+
+      if (!parentContent?.metadata?.access_token) {
+        results.push({
+          content_id: contentItem.id,
+          success: false,
+          error: 'Could not find access_token from parent enrollment',
+        });
+        continue;
+      }
+
+      const accessToken = parentContent.metadata.access_token;
+
+      // Fetch transactions from Teller API
+      const transactions = await fetchTellerTransactions(accessToken, accountMetadata.account_id, count);
+      const transactionChildren: string[] = [];
+
+      for (const txn of transactions) {
+        const txnMetadata: TellerTransactionMetadata = {
+          transaction_id: txn.id,
+          account_id: txn.account_id,
+          amount: parseFloat(txn.amount),
+          date: txn.date,
+          category: txn.details?.category || 'uncategorized',
+          status: txn.status,
+          merchant_name: txn.details?.counterparty?.name,
+          running_balance: txn.running_balance ? parseFloat(txn.running_balance) : undefined,
+        };
+
+        const { data: txnContent, error: insertError } = await supabase
+          .from('content')
+          .upsert({
+            type: 'teller_transaction',
+            data: txn.description,
+            group_id: contentItem.group_id,
+            user_id: contentItem.user_id,
+            parent_content_id: contentItem.id,
+            metadata: txnMetadata,
+          }, {
+            onConflict: 'id',
+            ignoreDuplicates: false,
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error(`Error creating transaction content:`, insertError);
+        } else {
+          transactionChildren.push(txnContent.id);
+        }
+      }
+
+      results.push({
+        content_id: contentItem.id,
+        success: true,
+        transactions_found: transactions.length,
+        transaction_children: transactionChildren,
+      });
+    } catch (error: any) {
+      console.error(`Error fetching Teller transactions for ${contentItem.id}:`, error);
+      results.push({
+        content_id: contentItem.id,
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  return { success: true, data: results };
 }

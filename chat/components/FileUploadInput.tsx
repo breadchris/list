@@ -38,6 +38,7 @@ export function FileUploadInput({ onUploadComplete, onUploadError }: FileUploadI
           type: fileType,
           data: file.name,
           group_id: ANONYMOUS_GROUP_ID,
+          user_id: ANONYMOUS_USER_ID,
         });
 
         // 2. Upload file to storage using content ID

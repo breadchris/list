@@ -1,6 +1,4 @@
 import {
-  ChefHat,
-  HelpCircle,
   MessageSquare,
   Calendar,
   FileText,
@@ -8,10 +6,10 @@ import {
   Upload,
   type LucideIcon,
 } from "lucide-react";
-import { recipeSchemaObject, questionsSchemaObject, calendarSchemaObject } from "./schema";
+import { calendarSchemaObject } from "./schema";
 import type { z } from "zod";
 
-export type RenderMode = "card" | "question" | "list" | "chat" | "calendar" | "editor" | "reader" | "uploads";
+export type RenderMode = "list" | "chat" | "calendar" | "editor" | "reader" | "uploads";
 
 export interface AppConfig {
   id: string;
@@ -28,35 +26,6 @@ export interface AppConfig {
 }
 
 export const apps: AppConfig[] = [
-  {
-    id: "recipe",
-    name: "Recipe Generator",
-    description:
-      "Generate detailed recipes with ingredients and step-by-step instructions",
-    icon: ChefHat,
-    color: "text-orange-400",
-    bgColor: "bg-orange-400/10",
-    schema: recipeSchemaObject,
-    apiEndpoint: "/api/object",
-    placeholder: "Ask for a recipe...",
-    loadingText: "Generating recipe...",
-    renderMode: "card",
-  },
-  {
-    id: "questions",
-    name: "Questions",
-    description:
-      "Interactive Q&A sessions on any topic with answers logged to console",
-    icon: HelpCircle,
-    color: "text-purple-400",
-    bgColor: "bg-purple-400/10",
-    schema: questionsSchemaObject,
-    apiEndpoint: "/api/questions",
-    placeholder:
-      "What kind of questions? (e.g., 'trivia about space', '10 icebreaker questions')",
-    loadingText: "Generating questions...",
-    renderMode: "question",
-  },
   {
     id: "chat",
     name: "chat",
