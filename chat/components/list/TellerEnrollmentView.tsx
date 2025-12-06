@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Content, contentRepository } from '@/lib/list/ContentRepository';
+import { TellerAccountView } from './TellerAccountView';
 
 interface TellerEnrollmentMetadata {
   enrollment_id: string;
@@ -28,9 +29,6 @@ interface TellerEnrollmentViewProps {
   onClick?: () => void;
 }
 
-// Declare globals injected by esbuild
-declare const LAMBDA_ENDPOINT: string;
-
 export const TellerEnrollmentView: React.FC<TellerEnrollmentViewProps> = ({ content, onClick }) => {
   const [accounts, setAccounts] = useState<Content[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +49,7 @@ export const TellerEnrollmentView: React.FC<TellerEnrollmentViewProps> = ({ cont
         content.id,
         0,
         100,
-        'newest'
+        'chronological'
       );
       setAccounts(data.filter(item => item.type === 'teller_account'));
     } catch (err) {
@@ -67,15 +65,14 @@ export const TellerEnrollmentView: React.FC<TellerEnrollmentViewProps> = ({ cont
       setSyncing(true);
       setError(null);
 
-      const response = await fetch(LAMBDA_ENDPOINT, {
+      const response = await fetch('/api/teller/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'teller-accounts',
-          payload: {
-            selectedContent: [content],
-          },
-          sync: true,
+          enrollment_id: content.id,
+          access_token: metadata.access_token,
+          group_id: content.group_id,
+          user_id: content.user_id,
         }),
       });
 
@@ -183,33 +180,13 @@ export const TellerEnrollmentView: React.FC<TellerEnrollmentViewProps> = ({ cont
           </button>
         </div>
       ) : (
-        <div className="space-y-2">
-          {accounts.map((account) => {
-            const accountMeta = account.metadata as TellerAccountMetadata;
-            return (
-              <div
-                key={account.id}
-                className="flex items-center justify-between p-3 bg-neutral-800 rounded hover:bg-neutral-750 transition-colors"
-              >
-                <div>
-                  <p className="text-white font-medium">{account.data}</p>
-                  <p className="text-xs text-neutral-400 capitalize">
-                    {accountMeta?.account_type} {accountMeta?.subtype && `• ${accountMeta.subtype}`}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-white font-medium">
-                    {formatCurrency(accountMeta?.balance_current, accountMeta?.currency)}
-                  </p>
-                  {accountMeta?.balance_available !== undefined && accountMeta?.balance_available !== accountMeta?.balance_current && (
-                    <p className="text-xs text-neutral-400">
-                      Available: {formatCurrency(accountMeta.balance_available, accountMeta.currency)}
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        <div className="space-y-3">
+          {accounts.map((account) => (
+            <TellerAccountView
+              key={account.id}
+              content={account}
+            />
+          ))}
         </div>
       )}
     </div>

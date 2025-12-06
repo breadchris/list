@@ -14,8 +14,6 @@ import { ImageUploadInput } from './ImageUploadInput';
 import { EpubUploadInput } from './EpubUploadInput';
 import { MapInput } from './MapInput';
 import { MapData } from './MapDisplay';
-import { PluginLoader } from '@/lib/list/PluginLoader';
-import { PluginEditor } from './PluginEditor';
 import { ContentActionsDrawer, ContentAction } from './ContentActionsDrawer';
 import { WorkflowAction } from './WorkflowFAB';
 
@@ -53,7 +51,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
     }
     // Navigate to AI Chat V2 page
     if (action === 'ai-chat-v2') {
-      router.push(`/group/${groupId}/ai-chat`);
+      router.push(`/list/group/${groupId}/ai-chat`);
       return;
     }
     // Open modal for rich text editor
@@ -70,11 +68,8 @@ export const ContentInput: React.FC<ContentInputProps> = ({
   const lexicalInputRef = useRef<LexicalContentInputRef>(null);
   const richEditorRef = useRef<LexicalRichEditorRef>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [showPluginEditor, setShowPluginEditor] = useState(false);
-  const [pluginContentId, setPluginContentId] = useState<string | null>(null);
   const [showRichTextModal, setShowRichTextModal] = useState(false);
   const pendingAISubmitRef = useRef(false);
-  const hasCreatedPluginRef = useRef(false);
   const toast = useToast();
   const queryClient = useQueryClient();
 
@@ -510,63 +505,6 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       toast.error('Error', 'Failed to save map location');
     }
   };
-
-  // Auto-create plugin content when plugin action is selected
-  React.useEffect(() => {
-    // Reset flag when action changes away from plugin
-    if (activeAction !== 'plugin') {
-      hasCreatedPluginRef.current = false;
-      return;
-    }
-
-    // Only create once per plugin action selection
-    if (activeAction === 'plugin' && !pluginContentId && !hasCreatedPluginRef.current) {
-      hasCreatedPluginRef.current = true; // Set flag immediately to prevent duplicates
-
-      const createPluginContent = async () => {
-        try {
-          // Create plugin content with default template
-          const newContent = await createContentMutation.mutateAsync({
-            type: 'plugin',
-            data: PluginLoader.getDefaultTemplate(),
-            group_id: groupId,
-            parent_content_id: parentContentId,
-          });
-
-          setPluginContentId(newContent.id);
-          setShowPluginEditor(true);
-          onContentAdded(newContent);
-        } catch (error) {
-          console.error('Error creating plugin content:', error);
-          toast.error('Error', 'Failed to create plugin');
-          hasCreatedPluginRef.current = false; // Reset flag on error to allow retry
-          setActiveAction(null);
-        }
-      };
-
-      createPluginContent();
-    }
-  }, [activeAction, pluginContentId, groupId, parentContentId, onContentAdded, createContentMutation, toast]);
-
-  // Show plugin editor as modal when active
-  if (activeAction === 'plugin' && showPluginEditor && pluginContentId) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] overflow-hidden">
-          <PluginEditor
-            contentId={pluginContentId}
-            groupId={groupId}
-            initialValue={PluginLoader.getDefaultTemplate()}
-            onClose={() => {
-              setShowPluginEditor(false);
-              setPluginContentId(null);
-              setActiveAction(null);
-            }}
-          />
-        </div>
-      </div>
-    );
-  }
 
   // Always show the new content input UI
   return (

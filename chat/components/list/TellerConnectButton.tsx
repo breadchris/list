@@ -2,9 +2,9 @@ import React from 'react';
 import { useTellerConnect } from 'teller-connect-react';
 import { contentRepository } from '@/lib/list/ContentRepository';
 
-// Declare globals injected by esbuild
-declare const TELLER_APPLICATION_ID: string;
-declare const TELLER_ENVIRONMENT: string;
+// Get Teller config from environment variables
+const TELLER_APPLICATION_ID = process.env.NEXT_PUBLIC_TELLER_APPLICATION_ID || '';
+const TELLER_ENVIRONMENT = process.env.NEXT_PUBLIC_TELLER_ENVIRONMENT || 'sandbox';
 
 interface TellerConnectButtonProps {
   groupId: string;
@@ -43,7 +43,7 @@ export const TellerConnectButton: React.FC<TellerConnectButtonProps> = ({
         data: authorization.enrollment.institution.name,
         group_id: groupId,
         user_id: userId,
-        parent_content_id: parentContentId || null,
+        parent_content_id: parentContentId,
         metadata: {
           enrollment_id: authorization.enrollment.id,
           access_token: authorization.accessToken,

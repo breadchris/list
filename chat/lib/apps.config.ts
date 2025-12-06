@@ -5,12 +5,14 @@ import {
   BookOpen,
   Upload,
   List,
+  Wallet,
+  MapPin,
   type LucideIcon,
 } from "lucide-react";
 import { calendarSchemaObject } from "./schema";
 import type { z } from "zod";
 
-export type RenderMode = "list" | "chat" | "calendar" | "editor" | "reader" | "uploads";
+export type RenderMode = "list" | "chat" | "calendar" | "editor" | "reader" | "uploads" | "money" | "maps";
 
 export interface AppConfig {
   id: string;
@@ -95,6 +97,28 @@ export const apps: AppConfig[] = [
     bgColor: "bg-pink-400/10",
     placeholder: "Drop files here or click to upload...",
     renderMode: "uploads",
+  },
+  {
+    id: "money",
+    name: "Money",
+    description:
+      "Connect bank accounts and track transactions with Teller",
+    icon: Wallet,
+    color: "text-emerald-400",
+    bgColor: "bg-emerald-400/10",
+    placeholder: "View your connected accounts...",
+    renderMode: "money",
+  },
+  {
+    id: "maps",
+    name: "Maps",
+    description:
+      "Find and save locations using Apple Maps",
+    icon: MapPin,
+    color: "text-red-400",
+    bgColor: "bg-red-400/10",
+    placeholder: "Search for a location...",
+    renderMode: "maps",
   },
 ];
 

@@ -2400,7 +2400,7 @@ export const ListApp: React.FC = () => {
               const pendingInviteCode =
                 sessionStorage.getItem("pendingInviteCode");
               const isOnInviteUrl =
-                window.location.pathname.startsWith("/invite/");
+                window.location.pathname.startsWith("/list/invite/");
 
               if (pendingInviteCode || isOnInviteUrl) {
                 console.log("Email confirmed with pending group invite");
@@ -2606,7 +2606,7 @@ export const ListApp: React.FC = () => {
     // Clear content selection when switching groups
     contentSelection.clearSelection();
     // Navigate to the new group's URL
-    router.push(`/group/${group.id}`);
+    router.push(`/list/group/${group.id}`);
   };
 
   const handleCreateGroup = () => {
@@ -2626,7 +2626,7 @@ export const ListApp: React.FC = () => {
       if (remainingGroups.length > 0) {
         // Switch to the first remaining group
         setCurrentGroup(remainingGroups[0]);
-        router.push(`/group/${remainingGroups[0].id}`);
+        router.push(`/list/group/${remainingGroups[0].id}`);
       } else {
         // No groups left, clear current group
         setCurrentGroup(null);
@@ -2701,7 +2701,7 @@ export const ListApp: React.FC = () => {
 
       // Use React Router to navigate to group root
       if (currentGroup) {
-        router.push(`/group/${currentGroup.id}`);
+        router.push(`/list/group/${currentGroup.id}`);
       }
     } else {
       try {
@@ -2731,7 +2731,7 @@ export const ListApp: React.FC = () => {
 
           // Use React Router to navigate to content
           if (currentGroup) {
-            router.push(`/group/${currentGroup.id}/content/${parentId}`);
+            router.push(`/list/group/${currentGroup.id}/content/${parentId}`);
           }
         }
       } catch (error) {
@@ -2918,7 +2918,7 @@ export const ListApp: React.FC = () => {
           // Navigate to the new group using React Router with the correct ID
           // Use replace to avoid back button issues
           console.log(`Navigating to /group/${group.id}`);
-          router.push(`/group/${group.id}`, { replace: true });
+          router.push(`/list/group/${group.id}`, { replace: true });
           return;
         } catch (error) {
           console.error("Error joining group from invite:", error);
@@ -2936,20 +2936,20 @@ export const ListApp: React.FC = () => {
     };
 
     // Only handle invite URLs - React Router params handle group/content URLs
-    if (user && window.location.pathname.startsWith("/invite/")) {
+    if (user && window.location.pathname.startsWith("/list/invite/")) {
       handleInviteNavigation();
     }
 
     // Handle browser back/forward navigation for invite URLs only
     const handlePopState = () => {
-      if (user && window.location.pathname.startsWith("/invite/")) {
+      if (user && window.location.pathname.startsWith("/list/invite/")) {
         handleInviteNavigation();
       }
     };
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [user, navigate]);
+  }, [user, router]);
 
   // Stable container pattern - always return same structure, conditionally show content
   return (
@@ -2988,7 +2988,7 @@ export const ListApp: React.FC = () => {
       {/* Loading State */}
       {(appState === "loading" ||
         (joinGroupMutation.isPending &&
-          window.location.pathname.startsWith("/invite/")) ||
+          window.location.pathname.startsWith("/list/invite/")) ||
         (appState === "ready" &&
           user &&
           !currentGroup &&

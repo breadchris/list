@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { getAllApps } from "@/lib/apps.config";
 
@@ -9,43 +8,29 @@ export function AppsGrid() {
   const apps = getAllApps();
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-foreground flex items-center justify-center px-8">
-      <div className="max-w-4xl w-full">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-neutral-100 mb-4">Welcome</h1>
-          <p className="text-neutral-400">Choose an app to get started</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {apps.map((app, index) => (
-            <Link key={app.id} href={`/${app.id}`}>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <Card className="h-full border border-neutral-700 bg-neutral-800 hover:bg-neutral-750 hover:border-neutral-600 transition-all cursor-pointer group">
-                  <CardHeader>
-                    <div className={`w-12 h-12 rounded-lg ${app.bgColor} flex items-center justify-center mb-4`}>
-                      <app.icon className={`h-6 w-6 ${app.color}`} />
-                    </div>
-                    <CardTitle className="text-xl text-neutral-100 group-hover:text-white transition-colors">
-                      {app.name}
-                    </CardTitle>
-                    <CardDescription className="text-neutral-400">
-                      {app.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-sm text-neutral-500 group-hover:text-neutral-400 transition-colors">
-                      Click to open →
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </Link>
-          ))}
-        </div>
+    <div className="min-h-screen bg-gradient-to-b from-neutral-900 via-neutral-800 to-neutral-900 flex items-center justify-center p-8">
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-6 max-w-2xl">
+        {apps.map((app, index) => (
+          <Link key={app.id} href={`/${app.id}`}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: index * 0.05 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex flex-col items-center gap-2 cursor-pointer"
+            >
+              {/* App Icon */}
+              <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-[22%] ${app.bgColor} flex items-center justify-center shadow-lg`}>
+                <app.icon className={`w-8 h-8 sm:w-10 sm:h-10 ${app.color}`} />
+              </div>
+              {/* App Name */}
+              <span className="text-xs sm:text-sm text-neutral-300 text-center font-medium truncate w-full">
+                {app.name}
+              </span>
+            </motion.div>
+          </Link>
+        ))}
       </div>
     </div>
   );

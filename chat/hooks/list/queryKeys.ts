@@ -18,6 +18,8 @@ export const QueryKeys = {
     ['content', 'search', groupId, query, parentId] as const,
   contentByTag: (groupId: string, parentId: string | null, tagIds: string[]) =>
     ['content', 'by-tag', groupId, parentId, ...tagIds.sort()] as const,
+  contentGroupedByTag: (groupId: string, parentId: string | null) =>
+    ['content', 'grouped-by-tag', groupId, parentId] as const,
 
   // Group operations
   groupById: (groupId: string) => 

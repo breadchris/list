@@ -146,7 +146,7 @@ export function SearchInterface({ appConfig }: SearchInterfaceProps) {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-foreground flex flex-col max-w-5xl mx-auto">
+    <div className="min-h-screen bg-neutral-950 text-foreground flex flex-col max-w-5xl mx-auto">
       <div className="flex-1 overflow-hidden flex flex-col px-8 pt-8 pb-8">
         {/* Chat History */}
         <div

@@ -15,8 +15,6 @@ import { AudioDisplay } from './AudioDisplay';
 import { EpubViewer } from './EpubViewer';
 import { TranscriptViewer } from './TranscriptViewer';
 import { MapDisplay, type MapData } from './MapDisplay';
-import { TsxRenderer } from './TsxRenderer';
-import { PluginRenderer } from './PluginRenderer';
 import { useToast } from './ToastProvider';
 import { useInfiniteContentByParent, useInfiniteSearchContent, useInfiniteContentByTag, useDeleteContentMutation, useContentById } from '@/hooks/list/useContentQueries';
 import { useQueryClient } from '@tanstack/react-query';

@@ -13,28 +13,28 @@ export const Footer: React.FC = () => {
 
           <div className="flex flex-wrap justify-center items-center gap-1 text-sm">
             <Link
-              to="/pricing"
+              href="/list/pricing"
               className="text-gray-500 hover:text-gray-700 transition-colors"
             >
               Pricing
             </Link>
             <span className="text-gray-400">·</span>
             <Link
-              to="/terms-of-service"
+              href="/list/terms"
               className="text-gray-500 hover:text-gray-700 transition-colors"
             >
               Terms of Service
             </Link>
             <span className="text-gray-400">·</span>
             <Link
-              to="/privacy-policy"
+              href="/list/privacy"
               className="text-gray-500 hover:text-gray-700 transition-colors"
             >
               Privacy Policy
             </Link>
             <span className="text-gray-400">·</span>
             <Link
-              to="/refund-policy"
+              href="/list/refund"
               className="text-gray-500 hover:text-gray-700 transition-colors"
             >
               Refund Policy

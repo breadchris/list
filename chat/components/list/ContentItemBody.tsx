@@ -10,8 +10,6 @@ import { ImageDisplay } from './ImageDisplay';
 import { AudioDisplay } from './AudioDisplay';
 import { EpubViewer } from './EpubViewer';
 import { TranscriptViewer } from './TranscriptViewer';
-import { TsxRenderer } from './TsxRenderer';
-import { PluginRenderer } from './PluginRenderer';
 import { TruncatedContent } from './TruncatedContent';
 import { ContentJobsIndicator } from './ContentJobsIndicator';
 import { FinanceAccountView } from './FinanceAccountView';
@@ -70,8 +68,6 @@ export interface ContentItemBodyProps {
   isSelectionMode: boolean;
   jobs: any[];
   groupId: string;
-  loadedTsxComponents: Set<string>;
-  onLoadTsxComponent: (id: string) => void;
   onContentClick: (item: Content) => void;
   onInvalidateQueries: (queryKey: any) => void;
 }
@@ -82,8 +78,6 @@ export const ContentItemBody: React.FC<ContentItemBodyProps> = ({
   isSelectionMode,
   jobs,
   groupId,
-  loadedTsxComponents,
-  onLoadTsxComponent,
   onContentClick,
   onInvalidateQueries,
 }) => {
@@ -197,67 +191,6 @@ export const ContentItemBody: React.FC<ContentItemBodyProps> = ({
                 <span className="text-xs font-medium text-green-600 uppercase tracking-wide">JavaScript</span>
               </div>
               <JsContentDisplay code={item.data} maxLines={8} />
-              <TagDisplay tags={item.tags || []} isVisible={true} />
-              <ContentJobsIndicator jobs={jobs} className="mt-2" />
-              <div className="flex items-center gap-2 mt-2">
-                <p className="text-xs text-gray-500">{formatRelativeTime(item.created_at)}</p>
-                {item.child_count && item.child_count > 0 && (
-                  <div className="flex items-center text-xs text-gray-400" title={`${item.child_count} nested ${item.child_count === 1 ? 'item' : 'items'}`}>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : item.type === 'tsx' ? (
-            <div>
-              <div className="flex items-center space-x-2 mb-2">
-                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-                <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">TSX Component</span>
-              </div>
-              {loadedTsxComponents.has(item.id) ? (
-                <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                  <TsxRenderer
-                    tsxSource={item.data}
-                    filename={item.metadata?.filename || `component-${item.id}.tsx`}
-                    minHeight={100}
-                    maxHeight={800}
-                    fallback={
-                      <div className="flex items-center gap-2 text-gray-500 p-4">
-                        <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                        <span>Loading component...</span>
-                      </div>
-                    }
-                    errorFallback={(error) => (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-red-600 text-sm">{error.message}</p>
-                      </div>
-                    )}
-                  />
-                </div>
-              ) : (
-                <div
-                  className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50 shadow-sm flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
-                  style={{ height: '200px' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onLoadTsxComponent(item.id);
-                  }}
-                >
-                  <svg className="w-12 h-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                  </svg>
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm mb-2">
-                    Load Component
-                  </button>
-                  <p className="text-xs text-gray-500 font-mono">
-                    {item.metadata?.filename || `component-${item.id}.tsx`}
-                  </p>
-                </div>
-              )}
               <TagDisplay tags={item.tags || []} isVisible={true} />
               <ContentJobsIndicator jobs={jobs} className="mt-2" />
               <div className="flex items-center gap-2 mt-2">

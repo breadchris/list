@@ -128,7 +128,7 @@ export function BlockNoteEditorAppInterface({
   // Don't render until we have a fragment
   if (!fragment) {
     return (
-      <div className="min-w-full sm:min-w-[400px] w-full sm:w-[400px] h-full flex items-center justify-center bg-transparent">
+      <div className="w-full h-full flex items-center justify-center bg-transparent">
         <span className="text-neutral-500">Loading editor...</span>
       </div>
     );
@@ -137,7 +137,7 @@ export function BlockNoteEditorAppInterface({
   // Panel mode layout
   if (isPanelMode) {
     return (
-      <div className="min-w-full sm:min-w-[400px] w-full sm:w-[400px] h-full flex flex-col snap-start">
+      <div className="w-full h-full flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">

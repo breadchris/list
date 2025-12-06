@@ -1,9 +1,10 @@
 "use client";
 
 import { Doc } from "yjs";
-import { useState, useEffect, useRef, useCallback } from "react";
-import { X, MessageSquare, Tag, FileText } from "lucide-react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { X, MessageSquare, Tag, FileText, FolderTree, LayoutList } from "lucide-react";
 import { useArray, useYDoc } from "@y-sweet/react";
+import { useIsDesktop } from "./ui/use-mobile";
 import ReactMarkdown from "react-markdown";
 import { useUsername } from "./username-prompt";
 import { BotQueueProvider, useBotQueue } from "./bot-queue-provider";
@@ -25,6 +26,7 @@ import { CodeRenderer, parseCodeVariant } from "./code-renderer";
 import { BotMentionSuggestions } from "./bot-mention-suggestions";
 import { InlinePillsVariant } from "./TaggingVariants";
 import { BotBuilderHandler } from "./bot-builder-handler";
+import { TagFolderView } from "./list/TagFolderView";
 
 interface Message {
   id: string;
@@ -118,12 +120,29 @@ function ChatInterfaceInner({
   doc,
 }: ChatInterfaceInnerProps) {
   const username = useUsername();
+  const isDesktop = useIsDesktop();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevThreadCountRef = useRef(0);
   const { dispatch } = useBotQueue();
 
   // Local state for open panels (threads and editors) - each user has their own view
   const [openPanels, setOpenPanels] = useState<OpenPanel[]>([]);
+
+  // Panel width state for resizable panels (desktop only)
+  const [panelWidths, setPanelWidths] = useState<Record<string, number>>({});
+  const DEFAULT_PANEL_WIDTH = 400;
+  const MIN_PANEL_WIDTH = 200;
+  const MAX_PANEL_WIDTH = 800;
+
+  const getPanelWidth = useCallback((panelId: string) =>
+    panelWidths[panelId] ?? DEFAULT_PANEL_WIDTH, [panelWidths]);
+
+  const handlePanelResize = useCallback((panelId: string, newWidth: number) => {
+    setPanelWidths(prev => ({
+      ...prev,
+      [panelId]: Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, newWidth))
+    }));
+  }, []);
 
   // Sync dynamic bots with the global bot registry
   useEffect(() => {
@@ -701,6 +720,59 @@ function ChatInterfaceInner({
     return true;
   });
 
+  // Helper to render a thread/editor panel content
+  const renderPanelContent = (panel: OpenPanel, index: number) => {
+    if (panel.type === "thread" && panel.thread_id) {
+      const threadMessages = getMessagesForThread(panel.thread_id);
+      const parentMessage = getMessageById(panel.parent_message_id);
+      const currentThreadIndex = (
+        panel.available_thread_ids || []
+      ).indexOf(panel.thread_id);
+
+      return (
+        <ChatPanel
+          messages={threadMessages}
+          parentMessage={parentMessage}
+          threadId={panel.thread_id}
+          title="Thread"
+          onOpenThread={(messageId) =>
+            handleOpenThread(messageId, index + 1)
+          }
+          onOpenEditor={(messageId) =>
+            handleOpenEditor(messageId, index + 1)
+          }
+          onSendMessage={(content, autoBot) =>
+            handleSendMessage(content, panel.thread_id, autoBot)
+          }
+          onClose={() => handleClosePanel(index)}
+          showClose={true}
+          getThreadsForMessage={getThreadsForMessage}
+          currentThreadIndex={currentThreadIndex}
+          totalThreads={panel.available_thread_ids?.length || 0}
+          onSwitchThread={(idx) => handleSwitchThread(index, idx)}
+          onCreateNewThread={() => handleCreateNewThread(index)}
+          globalTags={globalTags.toArray()}
+          onAddTag={addTagToMessage}
+          onRemoveTag={removeTagFromMessage}
+          onActivateBot={activateBot}
+          onDeactivateBot={deactivateBot}
+          onTestBot={createTestMessage}
+          onCreateBot={createBotFromConversation}
+        />
+      );
+    } else if (panel.type === "editor" && panel.editor_message_id) {
+      const parentMessage = getMessageById(panel.parent_message_id);
+      return (
+        <BlockNoteEditorAppInterface
+          messageId={panel.editor_message_id}
+          parentMessage={parentMessage}
+          onClose={() => handleClosePanel(index)}
+        />
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="h-screen bg-neutral-950 text-neutral-100 overflow-hidden">
       <div
@@ -708,79 +780,90 @@ function ChatInterfaceInner({
         ref={scrollContainerRef}
       >
         {/* Main chat panel */}
-        <ChatPanel
-          messages={mainMessages}
-          title="let's chat!"
-          onOpenThread={(messageId) => handleOpenThread(messageId, 0)}
-          onOpenEditor={(messageId) => handleOpenEditor(messageId, 0)}
-          onSendMessage={(content, autoBot) =>
-            handleSendMessage(content, undefined, autoBot)
-          }
-          showClose={false}
-          getThreadsForMessage={getThreadsForMessage}
-          globalTags={globalTags.toArray()}
-          onAddTag={addTagToMessage}
-          onRemoveTag={removeTagFromMessage}
-          onCreateBot={createBotFromConversation}
-        />
+        <div
+          className="relative h-full flex-shrink-0 snap-start"
+          style={isDesktop ? { width: getPanelWidth("main") } : { minWidth: "100%" }}
+        >
+          <ChatPanel
+            messages={mainMessages}
+            title="let's chat!"
+            onOpenThread={(messageId) => handleOpenThread(messageId, 0)}
+            onOpenEditor={(messageId) => handleOpenEditor(messageId, 0)}
+            onSendMessage={(content, autoBot) =>
+              handleSendMessage(content, undefined, autoBot)
+            }
+            showClose={false}
+            getThreadsForMessage={getThreadsForMessage}
+            globalTags={globalTags.toArray()}
+            onAddTag={addTagToMessage}
+            onRemoveTag={removeTagFromMessage}
+            onCreateBot={createBotFromConversation}
+          />
+          {isDesktop && (
+            <PanelResizeHandle
+              onResizeStart={() => getPanelWidth("main")}
+              onResize={(delta) => handlePanelResize("main", delta)}
+            />
+          )}
+        </div>
 
         {/* Panel rendering - threads and editors */}
-        {openPanels.map((panel, index) => {
-          if (panel.type === "thread" && panel.thread_id) {
-            const threadMessages = getMessagesForThread(panel.thread_id);
-            const parentMessage = getMessageById(panel.parent_message_id);
-            const currentThreadIndex = (
-              panel.available_thread_ids || []
-            ).indexOf(panel.thread_id);
-
-            return (
-              <ChatPanel
-                key={panel.panel_id}
-                messages={threadMessages}
-                parentMessage={parentMessage}
-                threadId={panel.thread_id}
-                title="Thread"
-                onOpenThread={(messageId) =>
-                  handleOpenThread(messageId, index + 1)
-                }
-                onOpenEditor={(messageId) =>
-                  handleOpenEditor(messageId, index + 1)
-                }
-                onSendMessage={(content, autoBot) =>
-                  handleSendMessage(content, panel.thread_id, autoBot)
-                }
-                onClose={() => handleClosePanel(index)}
-                showClose={true}
-                getThreadsForMessage={getThreadsForMessage}
-                currentThreadIndex={currentThreadIndex}
-                totalThreads={panel.available_thread_ids?.length || 0}
-                onSwitchThread={(idx) => handleSwitchThread(index, idx)}
-                onCreateNewThread={() => handleCreateNewThread(index)}
-                globalTags={globalTags.toArray()}
-                onAddTag={addTagToMessage}
-                onRemoveTag={removeTagFromMessage}
-                onActivateBot={activateBot}
-                onDeactivateBot={deactivateBot}
-                onTestBot={createTestMessage}
-                onCreateBot={createBotFromConversation}
+        {openPanels.map((panel, index) => (
+          <div
+            key={panel.panel_id}
+            className="relative h-full flex-shrink-0 snap-start"
+            style={isDesktop ? { width: getPanelWidth(panel.panel_id) } : { minWidth: "100%" }}
+          >
+            {renderPanelContent(panel, index)}
+            {isDesktop && (
+              <PanelResizeHandle
+                onResizeStart={() => getPanelWidth(panel.panel_id)}
+                onResize={(delta) => handlePanelResize(panel.panel_id, delta)}
               />
-            );
-          } else if (panel.type === "editor" && panel.editor_message_id) {
-            // Editor panel - uses main doc with unique messageId binding
-            const parentMessage = getMessageById(panel.parent_message_id);
-            return (
-              <BlockNoteEditorAppInterface
-                key={panel.panel_id}
-                messageId={panel.editor_message_id}
-                parentMessage={parentMessage}
-                onClose={() => handleClosePanel(index)}
-              />
-            );
-          }
-          return null;
-        })}
+            )}
+          </div>
+        ))}
       </div>
     </div>
+  );
+}
+
+// Resize handle component for draggable panel width adjustment
+interface PanelResizeHandleProps {
+  onResizeStart: () => number;
+  onResize: (newWidth: number) => void;
+}
+
+function PanelResizeHandle({ onResizeStart, onResize }: PanelResizeHandleProps) {
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = onResizeStart();
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = startWidth + deltaX;
+      onResize(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  return (
+    <div
+      onMouseDown={handleMouseDown}
+      className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize z-10 hover:bg-neutral-700 active:bg-neutral-600 transition-colors"
+    />
   );
 }
 
@@ -843,6 +926,7 @@ function ChatPanel({
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const [viewMode, setViewMode] = useState<"list" | "folders">("list");
   const [mentionStartIndex, setMentionStartIndex] = useState(-1);
   const [autoRespondEnabled, setAutoRespondEnabled] = useState(true);
   const [testPrompt, setTestPrompt] = useState("");
@@ -984,20 +1068,47 @@ function ChatPanel({
   };
 
   return (
-    <div className="min-w-full sm:min-w-[400px] w-full sm:w-[400px] h-full flex flex-col snap-start">
+    <div className="w-full h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-neutral-950">
         <div className="flex items-center gap-2">
           <span className="text-neutral-400">{title}</span>
         </div>
-        {showClose && onClose && (
-          <button
-            onClick={onClose}
-            className="text-neutral-500 hover:text-neutral-300 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* View mode toggle */}
+          <div className="flex items-center gap-1 border border-neutral-800 rounded p-0.5">
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-1 rounded transition-colors ${
+                viewMode === "list"
+                  ? "bg-neutral-800 text-neutral-300"
+                  : "text-neutral-500 hover:text-neutral-300"
+              }`}
+              title="List view"
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode("folders")}
+              className={`p-1 rounded transition-colors ${
+                viewMode === "folders"
+                  ? "bg-neutral-800 text-neutral-300"
+                  : "text-neutral-500 hover:text-neutral-300"
+              }`}
+              title="Folder view"
+            >
+              <FolderTree className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {showClose && onClose && (
+            <button
+              onClick={onClose}
+              className="text-neutral-500 hover:text-neutral-300 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Parent message context for threads */}
@@ -1139,24 +1250,36 @@ function ChatPanel({
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-2">
-        <div className="space-y-1">
-          {messages.map((message) => (
-            <MessageRow
-              key={message.id}
-              message={message}
-              onOpenThread={onOpenThread}
-              onOpenEditor={onOpenEditor}
-              getThreadsForMessage={getThreadsForMessage}
-              globalTags={globalTags}
-              onAddTag={onAddTag}
-              onRemoveTag={onRemoveTag}
-              onCreateBot={onCreateBot}
-            />
-          ))}
-          <div ref={messagesEndRef} />
+      {viewMode === "list" ? (
+        <div className="flex-1 overflow-y-auto px-4 py-2">
+          <div className="space-y-1">
+            {messages.map((message) => (
+              <MessageRow
+                key={message.id}
+                message={message}
+                onOpenThread={onOpenThread}
+                onOpenEditor={onOpenEditor}
+                getThreadsForMessage={getThreadsForMessage}
+                globalTags={globalTags}
+                onAddTag={onAddTag}
+                onRemoveTag={onRemoveTag}
+                onCreateBot={onCreateBot}
+              />
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
-      </div>
+      ) : (
+        <TagFolderView
+          messages={messages}
+          globalTags={globalTags}
+          onOpenThread={onOpenThread}
+          onOpenEditor={onOpenEditor}
+          getThreadsForMessage={getThreadsForMessage}
+          onAddTag={onAddTag}
+          onRemoveTag={onRemoveTag}
+        />
+      )}
 
       {/* Input */}
       <div className="px-4 py-3">

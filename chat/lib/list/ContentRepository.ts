@@ -166,6 +166,8 @@ export class ContentRepository {
     data: string;
     group_id: string;
     parent_content_id?: string;
+    user_id?: string;
+    metadata?: Record<string, unknown>;
   }): Promise<Content> {
     // Dual-write period: write to both parent_content_id and content_relationships table
     const { data, error } = await supabase
@@ -1181,6 +1183,86 @@ export class ContentRepository {
     return Array.from(tagMap.values()).sort((a, b) =>
       a.name.localeCompare(b.name),
     );
+  }
+
+  /**
+   * Get all content for a group, grouped by tag.
+   * Returns a map of tag -> content[], plus an "untagged" array.
+   */
+  async getContentGroupedByTag(
+    groupId: string,
+    parentId: string | null = null,
+  ): Promise<{ tagged: Map<string, { tag: Tag; content: Content[] }>; untagged: Content[] }> {
+    // Step 1: Get all tags for this group
+    const tags = await this.getTagsForGroup(groupId);
+
+    // Step 2: Get all content for this group/parent with their tags
+    let query = supabase
+      .from("content")
+      .select(
+        `
+        *,
+        content_tags!left (
+          tags (
+            id,
+            created_at,
+            name,
+            color,
+            user_id
+          )
+        )
+      `,
+      )
+      .eq("group_id", groupId)
+      .order("created_at", { ascending: false });
+
+    if (parentId === null) {
+      query = query.is("parent_content_id", null);
+    } else {
+      query = query.eq("parent_content_id", parentId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error fetching content for grouping:", error);
+      throw new Error(error.message);
+    }
+
+    // Transform content to include tags properly
+    const allContent: Content[] = data?.map((item) => ({
+      ...item,
+      tags:
+        (item as any).content_tags
+          ?.map((ct: any) => ct.tags)
+          .filter(Boolean) || [],
+    })) || [];
+
+    // Step 3: Group content by tag
+    const tagged = new Map<string, { tag: Tag; content: Content[] }>();
+    const untagged: Content[] = [];
+
+    // Initialize tagged map with all tags (even those with no content)
+    tags.forEach((tag) => {
+      tagged.set(tag.id, { tag, content: [] });
+    });
+
+    // Distribute content into tag groups
+    allContent.forEach((item) => {
+      if (!item.tags || item.tags.length === 0) {
+        untagged.push(item);
+      } else {
+        // Content can appear in multiple tag groups if it has multiple tags
+        item.tags.forEach((tag: Tag) => {
+          const group = tagged.get(tag.id);
+          if (group) {
+            group.content.push(item);
+          }
+        });
+      }
+    });
+
+    return { tagged, untagged };
   }
 
   async getTagFiltersForGroup(groupId: string): Promise<Content[]> {

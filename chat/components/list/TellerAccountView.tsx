@@ -12,6 +12,7 @@ interface TellerAccountMetadata {
   balance_available?: number;
   balance_current?: number;
   last_synced?: string;
+  access_token?: string;
 }
 
 interface TellerTransactionMetadata {
@@ -29,9 +30,6 @@ interface TellerAccountViewProps {
   content: Content;
   onClick?: () => void;
 }
-
-// Declare globals injected by esbuild
-declare const LAMBDA_ENDPOINT: string;
 
 export const TellerAccountView: React.FC<TellerAccountViewProps> = ({ content, onClick }) => {
   const [transactions, setTransactions] = useState<Content[]>([]);
@@ -56,7 +54,7 @@ export const TellerAccountView: React.FC<TellerAccountViewProps> = ({ content, o
         content.id,
         0,
         100,
-        'newest'
+        'chronological'
       );
       setTransactions(data.filter(item => item.type === 'teller_transaction'));
     } catch (err) {
@@ -72,16 +70,20 @@ export const TellerAccountView: React.FC<TellerAccountViewProps> = ({ content, o
       setSyncing(true);
       setError(null);
 
-      const response = await fetch(LAMBDA_ENDPOINT, {
+      if (!metadata?.access_token) {
+        throw new Error('Missing access token. Please re-sync accounts from enrollment.');
+      }
+
+      const response = await fetch('/api/teller/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'teller-transactions',
-          payload: {
-            selectedContent: [content],
-            count: 100,
-          },
-          sync: true,
+          parent_content_id: content.id,
+          access_token: metadata.access_token,
+          account_id: metadata.account_id,
+          group_id: content.group_id,
+          user_id: content.user_id,
+          count: 100,
         }),
       });
 
@@ -105,15 +107,17 @@ export const TellerAccountView: React.FC<TellerAccountViewProps> = ({ content, o
       setSyncing(true);
       setError(null);
 
-      const response = await fetch(LAMBDA_ENDPOINT, {
+      if (!metadata?.access_token) {
+        throw new Error('Missing access token. Please re-sync accounts from enrollment.');
+      }
+
+      const response = await fetch('/api/teller/balances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'teller-balances',
-          payload: {
-            selectedContent: [content],
-          },
-          sync: true,
+          content_id: content.id,
+          access_token: metadata.access_token,
+          account_id: metadata.account_id,
         }),
       });
 
@@ -121,6 +125,9 @@ export const TellerAccountView: React.FC<TellerAccountViewProps> = ({ content, o
       if (!result.success) {
         throw new Error(result.error || 'Sync failed');
       }
+
+      // Refresh to show updated balance
+      window.location.reload();
     } catch (err) {
       console.error('Error syncing balance:', err);
       setError(err instanceof Error ? err.message : 'Sync failed');

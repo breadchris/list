@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useInfiniteContentByParent } from "@/hooks/useContentQueries";
-import { ANONYMOUS_GROUP_ID } from "@/lib/anonymousUser";
 import { contentRepository, type Content } from "@/components/ContentRepository";
 import {
   getFileTypeEmoji,
@@ -13,9 +12,13 @@ import {
 } from "@/lib/fileTypeUtils";
 import { useQueryClient } from "@tanstack/react-query";
 
+interface FileListProps {
+  groupId: string;
+}
+
 type FilterType = "all" | "documents" | "images" | "media";
 
-export function FileList() {
+export function FileList({ groupId }: FileListProps) {
   const [filter, setFilter] = useState<FilterType>("all");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -26,7 +29,7 @@ export function FileList() {
     hasNextPage,
     isFetchingNextPage,
     isLoading,
-  } = useInfiniteContentByParent(ANONYMOUS_GROUP_ID, null);
+  } = useInfiniteContentByParent(groupId, null);
 
   // Flatten all pages into single array
   const allContent = data?.pages.flatMap((page) => page.items) ?? [];
@@ -51,9 +54,6 @@ export function FileList() {
     if (!fileUrl) return;
 
     if (content.type === "epub") {
-      // Navigate to reader app with file URL
-      // The reader app will need to fetch and load the EPUB from the URL
-      // For now, we'll pass it as a query parameter
       window.location.href = `/reader?fileUrl=${encodeURIComponent(fileUrl)}`;
     } else if (content.type === "pdf") {
       window.open(fileUrl, "_blank");
@@ -86,7 +86,7 @@ export function FileList() {
 
       // Invalidate query to refresh list
       queryClient.invalidateQueries({
-        queryKey: ["content", "by-parent", ANONYMOUS_GROUP_ID, null],
+        queryKey: ["content", "by-parent", groupId, null],
       });
     } catch (error) {
       console.error("Failed to delete file:", error);

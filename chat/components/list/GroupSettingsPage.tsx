@@ -34,7 +34,7 @@ export const GroupSettingsPage: React.FC = () => {
 
   const generateInviteUrl = (inviteCode: string) => {
     const baseUrl = window.location.origin;
-    return `${baseUrl}/invite/${inviteCode}`;
+    return `${baseUrl}/list/invite/${inviteCode}`;
   };
 
   const copyInviteUrl = async (inviteCode: string) => {
@@ -77,7 +77,7 @@ export const GroupSettingsPage: React.FC = () => {
       // Navigate to first available group or home
       const remainingGroups = groups.filter(g => g.id !== currentGroup.id);
       if (remainingGroups.length > 0) {
-        router.push(`/group/${remainingGroups[0].id}`);
+        router.push(`/list/group/${remainingGroups[0].id}`);
       } else {
         router.push('/');
       }
@@ -88,7 +88,7 @@ export const GroupSettingsPage: React.FC = () => {
   };
 
   const handleGroupSwitch = (group: Group) => {
-    router.push(`/group/${group.id}`);
+    router.push(`/list/group/${group.id}`);
   };
 
   const handleCreateGroup = async (e: React.FormEvent) => {
@@ -100,7 +100,7 @@ export const GroupSettingsPage: React.FC = () => {
       setShowCreateModal(false);
       setGroupName('');
       toast.success('Group created!', `Successfully created "${newGroup.name}".`);
-      router.push(`/group/${newGroup.id}`);
+      router.push(`/list/group/${newGroup.id}`);
     } catch (error) {
       console.error('Failed to create group:', error);
       toast.error('Failed to create group', 'Please try again.');
@@ -122,7 +122,7 @@ export const GroupSettingsPage: React.FC = () => {
         toast.success('Joined group!', `Successfully joined "${group.name}".`);
       }
 
-      router.push(`/group/${group.id}`);
+      router.push(`/list/group/${group.id}`);
     } catch (error) {
       console.error('Failed to join group:', error);
       toast.error('Failed to join group', 'Please check the code and try again.');
@@ -163,7 +163,7 @@ export const GroupSettingsPage: React.FC = () => {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <button
-            onClick={() => router.push(`/group/${groupId}`)}
+            onClick={() => router.push(`/list/group/${groupId}`)}
             className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

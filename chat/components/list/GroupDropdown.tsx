@@ -51,7 +51,7 @@ export const GroupDropdown: React.FC<GroupDropdownProps> = ({
 
   const generateInviteUrl = (inviteCode: string) => {
     const baseUrl = window.location.origin;
-    return `${baseUrl}/invite/${inviteCode}`;
+    return `${baseUrl}/list/invite/${inviteCode}`;
   };
 
   const handleShowQRCode = () => {
@@ -168,7 +168,7 @@ export const GroupDropdown: React.FC<GroupDropdownProps> = ({
               <button
                 onClick={() => {
                   if (currentGroup) {
-                    router.push(`/group/${currentGroup.id}/settings`);
+                    router.push(`/list/group/${currentGroup.id}/settings`);
                     setIsOpen(false);
                   }
                 }}
@@ -294,7 +294,7 @@ export const GroupDropdown: React.FC<GroupDropdownProps> = ({
                     onClick={() => {
                       setShowQRModal(false);
                       if (currentGroup) {
-                        router.push(`/group/${currentGroup.id}/settings`);
+                        router.push(`/list/group/${currentGroup.id}/settings`);
                       }
                     }}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"

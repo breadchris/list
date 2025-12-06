@@ -2,19 +2,22 @@
 
 import { useState, useRef } from "react";
 import { contentRepository } from "@/components/ContentRepository";
-import { ANONYMOUS_GROUP_ID } from "@/lib/anonymousUser";
-import { getContentTypeFromFile, formatFileSize } from "@/lib/fileTypeUtils";
+import { getContentTypeFromFile } from "@/lib/fileTypeUtils";
 import type { Content } from "@/components/ContentRepository";
 
-// Anonymous system user UUID (matches database)
-const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
-
 interface FileUploadInputProps {
+  groupId: string;
+  userId: string;
   onUploadComplete?: (content: Content) => void;
   onUploadError?: (error: Error) => void;
 }
 
-export function FileUploadInput({ onUploadComplete, onUploadError }: FileUploadInputProps) {
+export function FileUploadInput({
+  groupId,
+  userId,
+  onUploadComplete,
+  onUploadError
+}: FileUploadInputProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [dragActive, setDragActive] = useState(false);
@@ -37,8 +40,8 @@ export function FileUploadInput({ onUploadComplete, onUploadError }: FileUploadI
         const content = await contentRepository.createContent({
           type: fileType,
           data: file.name,
-          group_id: ANONYMOUS_GROUP_ID,
-          user_id: ANONYMOUS_USER_ID,
+          group_id: groupId,
+          user_id: userId,
         });
 
         // 2. Upload file to storage using content ID

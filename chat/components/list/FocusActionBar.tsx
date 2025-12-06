@@ -140,7 +140,7 @@ export const FocusActionBar: React.FC<FocusActionBarProps> = ({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            router.push(`/group/${groupId}/content/${contentItem.id}`);
+            router.push(`/list/group/${groupId}/content/${contentItem.id}`);
           }}
           className="
             flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium
