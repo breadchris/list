@@ -31,12 +31,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        print("🔄 AppDelegate: App became active, draining inbox")
-        InboxDrainer.shared.drainInbox { _ in }
+        print("🔄 AppDelegate: App became active, triggering inbox sync")
+        NotificationCenter.default.post(name: NSNotification.Name("TriggerInboxSync"), object: nil)
     }
 
     @objc private func handleInboxNotification() {
-        print("📬 AppDelegate: Inbox notification received, draining")
-        InboxDrainer.shared.drainInbox { _ in }
+        print("📬 AppDelegate: Inbox notification received, triggering sync")
+        NotificationCenter.default.post(name: NSNotification.Name("TriggerInboxSync"), object: nil)
     }
 }

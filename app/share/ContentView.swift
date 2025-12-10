@@ -16,47 +16,48 @@ struct ContentView: View {
     @State private var showingAPIKeyAlert = false
     @State private var apiKeyMessage = ""
     @State private var isAuthenticating = false
+    #if DEBUG
+    @State private var showingDebugView = false
+    #endif
     private let presentationContextProvider = ASWebAuthenticationPresentationContextProvider()
 
     var body: some View {
-        NavigationView {
-            WebView(webView: webViewStore.webView)
-                .navigationTitle("List")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Refresh") {
-                            webViewStore.webView.reload()
+        WebView(webView: webViewStore.webView, onRefresh: {
+            webViewStore.webView.reload()
+        })
+        #if DEBUG
+        .sheet(isPresented: $showingDebugView) {
+            NavigationView {
+                DebugView()
+                    .navigationTitle("Debug")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                showingDebugView = false
+                            }
                         }
                     }
-                    
-                    #if DEBUG
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        NavigationLink("Debug") {
-                            DebugView()
-                        }
-                    }
-                    #endif
-                }
-                .onAppear {
-                    loadListApp()
-                    setupNotificationObserver()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
+            showingDebugView = true
+        }
+        #endif
+        .onAppear {
+            loadListApp()
+            setupNotificationObserver()
 
-                    // Drain inbox when app appears (process any pending share extension URLs)
-                    print("🔄 ContentView: App appeared, draining inbox...")
-                    InboxDrainer.shared.drainInbox { success in
-                        if success {
-                            print("✅ ContentView: Inbox drained successfully on app appear")
-                        } else {
-                            print("⚠️ ContentView: Inbox draining had some failures on app appear")
-                        }
-                    }
-                }
-                .alert("API Key", isPresented: $showingAPIKeyAlert) {
-                    Button("OK") { }
-                } message: {
-                    Text(apiKeyMessage)
-                }
+            // Wait for WebView to load, then sync pending items via WebView's Supabase client
+            print("🔄 ContentView: App appeared, will sync inbox after WebView loads...")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                syncPendingItems()
+            }
+        }
+        .alert("API Key", isPresented: $showingAPIKeyAlert) {
+            Button("OK") { }
+        } message: {
+            Text(apiKeyMessage)
         }
     }
 
@@ -208,6 +209,86 @@ struct ContentView: View {
             }
             // Trigger the normal shared URL check
             sharedURLManager.checkForSharedURLs()
+        }
+
+        // Handle inbox item sync results from WebView
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("InboxItemSynced"),
+            object: nil,
+            queue: .main
+        ) { [self] notification in
+            guard let itemId = notification.userInfo?["itemId"] as? String,
+                  let success = notification.userInfo?["success"] as? Bool,
+                  success else {
+                return
+            }
+
+            // Remove synced item from inbox
+            do {
+                let inbox = try SharedInbox(appGroupId: "group.com.breadchris.share")
+                let files = try inbox.drain()
+                for fileURL in files {
+                    if fileURL.lastPathComponent.hasPrefix(itemId) ||
+                       fileURL.lastPathComponent.contains(itemId) {
+                        inbox.remove(fileURL)
+                        print("✅ ContentView: Removed synced item from inbox: \(itemId)")
+                    }
+                }
+            } catch {
+                print("❌ ContentView: Failed to remove synced item: \(error)")
+            }
+        }
+
+        // Handle inbox sync trigger from AppDelegate/shareApp
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("TriggerInboxSync"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            print("🔄 ContentView: Received TriggerInboxSync notification")
+            syncPendingItems()
+        }
+    }
+
+    private func syncPendingItems() {
+        print("🔄 ContentView: Syncing pending inbox items via WebView...")
+
+        do {
+            let inbox = try SharedInbox(appGroupId: "group.com.breadchris.share")
+            let files = try inbox.drain()
+
+            guard !files.isEmpty else {
+                print("📭 ContentView: No pending items to sync")
+                return
+            }
+
+            print("📊 ContentView: Found \(files.count) pending items to sync")
+
+            for fileURL in files {
+                do {
+                    let item = try inbox.read(fileURL)
+                    let itemId = item.id.uuidString
+                    let escapedUrl = item.url
+                        .replacingOccurrences(of: "\\", with: "\\\\")
+                        .replacingOccurrences(of: "'", with: "\\'")
+                    let escapedNote = (item.note ?? "")
+                        .replacingOccurrences(of: "\\", with: "\\\\")
+                        .replacingOccurrences(of: "'", with: "\\'")
+
+                    let script = "window.syncSharedURL('\(itemId)', '\(escapedUrl)', '\(escapedNote)');"
+
+                    print("📤 ContentView: Calling syncSharedURL for item \(itemId)")
+                    webViewStore.webView.evaluateJavaScript(script) { result, error in
+                        if let error = error {
+                            print("❌ ContentView: JavaScript error for \(itemId): \(error.localizedDescription)")
+                        }
+                    }
+                } catch {
+                    print("❌ ContentView: Error reading inbox item \(fileURL.lastPathComponent): \(error)")
+                }
+            }
+        } catch {
+            print("❌ ContentView: Failed to access inbox: \(error)")
         }
     }
 
@@ -445,6 +526,7 @@ class WebViewStore: ObservableObject {
         contentController.add(messageHandler, name: "authHandler")
         contentController.add(messageHandler, name: "consoleHandler")
         contentController.add(messageHandler, name: "sessionHandler")
+        contentController.add(messageHandler, name: "syncResultHandler")
         configuration.userContentController = contentController
 
         // Inject JavaScript to detect API key creation, Google auth attempts, and console messages
@@ -587,6 +669,68 @@ class WebViewStore: ObservableObject {
                     captureSession();
                 });
                 sessionObserver.observe(document.body, { childList: true, subtree: true });
+
+                // Function called from Swift to sync a shared URL via WebView's Supabase client
+                window.syncSharedURL = async function(itemId, url, note) {
+                    try {
+                        console.log('📤 syncSharedURL: Starting sync for item', itemId, url);
+
+                        if (!window.supabase?.auth) {
+                            throw new Error('Supabase not ready');
+                        }
+
+                        const { data: { session } } = await window.supabase.auth.getSession();
+                        if (!session) {
+                            throw new Error('Not authenticated');
+                        }
+
+                        console.log('✅ syncSharedURL: Authenticated as', session.user.id);
+
+                        // Get user's default group
+                        const { data: membership, error: membershipError } = await window.supabase
+                            .from('group_memberships')
+                            .select('group_id')
+                            .eq('user_id', session.user.id)
+                            .limit(1)
+                            .single();
+
+                        if (membershipError || !membership) {
+                            throw new Error('No group membership found');
+                        }
+
+                        console.log('✅ syncSharedURL: Using group', membership.group_id);
+
+                        // Insert content
+                        const { error: insertError } = await window.supabase
+                            .from('content')
+                            .insert({
+                                type: 'text',
+                                data: url,
+                                metadata: { url: url, shared_from: 'ios_share_extension', note: note || null },
+                                user_id: session.user.id,
+                                group_id: membership.group_id
+                            });
+
+                        if (insertError) throw insertError;
+
+                        console.log('✅ syncSharedURL: Successfully inserted content for', itemId);
+
+                        // Notify Swift of success
+                        window.webkit.messageHandlers.syncResultHandler.postMessage({
+                            type: 'syncResult',
+                            itemId: itemId,
+                            success: true
+                        });
+                    } catch (e) {
+                        console.error('❌ syncSharedURL: Failed for', itemId, e.message);
+                        window.webkit.messageHandlers.syncResultHandler.postMessage({
+                            type: 'syncResult',
+                            itemId: itemId,
+                            success: false,
+                            error: e.message
+                        });
+                    }
+                };
             """,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
@@ -618,6 +762,8 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
             handleConsoleMessage(body: body)
         case "session":
             handleSession(body: body)
+        case "syncResult":
+            handleSyncResult(body: body)
         default:
             print("Unknown message type: \(type)")
         }
@@ -679,6 +825,27 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
         print("\(emoji) WebView Console [\(level.uppercased())]: \(message)")
     }
 
+    private func handleSyncResult(body: [String: Any]) {
+        guard let itemId = body["itemId"] as? String,
+              let success = body["success"] as? Bool else {
+            print("❌ handleSyncResult: Invalid sync result data")
+            return
+        }
+
+        let errorMessage = body["error"] as? String ?? ""
+        print(success ? "✅ Sync succeeded for item: \(itemId)" : "❌ Sync failed for item: \(itemId) - \(errorMessage)")
+
+        NotificationCenter.default.post(
+            name: NSNotification.Name("InboxItemSynced"),
+            object: nil,
+            userInfo: [
+                "itemId": itemId,
+                "success": success,
+                "error": errorMessage
+            ]
+        )
+    }
+
     private func handleSession(body: [String: Any]) {
         guard let accessToken = body["access_token"] as? String,
               let userId = body["user_id"] as? String else {
@@ -707,15 +874,9 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
                 fetchAndCacheGroupId(userId: userId, accessToken: accessToken)
             }
 
-            // Drain inbox after session is established
-            print("🔄 Session: Session established, draining inbox...")
-            InboxDrainer.shared.drainInbox { success in
-                if success {
-                    print("✅ Session: Inbox drained successfully after auth")
-                } else {
-                    print("⚠️ Session: Inbox draining had some failures after auth")
-                }
-            }
+            // Sync inbox after session is established via WebView
+            print("🔄 Session: Session established, triggering inbox sync...")
+            NotificationCenter.default.post(name: NSNotification.Name("TriggerInboxSync"), object: nil)
         } catch {
             print("❌ Session: Failed to save token: \(error)")
         }
@@ -830,13 +991,42 @@ class NavigationDelegate: NSObject, WKNavigationDelegate {
 
 struct WebView: UIViewRepresentable {
     let webView: WKWebView
+    var onRefresh: (() -> Void)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onRefresh: onRefresh)
+    }
 
     func makeUIView(context: Context) -> WKWebView {
+        // Set up pull-to-refresh
+        let refreshControl = UIRefreshControl()
+        refreshControl.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.handleRefresh(_:)),
+            for: .valueChanged
+        )
+        webView.scrollView.refreshControl = refreshControl
         return webView
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
         // Updates handled by WebViewStore
+    }
+
+    class Coordinator: NSObject {
+        var onRefresh: (() -> Void)?
+
+        init(onRefresh: (() -> Void)?) {
+            self.onRefresh = onRefresh
+        }
+
+        @objc func handleRefresh(_ sender: UIRefreshControl) {
+            onRefresh?()
+            // End refreshing after a short delay to show the animation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                sender.endRefreshing()
+            }
+        }
     }
 }
 
@@ -870,6 +1060,22 @@ class ASWebAuthenticationPresentationContextProvider: NSObject, ASWebAuthenticat
         }
     }
 }
+
+// MARK: - Shake Gesture Detection
+#if DEBUG
+extension NSNotification.Name {
+    static let deviceDidShake = NSNotification.Name("deviceDidShake")
+}
+
+extension UIWindow {
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake {
+            NotificationCenter.default.post(name: .deviceDidShake, object: nil)
+        }
+        super.motionEnded(motion, with: event)
+    }
+}
+#endif
 
 #Preview {
     ContentView()

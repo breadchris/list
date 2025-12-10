@@ -1,18 +1,18 @@
 import {
   MessageSquare,
-  Calendar,
-  FileText,
+  MessageCircle,
   BookOpen,
   Upload,
   List,
   Wallet,
-  MapPin,
+  Paintbrush,
+  Stamp,
+  ListVideo,
   type LucideIcon,
 } from "lucide-react";
-import { calendarSchemaObject } from "./schema";
 import type { z } from "zod";
 
-export type RenderMode = "list" | "chat" | "calendar" | "editor" | "reader" | "uploads" | "money" | "maps";
+export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal";
 
 export interface AppConfig {
   id: string;
@@ -52,33 +52,8 @@ export const apps: AppConfig[] = [
     renderMode: "chat",
   },
   {
-    id: "calendar",
-    name: "Calendar",
-    description:
-      "Generate calendar events from your plans and ideas",
-    icon: Calendar,
-    color: "text-blue-400",
-    bgColor: "bg-blue-400/10",
-    schema: calendarSchemaObject,
-    apiEndpoint: "/api/object",
-    placeholder: "Describe your plans... (e.g., 'Plan a week of workouts', 'Schedule a 3-day conference')",
-    loadingText: "Generating calendar events...",
-    renderMode: "calendar",
-  },
-  {
-    id: "editor",
-    name: "Markdown Editor",
-    description:
-      "Collaborative note-taking with markdown support and real-time sync",
-    icon: FileText,
-    color: "text-green-400",
-    bgColor: "bg-green-400/10",
-    placeholder: "Start typing...",
-    renderMode: "editor",
-  },
-  {
     id: "reader",
-    name: "EPUB Reader",
+    name: "read",
     description:
       "Read and annotate EPUB files with collaborative highlights and real-time sync",
     icon: BookOpen,
@@ -89,7 +64,7 @@ export const apps: AppConfig[] = [
   },
   {
     id: "uploads",
-    name: "File Uploads",
+    name: "upload",
     description:
       "Upload and manage your files. Supports documents, images, audio, video, and more",
     icon: Upload,
@@ -100,7 +75,7 @@ export const apps: AppConfig[] = [
   },
   {
     id: "money",
-    name: "Money",
+    name: "save",
     description:
       "Connect bank accounts and track transactions with Teller",
     icon: Wallet,
@@ -110,15 +85,48 @@ export const apps: AppConfig[] = [
     renderMode: "money",
   },
   {
-    id: "maps",
-    name: "Maps",
+    id: "paint",
+    name: "paint",
     description:
-      "Find and save locations using Apple Maps",
-    icon: MapPin,
-    color: "text-red-400",
-    bgColor: "bg-red-400/10",
-    placeholder: "Search for a location...",
-    renderMode: "maps",
+      "Create pixel art with real-time collaboration and animation support",
+    icon: Paintbrush,
+    color: "text-rose-400",
+    bgColor: "bg-rose-400/10",
+    placeholder: "Start drawing...",
+    renderMode: "paint",
+  },
+  {
+    id: "do",
+    name: "do",
+    description:
+      "Track daily habits with stamps on a passport page",
+    icon: Stamp,
+    color: "text-lime-400",
+    bgColor: "bg-lime-400/10",
+    placeholder: "Track your habits...",
+    renderMode: "do",
+  },
+  {
+    id: "dj",
+    name: "dj",
+    description:
+      "Collaborative video queue for watching YouTube together",
+    icon: ListVideo,
+    color: "text-violet-400",
+    bgColor: "bg-violet-400/10",
+    placeholder: "Press Cmd+K to add a video...",
+    renderMode: "dj",
+  },
+  {
+    id: "signal",
+    name: "signal",
+    description:
+      "Signal-style messaging with conversations and message bubbles",
+    icon: MessageCircle,
+    color: "text-blue-400",
+    bgColor: "bg-blue-400/10",
+    placeholder: "Type a message...",
+    renderMode: "signal",
   },
 ];
 

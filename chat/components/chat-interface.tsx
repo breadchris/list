@@ -1,7 +1,8 @@
 "use client";
 
 import { Doc } from "yjs";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from "react";
+import { VirtualizedMessageList } from "./VirtualizedMessageList";
 import { X, MessageSquare, Tag, FileText, FolderTree, LayoutList } from "lucide-react";
 import { useArray, useYDoc } from "@y-sweet/react";
 import { useIsDesktop } from "./ui/use-mobile";
@@ -758,6 +759,7 @@ function ChatInterfaceInner({
           onDeactivateBot={deactivateBot}
           onTestBot={createTestMessage}
           onCreateBot={createBotFromConversation}
+          doc={doc}
         />
       );
     } else if (panel.type === "editor" && panel.editor_message_id) {
@@ -782,7 +784,7 @@ function ChatInterfaceInner({
         {/* Main chat panel */}
         <div
           className="relative h-full flex-shrink-0 snap-start"
-          style={isDesktop ? { width: getPanelWidth("main") } : { minWidth: "100%" }}
+          style={isDesktop ? { width: getPanelWidth("main") } : { width: "100%", maxWidth: "100vw" }}
         >
           <ChatPanel
             messages={mainMessages}
@@ -798,6 +800,7 @@ function ChatInterfaceInner({
             onAddTag={addTagToMessage}
             onRemoveTag={removeTagFromMessage}
             onCreateBot={createBotFromConversation}
+            doc={doc}
           />
           {isDesktop && (
             <PanelResizeHandle
@@ -812,7 +815,7 @@ function ChatInterfaceInner({
           <div
             key={panel.panel_id}
             className="relative h-full flex-shrink-0 snap-start"
-            style={isDesktop ? { width: getPanelWidth(panel.panel_id) } : { minWidth: "100%" }}
+            style={isDesktop ? { width: getPanelWidth(panel.panel_id) } : { width: "100%", maxWidth: "100vw" }}
           >
             {renderPanelContent(panel, index)}
             {isDesktop && (
@@ -897,6 +900,7 @@ interface ChatPanelProps {
     description: string;
     personalityLines: string[];
   }) => void;
+  doc?: Doc;
 }
 
 function ChatPanel({
@@ -921,6 +925,7 @@ function ChatPanel({
   onDeactivateBot,
   onTestBot,
   onCreateBot,
+  doc,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -931,10 +936,28 @@ function ChatPanel({
   const [autoRespondEnabled, setAutoRespondEnabled] = useState(true);
   const [testPrompt, setTestPrompt] = useState("");
   const [showTestInput, setShowTestInput] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const isInitialRender = useRef(true);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(400);
   const allBots = getAllBots();
+
+  // Measure container height for virtualized list using ResizeObserver
+  // Re-run when viewMode changes to reattach observer after folder view unmounts the container
+  useLayoutEffect(() => {
+    if (viewMode !== "list") return;
+
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerHeight(entry.contentRect.height);
+      }
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [viewMode]);
 
   // Detect bot from @mentions in the parent message
   const threadBot = parentMessage
@@ -948,15 +971,6 @@ function ChatPanel({
   const botDefinition = isBotDefinitionThread && parentMessage
     ? parseBotDefinition(parentMessage.content)
     : null;
-
-  // Auto-scroll to bottom when new messages arrive
-  // Use instant scroll on initial load, smooth scroll for new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: isInitialRender.current ? "instant" : "smooth",
-    });
-    isInitialRender.current = false;
-  }, [messages.length]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1251,23 +1265,20 @@ function ChatPanel({
 
       {/* Messages */}
       {viewMode === "list" ? (
-        <div className="flex-1 overflow-y-auto px-4 py-2">
-          <div className="space-y-1">
-            {messages.map((message) => (
-              <MessageRow
-                key={message.id}
-                message={message}
-                onOpenThread={onOpenThread}
-                onOpenEditor={onOpenEditor}
-                getThreadsForMessage={getThreadsForMessage}
-                globalTags={globalTags}
-                onAddTag={onAddTag}
-                onRemoveTag={onRemoveTag}
-                onCreateBot={onCreateBot}
-              />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
+        <div className="flex-1 min-h-0 overflow-hidden py-2" ref={messagesContainerRef}>
+          <VirtualizedMessageList
+            messages={messages}
+            height={containerHeight}
+            onOpenThread={onOpenThread}
+            onOpenEditor={onOpenEditor}
+            getThreadsForMessage={getThreadsForMessage}
+            globalTags={globalTags}
+            onAddTag={onAddTag}
+            onRemoveTag={onRemoveTag}
+            onCreateBot={onCreateBot}
+            MessageRowComponent={MessageRow}
+            doc={doc}
+          />
         </div>
       ) : (
         <TagFolderView
@@ -1426,6 +1437,9 @@ interface MessageRowProps {
     description: string;
     personalityLines: string[];
   }) => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  doc?: Doc;
 }
 
 function MessageRow({
@@ -1437,6 +1451,9 @@ function MessageRow({
   onAddTag,
   onRemoveTag,
   onCreateBot,
+  isExpanded,
+  onToggleExpand,
+  doc,
 }: MessageRowProps) {
   const threads = getThreadsForMessage(message.id);
   const hasThreads = threads.length > 0;
@@ -1444,6 +1461,16 @@ function MessageRow({
     (sum, t) => sum + t.message_ids.length,
     0,
   );
+
+  // Check if message has Y.js editor content
+  const hasYjsContent = useMemo(() => {
+    if (!doc || !message.id) return false;
+    const fragment = doc.getXmlFragment(message.id);
+    return fragment.length > 0;
+  }, [doc, message.id]);
+
+  // Message should be muted if it has no threads AND no Y.js content
+  const isMuted = !hasThreads && !hasYjsContent;
 
   // Check if this is a thinking/reasoning message
   if (message.username.endsWith(":thinking")) {
@@ -1455,12 +1482,16 @@ function MessageRow({
 
   if (isBotBuilder) {
     return (
-      <div className="group">
+      <div className="group cursor-pointer" onClick={onToggleExpand}>
         <div className="font-mono px-2 py-1 text-neutral-500">
-          <span>{message.timestamp}</span>
-          <span className="mx-2">&lt;{message.username}&gt;</span>
+          <span className={`transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+            {message.timestamp}
+          </span>
+          <span className={`mx-2 transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+            &lt;{message.username}&gt;
+          </span>
         </div>
-        <div className="px-2">
+        <div className="px-2" onClick={(e) => e.stopPropagation()}>
           <BotBuilderHandler
             botMessageId={message.id}
             onCreateBot={onCreateBot}
@@ -1468,32 +1499,34 @@ function MessageRow({
         </div>
 
         {/* Thread indicator / reply button and tags */}
-        <div className="ml-2 mt-1 sm:opacity-0 sm:group-hover:opacity-100 opacity-100">
+        <div className={`ml-2 mt-1 transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
           <div className="flex items-start gap-3">
             <button
-              onClick={() => onOpenThread(message.id)}
-              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+              onClick={(e) => { e.stopPropagation(); onOpenThread(message.id); }}
+              className={`flex items-center gap-1.5 ${hasThreads ? "text-neutral-300" : "text-neutral-500"} hover:text-neutral-300 transition-colors font-mono`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
               {hasThreads && <span className="text-xs">{totalReplies}</span>}
             </button>
 
             <button
-              onClick={() => onOpenEditor(message.id)}
-              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+              onClick={(e) => { e.stopPropagation(); onOpenEditor(message.id); }}
+              className={`flex items-center gap-1.5 ${hasYjsContent ? "text-neutral-300" : "text-neutral-500"} hover:text-neutral-300 transition-colors font-mono`}
               title="Edit in Lexical"
             >
               <FileText className="w-3.5 h-3.5" />
             </button>
 
             {/* Tag editor */}
-            <InlinePillsVariant
-              messageId={message.id}
-              existingTags={globalTags}
-              messageTags={message.tags || []}
-              onAddTag={(tag) => onAddTag(message.id, tag)}
-              onRemoveTag={(tag) => onRemoveTag(message.id, tag)}
-            />
+            <div onClick={(e) => e.stopPropagation()}>
+              <InlinePillsVariant
+                messageId={message.id}
+                existingTags={globalTags}
+                messageTags={message.tags || []}
+                onAddTag={(tag) => onAddTag(message.id, tag)}
+                onRemoveTag={(tag) => onRemoveTag(message.id, tag)}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1508,35 +1541,90 @@ function MessageRow({
   if (codeVariant) {
     // Render code variant with live preview
     return (
-      <div className="group">
+      <div className="group cursor-pointer" onClick={onToggleExpand}>
         <div className="font-mono px-2 py-1 text-neutral-500">
-          <span>{message.timestamp}</span>
-          <span className="mx-2">&lt;{message.username}&gt;</span>
+          <span className={`transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+            {message.timestamp}
+          </span>
+          <span className={`mx-2 transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+            &lt;{message.username}&gt;
+          </span>
         </div>
-        <div className="px-2">
+        <div className="px-2" onClick={(e) => e.stopPropagation()}>
           <CodeRenderer variant={codeVariant} />
         </div>
 
         {/* Thread indicator / reply button and tags */}
-        <div className="ml-2 mt-1 sm:opacity-0 sm:group-hover:opacity-100 opacity-100">
+        <div className={`ml-2 mt-1 transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
           {/* Icon row with grid to allow tag selector to span full width below */}
           <div className="grid grid-cols-[auto_auto_auto_1fr] gap-3 items-start">
             <button
-              onClick={() => onOpenThread(message.id)}
-              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+              onClick={(e) => { e.stopPropagation(); onOpenThread(message.id); }}
+              className={`flex items-center gap-1.5 ${hasThreads ? "text-neutral-300" : "text-neutral-500"} hover:text-neutral-300 transition-colors font-mono`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
             </button>
 
             <button
-              onClick={() => onOpenEditor(message.id)}
-              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+              onClick={(e) => { e.stopPropagation(); onOpenEditor(message.id); }}
+              className={`flex items-center gap-1.5 ${hasYjsContent ? "text-neutral-300" : "text-neutral-500"} hover:text-neutral-300 transition-colors font-mono`}
               title="Edit in Lexical"
             >
               <FileText className="w-3.5 h-3.5" />
             </button>
 
             {/* Tag editor - button in row, expanded panel below */}
+            <div onClick={(e) => e.stopPropagation()}>
+              <InlinePillsVariant
+                messageId={message.id}
+                existingTags={globalTags}
+                messageTags={message.tags || []}
+                onAddTag={(tag) => onAddTag(message.id, tag)}
+                onRemoveTag={(tag) => onRemoveTag(message.id, tag)}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group cursor-pointer" onClick={onToggleExpand}>
+      <div className="font-mono px-2 py-1 rounded transition-colors hover:bg-neutral-900">
+        <span className={`text-neutral-500 transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+          {message.timestamp}
+        </span>
+        <span className={`text-neutral-400 mx-2 transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+          &lt;{message.username}&gt;
+        </span>
+        <CollapsibleContent
+          content={message.content}
+          className={isMuted ? "text-neutral-500" : "text-neutral-300"}
+        />
+      </div>
+
+      {/* Thread indicator / reply button and tags */}
+      <div className={`ml-2 mt-1 transition-opacity ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+        {/* Icon row with grid to allow tag selector to span full width below */}
+        <div className="grid grid-cols-[auto_auto_auto_1fr] gap-3 items-start">
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenThread(message.id); }}
+            className={`flex items-center gap-1.5 ${hasThreads ? "text-neutral-300" : "text-neutral-500"} hover:text-neutral-300 transition-colors font-mono`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenEditor(message.id); }}
+            className={`flex items-center gap-1.5 ${hasYjsContent ? "text-neutral-300" : "text-neutral-500"} hover:text-neutral-300 transition-colors font-mono`}
+            title="Edit in Lexical"
+          >
+            <FileText className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Tag editor - button in row, expanded panel below */}
+          <div onClick={(e) => e.stopPropagation()}>
             <InlinePillsVariant
               messageId={message.id}
               existingTags={globalTags}
@@ -1545,51 +1633,6 @@ function MessageRow({
               onRemoveTag={(tag) => onRemoveTag(message.id, tag)}
             />
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="group">
-      <div className="font-mono px-2 py-1 rounded transition-colors hover:bg-neutral-900">
-        <span className="text-neutral-500">{message.timestamp}</span>
-        <span className="text-neutral-400 mx-2">
-          &lt;{message.username}&gt;
-        </span>
-        <CollapsibleContent
-          content={message.content}
-          className="text-neutral-300"
-        />
-      </div>
-
-      {/* Thread indicator / reply button and tags */}
-      <div className="ml-2 mt-1 sm:opacity-0 sm:group-hover:opacity-100 opacity-100">
-        {/* Icon row with grid to allow tag selector to span full width below */}
-        <div className="grid grid-cols-[auto_auto_auto_1fr] gap-3 items-start">
-          <button
-            onClick={() => onOpenThread(message.id)}
-            className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={() => onOpenEditor(message.id)}
-            className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
-            title="Edit in Lexical"
-          >
-            <FileText className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Tag editor - button in row, expanded panel below */}
-          <InlinePillsVariant
-            messageId={message.id}
-            existingTags={globalTags}
-            messageTags={message.tags || []}
-            onAddTag={(tag) => onAddTag(message.id, tag)}
-            onRemoveTag={(tag) => onRemoveTag(message.id, tag)}
-          />
         </div>
       </div>
     </div>

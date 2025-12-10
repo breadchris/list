@@ -3,8 +3,6 @@ import { useRouter } from 'next/navigation';
 import { Content, Tag, contentRepository } from '@/lib/list/ContentRepository';
 import { useCreateContentMutation } from '@/hooks/list/useContentQueries';
 import { useAddTagToContentMutation, useCreateTagMutation } from '@/hooks/list/useTagMutations';
-import { LexicalContentInput, LexicalContentInputRef } from './LexicalContentInput';
-import { LexicalRichEditor, LexicalRichEditorRef } from './LexicalRichEditor';
 import { ChatService } from '@/lib/list/ChatService';
 import { ClaudeCodeService } from '@/lib/list/ClaudeCodeService';
 import { useToast } from './ToastProvider';
@@ -54,29 +52,23 @@ export const ContentInput: React.FC<ContentInputProps> = ({
       router.push(`/list/group/${groupId}/ai-chat`);
       return;
     }
-    // Open modal for rich text editor
-    if (action === 'rich-text') {
-      setShowRichTextModal(true);
-      return;
-    }
     // Otherwise handle internally
     setActiveAction(action);
   };
   const createContentMutation = useCreateContentMutation();
   const addTagMutation = useAddTagToContentMutation();
   const createTagMutation = useCreateTagMutation();
-  const lexicalInputRef = useRef<LexicalContentInputRef>(null);
-  const richEditorRef = useRef<LexicalRichEditorRef>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [inputValue, setInputValue] = useState('');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [showRichTextModal, setShowRichTextModal] = useState(false);
   const pendingAISubmitRef = useRef(false);
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const handleSubmit = async (text: string, mentions: string[] = []) => {
+  const handleSubmit = async (text: string) => {
     if (!text || (createContentMutation.isPending && !pendingAISubmitRef.current)) return;
 
-    console.log('Submitting content:', { text, mentions, activeAction, parentContentId });
+    console.log('Submitting content:', { text, activeAction, parentContentId });
 
     // If active action is AI chat, route to AI handler
     if (activeAction === 'ai-chat') {
@@ -119,45 +111,13 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         parent_content_id: parentContentId,
       });
 
-      // Apply tags from mentions
-      if (mentions.length > 0) {
-        for (const mentionName of mentions) {
-          try {
-            // Find tag by name (case-insensitive)
-            let tag = availableTags.find(t => t.name.toLowerCase() === mentionName.toLowerCase());
-
-            // If tag doesn't exist, create it
-            if (!tag) {
-              tag = await createTagMutation.mutateAsync({
-                name: mentionName.toLowerCase(),
-                group_id: groupId
-              });
-            }
-
-            // Apply tag to content
-            await addTagMutation.mutateAsync({
-              contentId: newContent.id,
-              tagId: tag.id
-            });
-          } catch (tagError) {
-            console.error(`Error applying tag "${mentionName}":`, tagError);
-            // Continue with other tags even if one fails
-          }
-        }
-      }
-
       onContentAdded(newContent);
-      // Clear the Lexical editor content
-      lexicalInputRef.current?.clear();
+      // Clear the input
+      setInputValue('');
     } catch (error) {
       console.error('Error creating content:', error);
       // Error is already handled by the mutation
     }
-  };
-
-  const handleRichTextSubmit = async (text: string, mentions: string[] = []) => {
-    await handleSubmit(text, mentions);
-    setShowRichTextModal(false);
   };
 
   const handleChatSubmit = async (text: string, chatContentId: string) => {
@@ -195,7 +155,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
       onContentAdded(userMessage);
       setActiveAction(null);
-      lexicalInputRef.current?.clear();
+      setInputValue('');
 
     } catch (error) {
       console.error('Error in chat:', error);
@@ -304,7 +264,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
       onContentAdded(userPrompt);
       setActiveAction(null);
-      lexicalInputRef.current?.clear();
+      setInputValue('');
 
     } catch (error) {
       console.error('Error in Claude Code execution:', error);
@@ -361,7 +321,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
       onContentAdded(chatContent);
       setActiveAction(null);
-      lexicalInputRef.current?.clear();
+      setInputValue('');
 
       // Navigate to the new chat
       if (onNavigate) {
@@ -438,7 +398,7 @@ export const ContentInput: React.FC<ContentInputProps> = ({
 
       onContentAdded(claudeCodeContent);
       setActiveAction(null);
-      lexicalInputRef.current?.clear();
+      setInputValue('');
 
       // Navigate to the new Claude Code session
       if (onNavigate) {
@@ -513,15 +473,20 @@ export const ContentInput: React.FC<ContentInputProps> = ({
         <div className="flex items-center space-x-3 max-w-4xl mx-auto">
           {/* Text Input */}
           <div className="flex-1">
-            <LexicalContentInput
-              ref={lexicalInputRef}
-              onSubmit={handleSubmit}
+            <textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(inputValue);
+                }
+              }}
               disabled={createContentMutation.isPending || isGeneratingAI}
-              parentContentId={parentContentId}
-              focusedParentName={focusedParentName}
-              onClearFocus={onClearFocus}
-              availableTags={availableTags}
-              activeAction={activeAction}
+              placeholder={focusedParentName ? `Reply to "${focusedParentName}"...` : "What's on your mind?"}
+              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={1}
             />
           </div>
         </div>
@@ -560,32 +525,6 @@ export const ContentInput: React.FC<ContentInputProps> = ({
             <MapInput
               onSave={handleMapSaved}
               onCancel={() => setActiveAction(null)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Rich Text Editor Modal */}
-      {showRichTextModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-white">Rich Text Editor</h2>
-              <button
-                onClick={() => setShowRichTextModal(false)}
-                className="text-gray-400 hover:text-white text-2xl font-bold w-8 h-8 flex items-center justify-center"
-              >
-                ✕
-              </button>
-            </div>
-            <LexicalRichEditor
-              ref={richEditorRef}
-              onSubmit={handleRichTextSubmit}
-              disabled={createContentMutation.isPending || isGeneratingAI}
-              availableTags={availableTags}
-              showSubmitButton={true}
-              submitButtonText="Submit"
-              placeholder="Start writing..."
             />
           </div>
         </div>

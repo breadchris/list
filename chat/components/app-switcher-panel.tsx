@@ -1,8 +1,11 @@
 "use client";
 
-import { X, Check, Home } from "lucide-react";
+import { X, Check, Home, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getAllApps } from "@/lib/apps.config";
+import { useUsername, clearUsername } from "./username-prompt";
+import { PublishGroupSelector } from "./PublishGroupSelector";
+import { useAppSettings } from "./AppSettingsContext";
 
 interface AppSwitcherPanelProps {
   isOpen: boolean;
@@ -17,6 +20,8 @@ export function AppSwitcherPanel({
 }: AppSwitcherPanelProps) {
   const router = useRouter();
   const apps = getAllApps();
+  const username = useUsername();
+  const settingsComponent = useAppSettings();
 
   const handleAppClick = (appId: string) => {
     router.push(`/${appId}`);
@@ -55,8 +60,15 @@ export function AppSwitcherPanel({
           </button>
         </div>
 
+        {/* App-specific settings component */}
+        {settingsComponent && (
+          <div className="border-b border-neutral-800 bg-neutral-950">
+            {settingsComponent}
+          </div>
+        )}
+
         {/* Apps list */}
-        <div className="p-4 space-y-2 overflow-y-auto h-[calc(100%-60px)]">
+        <div className="p-4 space-y-2 overflow-y-auto h-[calc(100%-120px)]">
           {/* Home/All Apps button */}
           <button
             onClick={handleHomeClick}
@@ -129,6 +141,21 @@ export function AppSwitcherPanel({
             );
           })}
         </div>
+
+        {/* User section */}
+        {username && (
+          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-neutral-800 bg-neutral-950">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center">
+                <User className="w-4 h-4 text-neutral-400" />
+              </div>
+              <div className="flex-1">
+                <div className="text-sm text-neutral-300">{username}</div>
+              </div>
+              <PublishGroupSelector />
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

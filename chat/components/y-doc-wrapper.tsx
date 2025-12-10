@@ -9,24 +9,35 @@ interface YDocWrapperProps {
 
 export function YDocWrapper({ docId, children }: YDocWrapperProps) {
   // Create auth function with access to docId
+  // Returns null on error to allow offline mode to work
   const getClientToken = async () => {
-    const response = await fetch("/api/y-sweet-auth", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ docId }),
-    });
+    try {
+      const response = await fetch("/api/y-sweet-auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ docId }),
+      });
 
-    if (!response.ok) {
-      throw new Error("Failed to get Y-Sweet authentication token");
+      if (!response.ok) {
+        console.warn("Y-Sweet auth failed, using offline mode");
+        return null;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.warn("Y-Sweet auth error, using offline mode:", error);
+      return null;
     }
-
-    return await response.json();
   };
 
   return (
-    <YDocProvider docId={docId} authEndpoint={getClientToken}>
+    <YDocProvider
+      docId={docId}
+      authEndpoint={getClientToken}
+      offlineSupport={true}
+    >
       {children}
     </YDocProvider>
   );

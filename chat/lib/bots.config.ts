@@ -48,7 +48,7 @@ export const bots: BotConfig[] = [
 Keep your responses concise and conversational - this is a chat, not an essay.
 Be friendly but not overly enthusiastic. Match the tone of the conversation.
 If you don't know something, say so briefly.`,
-    model: "gpt-4o-mini",
+    model: "gpt-5",
     context_mode: "thread",
     max_context_messages: 20,
   },
@@ -65,7 +65,7 @@ Include:
 - Approximate prep and cook times
 
 Keep recipes practical for home cooks. If the request is vague, ask clarifying questions or suggest popular options.`,
-    model: "gpt-4o-mini",
+    model: "gpt-5",
     context_mode: "none",
   },
   {
@@ -75,7 +75,7 @@ Keep recipes practical for home cooks. If the request is vague, ask clarifying q
     system_prompt: `You are a list generator. Given a topic or request, generate a list of relevant items.
 Each item should be concise but informative. Generate between 3-10 items depending on the topic.
 Focus on variety and usefulness. Do not include numbering - just provide the item content.`,
-    model: "gpt-4o-mini",
+    model: "gpt-5",
     context_mode: "none",
     response_type: "object",
     schema_id: "list",
@@ -221,7 +221,7 @@ When given a description of plans, activities, or schedules, extract and generat
 Two events:
 1. Title: "Dentist Appointment", Date: "2024-12-05", Start: "14:00", End: "15:00"
 2. Title: "Dinner with Sarah", Date: "2024-12-05", Start: "19:00", Location: "Olive Garden"`,
-    model: "gpt-4o-mini",
+    model: "gpt-5",
     context_mode: "thread",
     max_context_messages: 10,
     response_type: "object",
@@ -330,7 +330,7 @@ Response: {"step": "collect_personality", "bot_mention": "helper", "bot_descript
 
 User: "friendly and concise"
 Response: {"step": "confirm", "bot_mention": "helper", "bot_description": "helps with code", "personality_lines": ["friendly", "concise"], "show_create_button": true, "message": "Here's what I've got..."}`,
-    model: "gpt-4o-mini",
+    model: "gpt-5",
     context_mode: "thread",
     max_context_messages: 20,
     response_type: "object",

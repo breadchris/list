@@ -1,29 +1,28 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Content, contentRepository } from '@/lib/list/ContentRepository';
+import { contentRepository } from '@/lib/list/ContentRepository';
 import { getCurrentUser } from '@/lib/list/SupabaseClient';
-import { TellerEnrollmentView } from '@/components/list/TellerEnrollmentView';
 import { TellerConnectButton } from '@/components/list/TellerConnectButton';
-import { Wallet, RefreshCw, Plus } from 'lucide-react';
+import { UnifiedTransactionFeed } from '@/components/list/UnifiedTransactionFeed';
+import { MonthlyView } from '@/components/list/MonthlyView';
+import { Wallet, Plus } from 'lucide-react';
+
+type ViewMode = 'daily' | 'monthly';
 
 interface Group {
   id: string;
   name: string;
 }
 
-interface TellerAccountMetadata {
-  balance_current?: number;
-  currency?: string;
-}
-
 export function MoneyAppInterface() {
   const [userId, setUserId] = useState<string | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-  const [enrollments, setEnrollments] = useState<Content[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>('daily');
 
   // Get user and groups on mount
   useEffect(() => {
@@ -60,56 +59,10 @@ export function MoneyAppInterface() {
     init();
   }, []);
 
-  // Fetch enrollments when selected group changes
-  useEffect(() => {
-    if (selectedGroup) {
-      fetchEnrollments(selectedGroup.id);
-    }
-  }, [selectedGroup]);
-
-  const fetchEnrollments = async (groupId: string) => {
-    try {
-      setLoading(true);
-
-      // Fetch all root-level content and filter for teller_enrollment
-      const allContent = await contentRepository.getContentByParent(groupId, null, 0, 100, 'chronological');
-      const tellerEnrollments = allContent.filter((item: Content) => item.type === 'teller_enrollment');
-
-      setEnrollments(tellerEnrollments);
-    } catch (err) {
-      console.error('Error fetching enrollments:', err);
-      setError('Failed to load bank connections');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleEnrollmentSuccess = useCallback(async () => {
-    // Refresh enrollments after new bank connection
-    if (selectedGroup) {
-      await fetchEnrollments(selectedGroup.id);
-    }
-  }, [selectedGroup]);
-
-  const handleRefresh = useCallback(async () => {
-    if (selectedGroup) {
-      await fetchEnrollments(selectedGroup.id);
-    }
-  }, [selectedGroup]);
-
-  // Calculate total balance across all accounts in all enrollments
-  const totalBalance = enrollments.reduce((total, enrollment) => {
-    // This would need to sum up all child accounts' balances
-    // For now, just show a placeholder - the actual balance comes from child accounts
-    return total;
-  }, 0);
-
-  const formatCurrency = (amount: number, currency: string = 'USD') => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency,
-    }).format(amount);
-  };
+  const handleEnrollmentSuccess = useCallback(() => {
+    // Trigger refresh of unified feed
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   if (loading && !userId) {
     return (
@@ -137,62 +90,74 @@ export function MoneyAppInterface() {
     <div className="h-full bg-neutral-950 overflow-auto">
       <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center">
-              <Wallet className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center">
+              <Wallet className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Money</h1>
-              <p className="text-neutral-400 text-sm">Track your finances</p>
+              <h1 className="text-xl font-bold text-white">Save</h1>
+              <p className="text-neutral-500 text-xs">Track your finances</p>
             </div>
           </div>
+
+          {/* Controls Row */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            {/* Group Selector (compact) */}
+            {groups.length > 1 && (
+              <select
+                value={selectedGroup?.id || ''}
+                onChange={(e) => {
+                  const group = groups.find(g => g.id === e.target.value);
+                  setSelectedGroup(group || null);
+                }}
+                className="bg-neutral-800 border border-neutral-700 text-neutral-300 text-sm rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                {groups.map(group => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Connect Bank Button (compact) */}
+            {userId && selectedGroup && (
+              <TellerConnectButton
+                groupId={selectedGroup.id}
+                userId={userId}
+                onSuccess={handleEnrollmentSuccess}
+                className="!p-2 !bg-neutral-800 hover:!bg-neutral-700 !border-neutral-700"
+              >
+                <Plus className="w-4 h-4" />
+              </TellerConnectButton>
+            )}
+
+            {/* View Toggle */}
+            <div className="flex bg-neutral-800 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('daily')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  viewMode === 'daily'
+                    ? 'bg-neutral-700 text-white'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Daily
+              </button>
+              <button
+                onClick={() => setViewMode('monthly')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  viewMode === 'monthly'
+                    ? 'bg-neutral-700 text-white'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Monthly
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* Group Selector */}
-        {groups.length > 1 && (
-          <div className="mb-6">
-            <label className="block text-sm text-neutral-400 mb-2">Group</label>
-            <select
-              value={selectedGroup?.id || ''}
-              onChange={(e) => {
-                const group = groups.find(g => g.id === e.target.value);
-                setSelectedGroup(group || null);
-              }}
-              className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              {groups.map(group => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Connect Bank Button */}
-        {userId && selectedGroup && (
-          <div className="mb-6">
-            <TellerConnectButton
-              groupId={selectedGroup.id}
-              userId={userId}
-              onSuccess={handleEnrollmentSuccess}
-              className="w-full justify-center"
-            >
-              <Plus className="w-4 h-4" />
-              Connect Bank Account
-            </TellerConnectButton>
-          </div>
-        )}
 
         {/* Error Message */}
         {error && (
@@ -201,35 +166,20 @@ export function MoneyAppInterface() {
           </div>
         )}
 
-        {/* Loading State */}
-        {loading && enrollments.length === 0 && (
-          <div className="text-center py-12">
-            <div className="animate-spin h-8 w-8 border-2 border-emerald-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="text-neutral-400">Loading your accounts...</p>
-          </div>
+        {/* Transaction Views */}
+        {userId && selectedGroup && viewMode === 'daily' && (
+          <UnifiedTransactionFeed
+            key={refreshKey}
+            groupId={selectedGroup.id}
+            userId={userId}
+          />
         )}
-
-        {/* Empty State */}
-        {!loading && enrollments.length === 0 && (
-          <div className="text-center py-12">
-            <Wallet className="w-16 h-16 text-neutral-700 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-white mb-2">No banks connected</h2>
-            <p className="text-neutral-400 mb-6">
-              Connect your bank accounts to track your finances
-            </p>
-          </div>
-        )}
-
-        {/* Enrollments List */}
-        {enrollments.length > 0 && (
-          <div className="space-y-4">
-            {enrollments.map(enrollment => (
-              <TellerEnrollmentView
-                key={enrollment.id}
-                content={enrollment}
-              />
-            ))}
-          </div>
+        {userId && selectedGroup && viewMode === 'monthly' && (
+          <MonthlyView
+            key={`monthly-${refreshKey}`}
+            groupId={selectedGroup.id}
+            userId={userId}
+          />
         )}
       </div>
     </div>

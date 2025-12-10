@@ -12,7 +12,6 @@ import { RefundPolicy } from './RefundPolicy';
 import { PricingPage } from './PricingPage';
 import { AdminPage } from './AdminPage';
 import { UserSettingsPage } from './UserSettingsPage';
-import BranchingChatPage from './BranchingChatPage';
 
 /**
  * Main App component that wraps the application with providers and React Router
@@ -30,7 +29,6 @@ export const App: React.FC = () => {
               <Route path="/group/:groupId" element={<ListApp />} />
               <Route path="/group/:groupId/content/:contentId" element={<ListApp />} />
               <Route path="/group/:groupId/settings" element={<GroupSettingsPage />} />
-              <Route path="/group/:groupId/chat" element={<BranchingChatPage />} />
               <Route path="/invite/:joinCode" element={<ListApp />} />
 
               {/* Public content route */}

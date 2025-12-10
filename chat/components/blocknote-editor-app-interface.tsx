@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useYDoc, useYjsProvider } from "@y-sweet/react";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
-import { X } from "lucide-react";
+import { X, Upload, Check, Loader2, ExternalLink } from "lucide-react";
 import { supabase } from "./SupabaseClient";
+import { usePublishGroupOptional } from "./PublishGroupContext";
+import { contentRepository } from "@/lib/list/ContentRepository";
 
 import {
   FormattingToolbar,
@@ -72,6 +74,37 @@ export function BlockNoteEditorAppInterface({
   const [userName] = useState(() => generateUserName());
   const [userColor] = useState(() => generateUserColor());
 
+  // Publish state
+  const publishGroupContext = usePublishGroupOptional();
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
+  const [publishedContentId, setPublishedContentId] = useState<string | null>(null);
+
+  // Y.js Map for storing publish metadata (persists content_id across sessions)
+  const publishMetaMap = useMemo(() => {
+    if (!doc || !messageId) return null;
+    return doc.getMap(`publishMeta-${messageId}`);
+  }, [doc, messageId]);
+
+  // Load published content_id from Y.js Map
+  useEffect(() => {
+    if (!publishMetaMap) return;
+
+    const loadContentId = () => {
+      const contentId = publishMetaMap.get("content_id") as string | undefined;
+      if (contentId) {
+        setPublishedContentId(contentId);
+      }
+    };
+
+    loadContentId();
+
+    // Listen for changes (from other collaborators)
+    const observer = () => loadContentId();
+    publishMetaMap.observe(observer);
+    return () => publishMetaMap.unobserve(observer);
+  }, [publishMetaMap]);
+
   // Determine if we're in panel mode (has messageId and onClose)
   const isPanelMode = Boolean(messageId && onClose);
 
@@ -100,6 +133,77 @@ export function BlockNoteEditorAppInterface({
 
     return urlData.publicUrl;
   }, [messageId]);
+
+  // Handle publish/update content
+  const handlePublish = useCallback(async (editor: any) => {
+    if (!publishGroupContext?.selectedGroup) {
+      alert("Please select a group to publish to in the sidebar.");
+      return;
+    }
+
+    setIsPublishing(true);
+    setPublishSuccess(null);
+
+    try {
+      // Get blocks from BlockNote editor
+      const blocks = editor.document;
+      const data = editor.blocksToMarkdownLossy(blocks);
+
+      // Extract title from first heading or paragraph
+      let title = "Untitled";
+      for (const block of blocks) {
+        if (block.type === "heading" || block.type === "paragraph") {
+          const textContent = block.content?.[0]?.text;
+          if (textContent) {
+            title = textContent.slice(0, 100);
+            break;
+          }
+        }
+      }
+
+      if (publishedContentId) {
+        // Update existing content
+        await contentRepository.updateContent(publishedContentId, {
+          data,
+          metadata: {
+            title,
+            source_message_id: messageId,
+            updated_at: new Date().toISOString(),
+          },
+        });
+        const publicUrl = `${window.location.origin}/list/public/${publishedContentId}`;
+        setPublishSuccess(publicUrl);
+      } else {
+        // Create new content
+        const content = await contentRepository.createContent({
+          type: "markdown",
+          data,
+          group_id: publishGroupContext.selectedGroup.id,
+          metadata: {
+            title,
+            source_message_id: messageId,
+          },
+        });
+
+        // Mark as public
+        await contentRepository.toggleContentSharing(content.id, true);
+
+        // Store content_id in Y.js Map for persistence
+        if (publishMetaMap) {
+          publishMetaMap.set("content_id", content.id);
+        }
+        setPublishedContentId(content.id);
+
+        const publicUrl = `${window.location.origin}/list/public/${content.id}`;
+        setPublishSuccess(publicUrl);
+      }
+    } catch (error) {
+      console.error("Publish failed:", error);
+      alert("Failed to publish. Please try again.");
+    } finally {
+      setIsPublishing(false);
+    }
+  }, [publishGroupContext?.selectedGroup, publishedContentId, publishMetaMap, messageId]);
 
   // Create Yjs fragment for BlockNote collaboration
   const fragment = useMemo(() => {
@@ -148,12 +252,61 @@ export function BlockNoteEditorAppInterface({
               </span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="text-neutral-500 hover:text-neutral-300 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Published indicator */}
+            {publishedContentId && !publishSuccess && (
+              <span className="text-xs text-green-500 flex items-center gap-1">
+                <Check className="w-3 h-3" />
+                Published
+              </span>
+            )}
+
+            {/* Success message with link */}
+            {publishSuccess && (
+              <a
+                href={publishSuccess}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View
+              </a>
+            )}
+
+            {/* Publish button */}
+            <button
+              onClick={() => handlePublish(editor)}
+              disabled={isPublishing || !publishGroupContext?.selectedGroup}
+              className={`p-1.5 rounded transition-colors ${
+                isPublishing
+                  ? "text-neutral-500 cursor-not-allowed"
+                  : publishedContentId
+                    ? "text-green-500 hover:text-green-400"
+                    : "text-neutral-500 hover:text-neutral-300"
+              }`}
+              title={
+                !publishGroupContext?.selectedGroup
+                  ? "Select a group in the sidebar first"
+                  : publishedContentId
+                    ? "Update published content"
+                    : "Publish to selected group"
+              }
+            >
+              {isPublishing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Upload className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            <button
+              onClick={onClose}
+              className="text-neutral-500 hover:text-neutral-300 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Parent message context */}

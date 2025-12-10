@@ -1,0 +1,46 @@
+{
+  "" : {
+    "const-values" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/share-primary.swiftconstvalues",
+    "dependencies" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/share-primary.d",
+    "diagnostics" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/share-primary.dia",
+    "emit-module-dependencies" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/share-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/share-primary-emit-module.dia",
+    "pch" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/share-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/share-primary.swiftdeps"
+  },
+  "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/share.build/Release-iphoneos/share.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  },
+  "/Users/hacked/Documents/GitHub/list/app/share/ContentView.swift" : {
+    "index-unit-output-path" : "/share.build/Release-iphoneos/share.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/ContentView.o"
+  },
+  "/Users/hacked/Documents/GitHub/list/app/share/DebugView.swift" : {
+    "index-unit-output-path" : "/share.build/Release-iphoneos/share.build/Objects-normal/arm64/DebugView.o",
+    "llvm-bc" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/DebugView.bc",
+    "object" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/DebugView.o"
+  },
+  "/Users/hacked/Documents/GitHub/list/app/share/ShareViewController.swift" : {
+    "index-unit-output-path" : "/share.build/Release-iphoneos/share.build/Objects-normal/arm64/ShareViewController.o",
+    "llvm-bc" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/ShareViewController.bc",
+    "object" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/ShareViewController.o"
+  },
+  "/Users/hacked/Documents/GitHub/list/app/share/SharedURLManager.swift" : {
+    "index-unit-output-path" : "/share.build/Release-iphoneos/share.build/Objects-normal/arm64/SharedURLManager.o",
+    "llvm-bc" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/SharedURLManager.bc",
+    "object" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/SharedURLManager.o"
+  },
+  "/Users/hacked/Documents/GitHub/list/app/share/TestHelpers.swift" : {
+    "index-unit-output-path" : "/share.build/Release-iphoneos/share.build/Objects-normal/arm64/TestHelpers.o",
+    "llvm-bc" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/TestHelpers.bc",
+    "object" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/TestHelpers.o"
+  },
+  "/Users/hacked/Documents/GitHub/list/app/share/shareApp.swift" : {
+    "index-unit-output-path" : "/share.build/Release-iphoneos/share.build/Objects-normal/arm64/shareApp.o",
+    "llvm-bc" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/shareApp.bc",
+    "object" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/share.build/Objects-normal/arm64/shareApp.o"
+  }
+}

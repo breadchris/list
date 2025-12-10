@@ -106,7 +106,8 @@ export const ListApp: React.FC = () => {
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [newContent, setNewContent] = useState<Content | undefined>();
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
-  const [currentParentContent, setCurrentParentContent] = useState<Content | null>(null);
+  const [currentParentContent, setCurrentParentContent] =
+    useState<Content | null>(null);
   const [currentJsContent, setCurrentJsContent] = useState<Content | null>(
     null,
   );
@@ -2126,28 +2127,6 @@ export const ListApp: React.FC = () => {
   const workflowActions = useMemo(
     () => [
       {
-        id: "ai-chat",
-        name: "AI Chat",
-        description: "Start an AI conversation instantly",
-        icon: "💬",
-        onClick: () => {
-          console.log("💬 WorkflowAction onClick triggered for Quick AI Chat");
-          workflowActionsRef.current.handleQuickAIChat();
-        },
-      },
-      {
-        id: "ai-analyze",
-        name: "Analyze with AI",
-        description: "Ask AI to analyze and elaborate on selected content",
-        icon: "🧠",
-        onClick: () => {
-          console.log(
-            "🧠 WorkflowAction onClick triggered for AI Content Analysis",
-          );
-          workflowActionsRef.current.handleAIContentAnalysis();
-        },
-      },
-      {
         id: "claude-code",
         name: "Claude Code",
         description: "Execute coding tasks with Claude Code SDK",
@@ -2194,17 +2173,6 @@ export const ListApp: React.FC = () => {
         },
       },
       {
-        id: "libgen-search",
-        name: "Search Books",
-        description: "Search for books on Library Genesis",
-        icon: "📚",
-        category: ["search"],
-        onClick: () => {
-          console.log("📚 WorkflowAction onClick triggered for Libgen search");
-          workflowActionsRef.current.handleLibgenSearch();
-        },
-      },
-      {
         id: "youtube-annotate",
         name: "Annotate Video",
         description: "Add timestamps to YouTube videos",
@@ -2214,17 +2182,6 @@ export const ListApp: React.FC = () => {
             "🎞️ WorkflowAction onClick triggered for YouTube annotation",
           );
           workflowActionsRef.current.handleYouTubeAnnotation();
-        },
-      },
-      {
-        id: "tmdb-search",
-        name: "Search TMDb",
-        description: "Search The Movie Database and add results",
-        icon: "🎥",
-        category: ["search"],
-        onClick: () => {
-          console.log("🎥 WorkflowAction onClick triggered for TMDb search");
-          workflowActionsRef.current.handleTMDbSearch();
         },
       },
       {
@@ -3409,7 +3366,7 @@ export const ListApp: React.FC = () => {
                     )}
 
                     {/* Content List or JS Editor View */}
-                    {currentParentContent?.type === 'finance/account' ? (
+                    {currentParentContent?.type === "finance/account" ? (
                       <div className="flex-1 overflow-auto p-4">
                         <FinanceAccountView content={currentParentContent} />
                       </div>

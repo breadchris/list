@@ -1,25 +1,8 @@
 // Lambda client for calling the content API
 // Replaces Supabase Edge Function calls with Lambda endpoint
 
-// Build-time constant (injected by esbuild Define)
-const BUILD_TIME_LAMBDA_ENDPOINT = undefined;
-
-// Config cache (for runtime override in development)
-let configCache: { lambda_endpoint?: string } | null = null;
-
-async function getConfig() {
-  if (configCache) return configCache;
-
-  try {
-    const response = await fetch("/api/config");
-    configCache = await response.json();
-    return configCache;
-  } catch (error) {
-    console.error("Failed to load config:", error);
-    // Fallback to build-time constant if available
-    return { lambda_endpoint: BUILD_TIME_LAMBDA_ENDPOINT };
-  }
-}
+// Use Next.js public environment variable directly
+const LAMBDA_ENDPOINT = process.env.NEXT_PUBLIC_LAMBDA_ENDPOINT;
 
 export interface LambdaRequest {
   action: string;
@@ -41,11 +24,11 @@ export class LambdaClient {
    */
   static async invoke(request: LambdaRequest): Promise<LambdaResponse> {
     try {
-      const config = await getConfig();
-      // Priority: runtime config > build-time constant
-      const endpoint = config.lambda_endpoint || BUILD_TIME_LAMBDA_ENDPOINT;
+      if (!LAMBDA_ENDPOINT) {
+        throw new Error("Lambda endpoint not configured - set NEXT_PUBLIC_LAMBDA_ENDPOINT");
+      }
 
-      const response = await fetch(endpoint, {
+      const response = await fetch(LAMBDA_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,11 +60,11 @@ export class LambdaClient {
    */
   static async testConnection(): Promise<boolean> {
     try {
-      const config = await getConfig();
-      // Priority: runtime config > build-time constant
-      const endpoint = config.lambda_endpoint || BUILD_TIME_LAMBDA_ENDPOINT;
+      if (!LAMBDA_ENDPOINT) {
+        return false;
+      }
 
-      const response = await fetch(endpoint, {
+      const response = await fetch(LAMBDA_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

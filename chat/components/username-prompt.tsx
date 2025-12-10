@@ -29,11 +29,6 @@ export function UsernamePrompt({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleChangeUsername = () => {
-    setUsername(null);
-    setInputValue("");
-  };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -74,16 +69,7 @@ export function UsernamePrompt({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return (
-    <div className="relative">
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-        <span className="text-sm text-muted-foreground">
-          <strong onClick={handleChangeUsername}>{username}</strong>
-        </span>
-      </div>
-      {children}
-    </div>
-  );
+  return <>{children}</>;
 }
 
 export function useUsername(): string | null {
@@ -97,4 +83,9 @@ export function useUsername(): string | null {
   }, []);
 
   return username;
+}
+
+export function clearUsername(): void {
+  localStorage.removeItem(USERNAME_KEY);
+  window.location.reload();
 }

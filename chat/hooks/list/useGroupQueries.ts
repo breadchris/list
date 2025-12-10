@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Group, InviteStats, InviteGraphNode, contentRepository } from '@/lib/list/ContentRepository';
 import { QueryKeys, QueryInvalidation } from './queryKeys';
+import { supabase } from '@/lib/list/SupabaseClient';
 
 /**
  * Hook for fetching user groups with caching
@@ -9,6 +10,10 @@ export const useGroupsQuery = (options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: QueryKeys.groups,
     queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return []; // Return empty for unauthenticated users
+      }
       return await contentRepository.getUserGroups();
     },
     enabled: options?.enabled !== false,

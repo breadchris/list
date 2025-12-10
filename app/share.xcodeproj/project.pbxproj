@@ -17,9 +17,16 @@
 		4C5AE8792E8B657E005D092E /* setup_testing.sh in Resources */ = {isa = PBXBuildFile; fileRef = 4C5AE8782E8B657E005D092E /* setup_testing.sh */; };
 		4C6D284A2CE5CCAF00FCED19 /* shareApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6D28492CE5CCAF00FCED19 /* shareApp.swift */; };
 		4C6D284C2CE5CCAF00FCED19 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */; };
+		4CAPP00112EE13066004C3D24 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAPP00012EE13066004C3D24 /* AppDelegate.swift */; };
+		4CINB00112EE13066004C3D24 /* InboxDrainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CINB00012EE13066004C3D24 /* InboxDrainer.swift */; };
+		4CKEY00112EE13066004C3D24 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CKEY00012EE13066004C3D24 /* KeychainTokenStore.swift */; };
+		4CSHR00112EE13066004C3D24 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CSHR00012EE13066004C3D24 /* SharedInbox.swift */; };
+		4CSIT00112EE13066004C3D24 /* ShareItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CSIT00012EE13066004C3D24 /* ShareItem.swift */; };
 		4C6D284E2CE5CCB000FCED19 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C6D284D2CE5CCB000FCED19 /* Assets.xcassets */; };
 		4C6D28512CE5CCB000FCED19 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C6D28502CE5CCB000FCED19 /* Preview Assets.xcassets */; };
 		4C6D285E2CE5CCE100FCED19 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6D285D2CE5CCE100FCED19 /* ShareViewController.swift */; };
+		4CEXT00112EE13066004C3D24 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEXT00012EE13066004C3D24 /* SharedInbox.swift */; };
+		4CEXT00122EE13066004C3D24 /* ShareItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEXT00022EE13066004C3D24 /* ShareItem.swift */; };
 		4C6D28612CE5CCE200FCED19 /* MainInterface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4C6D285F2CE5CCE200FCED19 /* MainInterface.storyboard */; };
 		4C6D28652CE5CCE200FCED19 /* ext.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4C6D285B2CE5CCE100FCED19 /* ext.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -70,6 +77,13 @@
 		4C6D28622CE5CCE200FCED19 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		4CC4D5502E6BF5FC007C1BF4 /* share.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = share.entitlements; sourceTree = "<group>"; };
 		4CC4D5512E6BF6FC007C1BF4 /* ext.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ext.entitlements; sourceTree = "<group>"; };
+		4CEXT00012EE13066004C3D24 /* SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedInbox.swift; sourceTree = "<group>"; };
+		4CEXT00022EE13066004C3D24 /* ShareItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareItem.swift; sourceTree = "<group>"; };
+		4CAPP00012EE13066004C3D24 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		4CINB00012EE13066004C3D24 /* InboxDrainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxDrainer.swift; sourceTree = "<group>"; };
+		4CKEY00012EE13066004C3D24 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
+		4CSHR00012EE13066004C3D24 /* SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedInbox.swift; sourceTree = "<group>"; };
+		4CSIT00012EE13066004C3D24 /* ShareItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareItem.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,6 +128,11 @@
 				4C5C09AB2EE13066004C3D24 /* Info.plist */,
 				4CC4D5502E6BF5FC007C1BF4 /* share.entitlements */,
 				4C6D28492CE5CCAF00FCED19 /* shareApp.swift */,
+				4CAPP00012EE13066004C3D24 /* AppDelegate.swift */,
+				4CINB00012EE13066004C3D24 /* InboxDrainer.swift */,
+				4CKEY00012EE13066004C3D24 /* KeychainTokenStore.swift */,
+				4CSHR00012EE13066004C3D24 /* SharedInbox.swift */,
+				4CSIT00012EE13066004C3D24 /* ShareItem.swift */,
 				4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */,
 				4C6D284D2CE5CCB000FCED19 /* Assets.xcassets */,
 				4C6D284F2CE5CCB000FCED19 /* Preview Content */,
@@ -143,6 +162,8 @@
 			children = (
 				4CC4D5512E6BF6FC007C1BF4 /* ext.entitlements */,
 				4C6D285D2CE5CCE100FCED19 /* ShareViewController.swift */,
+				4CEXT00012EE13066004C3D24 /* SharedInbox.swift */,
+				4CEXT00022EE13066004C3D24 /* ShareItem.swift */,
 				4C6D285F2CE5CCE200FCED19 /* MainInterface.storyboard */,
 				4C6D28622CE5CCE200FCED19 /* Info.plist */,
 			);
@@ -260,6 +281,11 @@
 				4C6D284C2CE5CCAF00FCED19 /* ContentView.swift in Sources */,
 				4C5AE86C2E8B6417005D092E /* SharedURLManager.swift in Sources */,
 				4C6D284A2CE5CCAF00FCED19 /* shareApp.swift in Sources */,
+				4CAPP00112EE13066004C3D24 /* AppDelegate.swift in Sources */,
+				4CINB00112EE13066004C3D24 /* InboxDrainer.swift in Sources */,
+				4CKEY00112EE13066004C3D24 /* KeychainTokenStore.swift in Sources */,
+				4CSHR00112EE13066004C3D24 /* SharedInbox.swift in Sources */,
+				4CSIT00112EE13066004C3D24 /* ShareItem.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -268,6 +294,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				4C6D285E2CE5CCE100FCED19 /* ShareViewController.swift in Sources */,
+				4CEXT00112EE13066004C3D24 /* SharedInbox.swift in Sources */,
+				4CEXT00122EE13066004C3D24 /* ShareItem.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

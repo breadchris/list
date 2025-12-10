@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'share' in project 'share'
+➜ Explicit dependency on target 'ext' in project 'share'
+Target 'ext' in project 'share' (no dependencies)

@@ -1,0 +1,16 @@
+{
+  "" : {
+    "const-values" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ext-primary.swiftconstvalues",
+    "dependencies" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ext-primary.d",
+    "diagnostics" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ext-primary.dia",
+    "emit-module-dependencies" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ext-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ext-primary-emit-module.dia",
+    "pch" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ext-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ext-primary.swiftdeps"
+  },
+  "/Users/hacked/Documents/GitHub/list/app/ext/ShareViewController.swift" : {
+    "index-unit-output-path" : "/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ShareViewController.o",
+    "llvm-bc" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ShareViewController.bc",
+    "object" : "/Users/hacked/Documents/GitHub/list/app/build/share.build/Release-iphoneos/ext.build/Objects-normal/arm64/ShareViewController.o"
+  }
+}
