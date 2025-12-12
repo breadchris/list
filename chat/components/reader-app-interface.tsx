@@ -1,63 +1,37 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { ReactReader, ReactReaderStyle } from "react-reader";
-import type { Contents, Rendition } from "epubjs";
-import { useYjsProvider } from "@y-sweet/react";
-import * as Y from "yjs";
-import { BookOpen, Upload, X } from "lucide-react";
+import type { Rendition } from "epubjs";
+import { BookOpen, Upload } from "lucide-react";
 import { ReaderSettingsPanel } from "./ReaderSettingsPanel";
+import { AppSwitcherButton } from "./app-switcher-button";
 
-interface EpubSelection {
-  text: string;
-  cfiRange: string;
-  userId: string;
-  color: string;
-  timestamp: number;
-  epubUrl: string;
-}
-
-interface ReadingProgress {
-  location: string;
-  lastRead: number;
-  bookName: string;
-}
-
-// Generate a random user color
-const generateUserColor = () => {
-  const colors = [
-    "#FF6B6B",
-    "#4ECDC4",
-    "#45B7D1",
-    "#FFA07A",
-    "#98D8C8",
-    "#F7DC6F",
-    "#BB8FCE",
-    "#85C1E2",
-    "#F8B739",
-    "#52B788",
-  ];
-  return colors[Math.floor(Math.random() * colors.length)];
+// iOS status bar control for immersive reading
+const setStatusBarHidden = (hidden: boolean) => {
+  if (typeof window !== "undefined") {
+    (window as any).setStatusBarHidden?.(hidden);
+  }
 };
 
-export function ReaderAppInterface() {
-  const ysweetProvider = useYjsProvider();
-  const [userColor] = useState(() => generateUserColor());
+interface ReaderAppInterfaceProps {
+  onOpenAppSwitcher?: () => void;
+}
+
+export function ReaderAppInterface({ onOpenAppSwitcher }: ReaderAppInterfaceProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [epubUrl, setEpubUrl] = useState<string | null>(null);
   const [rendition, setRendition] = useState<Rendition | undefined>(undefined);
   const [location, setLocation] = useState<string | number>(0);
-  const [currentSelection, setCurrentSelection] =
-    useState<EpubSelection | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [bookName, setBookName] = useState<string | null>(null);
-  const [bookIdentifier, setBookIdentifier] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const locationSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const touchStartX = useRef<number>(0);
   const touchEndX = useRef<number>(0);
+  const [showControls, setShowControls] = useState(false);
+  const hideControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load EPUB from remote URL with caching
   const loadRemoteEpub = async (fileUrl: string) => {
@@ -79,7 +53,6 @@ export function ReaderAppInterface() {
         setUploadProgress(100);
         setEpubUrl(objectUrl);
         setIsLoaded(true);
-        setBookIdentifier(fileUrl);
 
         const urlPath = new URL(fileUrl).pathname;
         const fileName = urlPath.split("/").pop() || "Book";
@@ -134,7 +107,6 @@ export function ReaderAppInterface() {
       setUploadProgress(100);
       setEpubUrl(objectUrl);
       setIsLoaded(true);
-      setBookIdentifier(fileUrl);
 
       const urlPath = new URL(fileUrl).pathname;
       const fileName = urlPath.split("/").pop() || "Book";
@@ -159,188 +131,15 @@ export function ReaderAppInterface() {
     }
   }, []);
 
-  // Get Yjs doc and awareness
-  const awareness = ysweetProvider?.awareness;
-  const doc = awareness?.doc;
-
-  // Create shared arrays for highlights and epub URL
-  const highlightsArray = useMemo(() => {
-    if (!doc) return null;
-    return doc.getArray<EpubSelection>("highlights");
-  }, [doc]);
-
-  const sharedState = useMemo(() => {
-    if (!doc) return null;
-    return doc.getMap("readerState");
-  }, [doc]);
-
-  // Load epub URL from shared state or restore last opened book
+  // Hide iOS status bar when reading, show when leaving
   useEffect(() => {
-    if (!sharedState) return;
-
-    // Check if we already have a book loaded (from URL param)
-    const params = new URLSearchParams(window.location.search);
-    const hasUrlParam = params.get("fileUrl");
-
-    // Debug: print current state
-    const lastBook = sharedState.get("lastOpenedBook") as string | undefined;
-    const progress = sharedState.get("readingProgress") as Record<string, ReadingProgress> | undefined;
-    console.log("[Reader] Restore check:", {
-      hasUrlParam,
-      isLoaded,
-      uploading,
-      lastOpenedBook: lastBook,
-      readingProgress: progress,
-      currentBookIdentifier: sharedState.get("currentBookIdentifier"),
-    });
-
-    if (!hasUrlParam && !isLoaded && !uploading) {
-      // No URL param - check for last opened book
-      if (lastBook && progress?.[lastBook]) {
-        console.log("[Reader] Restoring last book:", lastBook, "with progress:", progress[lastBook]);
-        // For URL-based books, we can restore them by re-fetching
-        if (!lastBook.startsWith("upload:")) {
-          loadRemoteEpub(lastBook);
-          return;
-        }
-        // Note: For uploaded books, we can't restore without the file
-        // We just show the upload UI again
-      }
+    if (isLoaded && epubUrl) {
+      setStatusBarHidden(true);
     }
-
-    // Listen for changes (Yjs sync or other tabs/users)
-    const observer = () => {
-      // Check for epubUrl changes (collaborative loading)
-      const updatedUrl = sharedState.get("epubUrl") as string | undefined;
-      if (updatedUrl && updatedUrl !== epubUrl) {
-        setEpubUrl(updatedUrl);
-        setIsLoaded(true);
-        return;
-      }
-
-      // Check for lastOpenedBook (restore after Yjs sync)
-      // Only trigger if we haven't loaded a book yet
-      if (!hasUrlParam && !isLoaded && !uploading) {
-        const syncedLastBook = sharedState.get("lastOpenedBook") as string | undefined;
-        const syncedProgress = sharedState.get("readingProgress") as Record<string, ReadingProgress> | undefined;
-        if (syncedLastBook && syncedProgress?.[syncedLastBook] && !syncedLastBook.startsWith("upload:")) {
-          console.log("[Reader] Observer: Restoring after Yjs sync:", syncedLastBook);
-          loadRemoteEpub(syncedLastBook);
-        }
-      }
-    };
-
-    sharedState.observe(observer);
-    return () => sharedState.unobserve(observer);
-  }, [sharedState, epubUrl, isLoaded, uploading]);
-
-  // Restore reading progress when book and sharedState are ready
-  useEffect(() => {
-    if (!sharedState || !bookIdentifier) return;
-
-    // Sync bookIdentifier to sharedState (for URL-based books loaded before sharedState was ready)
-    const currentSavedIdentifier = sharedState.get("currentBookIdentifier") as string | undefined;
-    if (currentSavedIdentifier !== bookIdentifier) {
-      sharedState.set("currentBookIdentifier", bookIdentifier);
-    }
-
-    const progress = sharedState.get("readingProgress") as Record<string, ReadingProgress> | undefined;
-    if (progress?.[bookIdentifier]) {
-      const savedProgress = progress[bookIdentifier];
-      setLocation(savedProgress.location);
-      if (savedProgress.bookName && !bookName) {
-        setBookName(savedProgress.bookName);
-      }
-    }
-  }, [sharedState, bookIdentifier, bookName]);
-
-  // Render all highlights when rendition is ready or highlights change
-  useEffect(() => {
-    if (!rendition || !highlightsArray || !epubUrl) return;
-
-    // Filter highlights to only show ones for the current book
-    const highlights = highlightsArray.toArray().filter(h => h.epubUrl === epubUrl);
-
-    // Clear existing highlights (using type assertion - epubjs accepts undefined at runtime)
-    rendition.annotations.remove(undefined as unknown as string, "highlight");
-
-    // Re-add all highlights
-    highlights.forEach((highlight) => {
-      const color = highlight.color || "#FCD34D"; // yellow-300
-      rendition.annotations.add(
-        "highlight",
-        highlight.cfiRange,
-        {},
-        undefined,
-        "hl",
-        {
-          fill: color,
-          "fill-opacity": "0.3",
-          "mix-blend-mode": "multiply",
-        },
-      );
-    });
-
-    // Listen for changes
-    const observer = () => {
-      // Filter to only show highlights for the current book
-      const updatedHighlights = highlightsArray.toArray().filter(h => h.epubUrl === epubUrl);
-
-      // Clear and re-render all highlights
-      rendition.annotations.remove(undefined as unknown as string, "highlight");
-      updatedHighlights.forEach((highlight) => {
-        const color = highlight.color || "#FCD34D";
-        rendition.annotations.add(
-          "highlight",
-          highlight.cfiRange,
-          {},
-          undefined,
-          "hl",
-          {
-            fill: color,
-            "fill-opacity": "0.3",
-            "mix-blend-mode": "multiply",
-          },
-        );
-      });
-    };
-
-    highlightsArray.observe(observer);
-    return () => highlightsArray.unobserve(observer);
-  }, [rendition, highlightsArray, epubUrl]);
-
-  // Handle text selection in epub
-  useEffect(() => {
-    if (!rendition) return;
-
-    function setRenderSelection(cfiRange: string, contents: Contents) {
-      if (rendition) {
-        const selectedText = rendition.getRange(cfiRange).toString();
-        setCurrentSelection({
-          text: selectedText,
-          cfiRange,
-          userId: awareness?.clientID?.toString() || "unknown",
-          color: userColor,
-          timestamp: Date.now(),
-          epubUrl: epubUrl || "",
-        });
-      }
-    }
-
-    rendition.on("selected", setRenderSelection);
     return () => {
-      rendition?.off("selected", setRenderSelection);
+      setStatusBarHidden(false);
     };
-  }, [rendition, awareness, userColor, epubUrl]);
-
-  const handleSaveSelection = () => {
-    if (!currentSelection || !highlightsArray || !epubUrl) return;
-
-    // Add to shared highlights array with epubUrl
-    highlightsArray.push([{ ...currentSelection, epubUrl }]);
-
-    setCurrentSelection(null);
-  };
+  }, [isLoaded, epubUrl]);
 
   // Full-height touch zone styling
   const readerStyles = {
@@ -377,18 +176,49 @@ export function ReaderAppInterface() {
     },
   };
 
+  // Tap to show controls with auto-hide
+  const handleTap = useCallback(() => {
+    setShowControls(true);
+    // Reset hide timer
+    if (hideControlsTimeoutRef.current) {
+      clearTimeout(hideControlsTimeoutRef.current);
+    }
+    hideControlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 3000);
+  }, []);
+
+  // Clean up hide timer on unmount
+  useEffect(() => {
+    return () => {
+      if (hideControlsTimeoutRef.current) {
+        clearTimeout(hideControlsTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Swipe navigation handlers
   const MIN_SWIPE_DISTANCE = 50;
+  const TAP_THRESHOLD = 10;
+  const TOP_ZONE_HEIGHT = 100; // Height of the top zone that triggers controls
+  const touchStartY = useRef<number>(0);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     touchEndX.current = e.changedTouches[0].clientX;
     const distance = touchStartX.current - touchEndX.current;
+    const absDistance = Math.abs(distance);
 
-    if (Math.abs(distance) > MIN_SWIPE_DISTANCE && rendition) {
+    if (absDistance < TAP_THRESHOLD) {
+      // This is a tap, not a swipe - only show controls if tapped in top zone
+      if (touchStartY.current <= TOP_ZONE_HEIGHT) {
+        handleTap();
+      }
+    } else if (absDistance > MIN_SWIPE_DISTANCE && rendition) {
       if (distance > 0) {
         rendition.next(); // Swipe left = next page
       } else {
@@ -398,26 +228,12 @@ export function ReaderAppInterface() {
   };
 
   const handleClearBook = useCallback(() => {
-    // Clear any pending location save
-    if (locationSaveTimeoutRef.current) {
-      clearTimeout(locationSaveTimeoutRef.current);
-    }
-
     setEpubUrl(null);
     setIsLoaded(false);
     setBookName(null);
-    setBookIdentifier(null);
     setLocation(0);
     setRendition(undefined);
-    setCurrentSelection(null);
-
-    if (sharedState) {
-      sharedState.delete("epubUrl");
-      sharedState.delete("currentBookIdentifier");
-      // Note: readingProgress and lastOpenedBook are kept so user can resume later
-    }
-    // Highlights are NOT cleared - they remain associated with their epubUrl
-  }, [sharedState]);
+  }, []);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -437,8 +253,6 @@ export function ReaderAppInterface() {
   };
 
   const handleUpload = async (file: File) => {
-    if (!sharedState) return;
-
     setUploading(true);
     setUploadProgress(0);
     setError(null);
@@ -447,18 +261,10 @@ export function ReaderAppInterface() {
       // Create a local object URL for the file
       const objectUrl = URL.createObjectURL(file);
 
-      // Create stable identifier for uploaded files (filename + size)
-      const fileIdentifier = `upload:${file.name}:${file.size}`;
-
       setUploadProgress(100);
-
-      // Store URL and identifier in shared state
-      sharedState.set("epubUrl", objectUrl);
-      sharedState.set("currentBookIdentifier", fileIdentifier);
       setEpubUrl(objectUrl);
       setIsLoaded(true);
       setBookName(file.name);
-      setBookIdentifier(fileIdentifier);
     } catch (err) {
       console.error("Upload error:", err);
       setError(err instanceof Error ? err.message : "Failed to load EPUB file");
@@ -470,18 +276,6 @@ export function ReaderAppInterface() {
 
   // Show upload interface when no epub is loaded
   if (!isLoaded || !epubUrl) {
-    // Show loading while Yjs syncs
-    if (!sharedState) {
-      return (
-        <div className="flex flex-col h-screen items-center justify-center bg-neutral-900">
-          <div className="text-center p-8">
-            <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-sm text-neutral-400">Loading reading progress...</p>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-neutral-900">
         <div className="text-center p-8 max-w-md">
@@ -493,7 +287,7 @@ export function ReaderAppInterface() {
             EPUB Reader
           </h2>
           <p className="text-sm text-neutral-400 mb-6">
-            Upload an EPUB file to start reading with collaborative highlights
+            Upload an EPUB file to start reading
           </p>
 
           {/* File Input */}
@@ -547,68 +341,47 @@ export function ReaderAppInterface() {
       {/* Register book info to sidebar settings panel */}
       <ReaderSettingsPanel bookName={bookName} onClearBook={handleClearBook} />
 
-      {/* Current Selection Panel */}
-      {currentSelection && (
-        <div className="bg-amber-900/20 border-b border-amber-500/30 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-amber-100 line-clamp-2">
-                {currentSelection.text}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleSaveSelection}
-                className="px-3 py-1.5 text-xs font-medium text-amber-900 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors"
-              >
-                Save Highlight
-              </button>
-              <button
-                onClick={() => setCurrentSelection(null)}
-                className="px-3 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-700 hover:bg-neutral-600 rounded-md transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* App switcher button - shown on tap, hidden after 3s */}
+      {showControls && onOpenAppSwitcher && (
+        <AppSwitcherButton
+          onClick={onOpenAppSwitcher}
+          variant="subtle"
+          readerPosition
+        />
       )}
 
-      {/* Epub Reader */}
+      {/* Epub Reader with safe area padding */}
       <div
         className="flex-1 relative"
+        style={{
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingLeft: 'env(safe-area-inset-left)',
+          paddingRight: 'env(safe-area-inset-right)',
+        }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <ReactReader
+        <div className="w-full h-full">
+          <ReactReader
           url={epubUrl}
           readerStyles={readerStyles}
           epubInitOptions={{ openAs: "epub" }}
+          epubOptions={{
+            flow: "paginated",
+            width: "100%",
+            height: "100%",
+            spread: "none",
+          }}
           location={location}
           locationChanged={(epubcfi: string) => {
             setLocation(epubcfi);
-
-            // Debounced save to Yjs
-            if (locationSaveTimeoutRef.current) {
-              clearTimeout(locationSaveTimeoutRef.current);
-            }
-            locationSaveTimeoutRef.current = setTimeout(() => {
-              if (sharedState && bookIdentifier) {
-                const progress = (sharedState.get("readingProgress") as Record<string, ReadingProgress>) || {};
-                progress[bookIdentifier] = {
-                  location: epubcfi,
-                  lastRead: Date.now(),
-                  bookName: bookName || "Unknown",
-                };
-                sharedState.set("readingProgress", progress);
-                sharedState.set("lastOpenedBook", bookIdentifier);
-              }
-            }, 500);
           }}
           getRendition={(_rendition: Rendition) => {
             setRendition(_rendition);
           }}
         />
+        </div>
       </div>
     </div>
   );

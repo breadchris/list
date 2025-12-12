@@ -25,6 +25,7 @@ struct ContentView: View {
         WebView(webView: webViewStore.webView, onRefresh: {
             webViewStore.webView.reload()
         })
+        .ignoresSafeArea()
         #if DEBUG
         .sheet(isPresented: $showingDebugView) {
             NavigationView {
@@ -59,6 +60,7 @@ struct ContentView: View {
         } message: {
             Text(apiKeyMessage)
         }
+        // Status bar visibility is handled by StatusBarHostingController in AppDelegate.swift
     }
 
     private func loadListApp() {
@@ -77,7 +79,8 @@ struct ContentView: View {
                     }
 
                     print("🔧 ContentView: Creating URLRequest for: \(url)")
-                    let request = URLRequest(url: url)
+                    var request = URLRequest(url: url)
+                    request.cachePolicy = .returnCacheDataElseLoad  // Use cache first, network as fallback
 
                     print("🔧 ContentView: WKWebView delegate assigned: \(self.webViewStore.webView.navigationDelegate != nil)")
                     print("🔧 ContentView: Starting WKWebView.load() call...")
@@ -145,7 +148,7 @@ struct ContentView: View {
 
     private func getAppURL() -> String {
         if isRunningInSimulator() {
-            return "http://localhost:3002"  // Local development
+            return "http://localhost:3000"  // Local development
         } else {
             return "https://justshare.io"   // Production
         }
@@ -519,6 +522,13 @@ class WebViewStore: ObservableObject {
     init() {
         let configuration = WKWebViewConfiguration()
 
+        // Configure persistent data store for aggressive caching
+        let websiteDataStore = WKWebsiteDataStore.default()
+        configuration.websiteDataStore = websiteDataStore
+
+        // Enable offline web application cache
+        configuration.preferences.setValue(true, forKey: "offlineApplicationCacheIsEnabled")
+
         // Add JavaScript handlers
         let contentController = WKUserContentController()
         let messageHandler = MessageHandler()
@@ -527,6 +537,7 @@ class WebViewStore: ObservableObject {
         contentController.add(messageHandler, name: "consoleHandler")
         contentController.add(messageHandler, name: "sessionHandler")
         contentController.add(messageHandler, name: "syncResultHandler")
+        contentController.add(messageHandler, name: "statusBarHandler")
         configuration.userContentController = contentController
 
         // Inject JavaScript to detect API key creation, Google auth attempts, and console messages
@@ -731,6 +742,14 @@ class WebViewStore: ObservableObject {
                         });
                     }
                 };
+
+                // Status bar control for immersive reading
+                window.setStatusBarHidden = function(hidden) {
+                    window.webkit.messageHandlers.statusBarHandler.postMessage({
+                        type: 'statusBar',
+                        hidden: hidden
+                    });
+                };
             """,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
@@ -764,6 +783,8 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
             handleSession(body: body)
         case "syncResult":
             handleSyncResult(body: body)
+        case "statusBar":
+            handleStatusBar(body: body)
         default:
             print("Unknown message type: \(type)")
         }
@@ -844,6 +865,19 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
                 "error": errorMessage
             ]
         )
+    }
+
+    private func handleStatusBar(body: [String: Any]) {
+        guard let hidden = body["hidden"] as? Bool else {
+            return
+        }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("StatusBarVisibilityChanged"),
+                object: nil,
+                userInfo: ["hidden": hidden]
+            )
+        }
     }
 
     private func handleSession(body: [String: Any]) {
@@ -994,7 +1028,7 @@ struct WebView: UIViewRepresentable {
     var onRefresh: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onRefresh: onRefresh)
+        Coordinator(webView: webView, onRefresh: onRefresh)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -1014,14 +1048,27 @@ struct WebView: UIViewRepresentable {
     }
 
     class Coordinator: NSObject {
+        let webView: WKWebView
         var onRefresh: (() -> Void)?
 
-        init(onRefresh: (() -> Void)?) {
+        init(webView: WKWebView, onRefresh: (() -> Void)?) {
+            self.webView = webView
             self.onRefresh = onRefresh
         }
 
         @objc func handleRefresh(_ sender: UIRefreshControl) {
-            onRefresh?()
+            // Clear cache before refreshing to force fresh load
+            let dataTypes: Set<String> = [
+                WKWebsiteDataTypeDiskCache,
+                WKWebsiteDataTypeMemoryCache
+            ]
+            webView.configuration.websiteDataStore.removeData(
+                ofTypes: dataTypes,
+                modifiedSince: Date.distantPast
+            ) { [weak self] in
+                self?.onRefresh?()
+            }
+
             // End refreshing after a short delay to show the animation
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 sender.endRefreshing()

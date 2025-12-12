@@ -24,6 +24,8 @@ import {
   useHasPrevious,
 } from "../hooks/use-dj-state";
 import { usePlaybackActions, useQueueActions } from "../hooks/use-dj-actions";
+import { useTimerSync, useNoOpTimerSync } from "../hooks/use-timer-sync";
+import { getFeatureFlag } from "@/utils/featureFlags";
 
 // Format time as MM:SS or HH:MM:SS
 function formatTime(seconds: number): string {
@@ -39,9 +41,11 @@ function formatTime(seconds: number): string {
 
 interface VideoPlayerProps {
   video: Video | null;
+  /** URL for Jamsocket timer backend (only used when enableServerTimer flag is on) */
+  timerBackendUrl?: string | null;
 }
 
-export function VideoPlayer({ video }: VideoPlayerProps) {
+export function VideoPlayer({ video, timerBackendUrl }: VideoPlayerProps) {
   const playbackState = usePlaybackState();
   const hasNext = useHasNext();
   const hasPrevious = useHasPrevious();
@@ -55,6 +59,14 @@ export function VideoPlayer({ video }: VideoPlayerProps) {
     setPlaybackRate,
   } = usePlaybackActions();
   const { removeVideo } = useQueueActions();
+
+  // Feature flag for server-side timer
+  const useServerTimer = getFeatureFlag("enableServerTimer");
+
+  // Use server timer sync if enabled, otherwise no-op
+  const timerSync = useServerTimer
+    ? useTimerSync(timerBackendUrl ?? null)
+    : useNoOpTimerSync();
 
   const [duration, setDuration] = useState(0);
   const [localCurrentTime, setLocalCurrentTime] = useState(0);
@@ -118,8 +130,12 @@ export function VideoPlayer({ video }: VideoPlayerProps) {
     };
   }, []);
 
-  // Detect video completion based on time (works even in background tabs where onEnded may not fire)
+  // Detect video completion based on time (client-side fallback when server timer is disabled)
+  // When server timer is enabled, the server handles video end detection
   useEffect(() => {
+    // Skip client-side detection when server timer is handling it
+    if (useServerTimer) return;
+
     if (!duration || duration <= 0 || !is_playing) return;
 
     const currentIndex = playbackState.current_index;
@@ -138,7 +154,21 @@ export function VideoPlayer({ video }: VideoPlayerProps) {
         setIsPlaying(false);
       }
     }
-  }, [localCurrentTime, duration, is_playing, playbackState.current_index, hasNext, nextVideo, setIsPlaying]);
+  }, [useServerTimer, localCurrentTime, duration, is_playing, playbackState.current_index, hasNext, nextVideo, setIsPlaying]);
+
+  // Sync duration with server timer when it changes
+  useEffect(() => {
+    if (useServerTimer && duration > 0) {
+      timerSync.setDuration(duration);
+    }
+  }, [useServerTimer, duration, timerSync]);
+
+  // Notify server timer when video changes
+  useEffect(() => {
+    if (useServerTimer) {
+      timerSync.videoChanged();
+    }
+  }, [useServerTimer, video?.id, timerSync]);
 
   // Handle player ready
   const handleReady = useCallback(() => {
@@ -159,11 +189,17 @@ export function VideoPlayer({ video }: VideoPlayerProps) {
   // Handle play state changes
   const handlePlay = useCallback(() => {
     setIsPlaying(true);
-  }, [setIsPlaying]);
+    if (useServerTimer) {
+      timerSync.play();
+    }
+  }, [setIsPlaying, useServerTimer, timerSync]);
 
   const handlePause = useCallback(() => {
     setIsPlaying(false);
-  }, [setIsPlaying]);
+    if (useServerTimer) {
+      timerSync.pause();
+    }
+  }, [setIsPlaying, useServerTimer, timerSync]);
 
   // Handle time updates (v3 uses standard HTMLMediaElement events)
   const handleTimeUpdate = useCallback(
@@ -235,8 +271,11 @@ export function VideoPlayer({ video }: VideoPlayerProps) {
     (rate: number) => {
       setPlaybackRate(rate);
       setShowSpeedMenu(false);
+      if (useServerTimer) {
+        timerSync.setRate(rate);
+      }
     },
-    [setPlaybackRate],
+    [setPlaybackRate, useServerTimer, timerSync],
   );
 
   // Handle seek
@@ -250,8 +289,11 @@ export function VideoPlayer({ video }: VideoPlayerProps) {
       playerRef.current.currentTime = seekTime;
       setLocalCurrentTime(seekTime);
       seekTo(seekTime);
+      if (useServerTimer) {
+        timerSync.seek(seekTime);
+      }
     },
-    [duration, seekTo],
+    [duration, seekTo, useServerTimer, timerSync],
   );
 
   // Handle controls visibility

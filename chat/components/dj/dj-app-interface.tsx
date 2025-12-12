@@ -9,12 +9,15 @@ import { VideoPlayer } from "./components/video-player";
 import { VideoQueue } from "./components/video-queue";
 import { AddVideoDialog } from "./components/add-video-dialog";
 import { DjSettingsPanel } from "./components/dj-settings-panel";
+import { getFeatureFlag } from "@/utils/featureFlags";
 
 interface DjAppInterfaceProps {
   roomId: string;
+  /** Pre-spawned Jamsocket timer backend URL (from server component) */
+  timerBackendUrl?: string | null;
 }
 
-export function DjAppInterface({ roomId }: DjAppInterfaceProps) {
+export function DjAppInterface({ roomId, timerBackendUrl }: DjAppInterfaceProps) {
   // Initialize Yjs document
   useDjInitialization();
 
@@ -24,6 +27,15 @@ export function DjAppInterface({ roomId }: DjAppInterfaceProps) {
   const [username, setUsername] = useState<string | undefined>();
   const [queueOpen, setQueueOpen] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
+
+  // Check if server timer is enabled
+  const useServerTimer = getFeatureFlag("enableServerTimer");
+
+  // For development: use environment variable for timer backend URL
+  // In production, this would be spawned via Jamsocket API
+  const effectiveTimerUrl = useServerTimer
+    ? (timerBackendUrl ?? process.env.NEXT_PUBLIC_DJ_TIMER_URL ?? null)
+    : null;
 
   // Get username from localStorage
   useEffect(() => {
@@ -106,7 +118,7 @@ export function DjAppInterface({ roomId }: DjAppInterfaceProps) {
         {/* Video Player area */}
         <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0">
           <div className="w-full max-w-4xl h-full flex items-center">
-            <VideoPlayer video={currentVideo} />
+            <VideoPlayer video={currentVideo} timerBackendUrl={effectiveTimerUrl} />
           </div>
         </div>
       </div>

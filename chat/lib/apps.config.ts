@@ -8,11 +8,12 @@ import {
   Paintbrush,
   Stamp,
   ListVideo,
+  BookText,
   type LucideIcon,
 } from "lucide-react";
 import type { z } from "zod";
 
-export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal";
+export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki";
 
 export interface AppConfig {
   id: string;
@@ -127,6 +128,17 @@ export const apps: AppConfig[] = [
     bgColor: "bg-blue-400/10",
     placeholder: "Type a message...",
     renderMode: "signal",
+  },
+  {
+    id: "wiki",
+    name: "wiki",
+    description:
+      "Collaborative wiki builder with multi-panel navigation and real-time editing",
+    icon: BookText,
+    color: "text-teal-400",
+    bgColor: "bg-teal-400/10",
+    placeholder: "Create and link wiki pages...",
+    renderMode: "wiki",
   },
 ];
 

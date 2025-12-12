@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct DebugView: View {
     @State private var testResults: [String] = []
@@ -14,6 +15,9 @@ struct DebugView: View {
     @State private var showingResults = false
     @State private var pendingItems: [(item: ShareItem, fileURL: URL)] = []
     @State private var inboxError: String?
+    @State private var notificationStatus: String = "Unknown"
+    @State private var testNotificationTitle: String = "Test Notification"
+    @State private var testNotificationBody: String = "This is a test notification"
 
     private let appGroupId = "group.com.breadchris.share"
     
@@ -106,6 +110,46 @@ struct DebugView: View {
                     }
                 }
                 
+                Section("Notification Testing") {
+                    HStack {
+                        Text("Status:")
+                        Text(notificationStatus)
+                            .foregroundColor(notificationStatus == "Authorized" ? .green :
+                                           notificationStatus == "Denied" ? .red : .secondary)
+                    }
+
+                    Button("Check Permission Status") {
+                        checkNotificationStatus()
+                    }
+
+                    Button("Request Permission") {
+                        requestNotificationPermission()
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("Notification Title", text: $testNotificationTitle)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+
+                        TextField("Notification Body", text: $testNotificationBody)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+
+                        Button("Send Test Notification (3s)") {
+                            sendTestNotification(delay: 3)
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("Send Immediate Notification") {
+                            sendTestNotification(delay: 1)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Button("Clear All Notifications") {
+                        clearAllNotifications()
+                    }
+                    .foregroundColor(.orange)
+                }
+
                 Section("Cleanup") {
                     Button("Clear All Test Data") {
                         TestHelpers.clearTestData()
@@ -175,6 +219,78 @@ struct DebugView: View {
         } catch {
             inboxError = error.localizedDescription
         }
+    }
+
+    private func checkNotificationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .notDetermined:
+                    notificationStatus = "Not Determined"
+                    addResult("Notification status: Not determined (permission not yet requested)")
+                case .denied:
+                    notificationStatus = "Denied"
+                    addResult("❌ Notification status: Denied (user declined or disabled in Settings)")
+                case .authorized:
+                    notificationStatus = "Authorized"
+                    addResult("✅ Notification status: Authorized")
+                case .provisional:
+                    notificationStatus = "Provisional"
+                    addResult("Notification status: Provisional (quiet notifications)")
+                case .ephemeral:
+                    notificationStatus = "Ephemeral"
+                    addResult("Notification status: Ephemeral (App Clip)")
+                @unknown default:
+                    notificationStatus = "Unknown"
+                    addResult("Notification status: Unknown")
+                }
+            }
+        }
+    }
+
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    addResult("❌ Permission request failed: \(error.localizedDescription)")
+                } else if granted {
+                    addResult("✅ Notification permission granted")
+                    notificationStatus = "Authorized"
+                } else {
+                    addResult("❌ Notification permission denied")
+                    notificationStatus = "Denied"
+                }
+            }
+        }
+    }
+
+    private func sendTestNotification(delay: TimeInterval) {
+        let content = UNMutableNotificationContent()
+        content.title = testNotificationTitle
+        content.body = testNotificationBody
+        content.sound = .default
+        content.badge = 1
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
+        let identifier = "debug-test-\(UUID().uuidString)"
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+
+        UNUserNotificationCenter.current().add(request) { error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    addResult("❌ Failed to schedule notification: \(error.localizedDescription)")
+                } else {
+                    addResult("✅ Notification scheduled (fires in \(Int(delay))s)")
+                }
+            }
+        }
+    }
+
+    private func clearAllNotifications() {
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        UIApplication.shared.applicationIconBadgeNumber = 0
+        addResult("✅ Cleared all pending and delivered notifications")
     }
 }
 

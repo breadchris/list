@@ -11,6 +11,7 @@ import { MapsAppInterface } from "@/components/maps-app-interface";
 import { PaintAppInterface } from "@/components/paint/paint-app-interface";
 import { DoAppInterface } from "@/components/do/do-app-interface";
 import { SignalAppInterface } from "@/components/signal/SignalAppInterface";
+import { WikiInterface } from "@/components/wiki/wiki-interface";
 import { AppSwitcherButton } from "@/components/app-switcher-button";
 import { AppSwitcherPanel } from "@/components/app-switcher-panel";
 import { YDocWrapper } from "@/components/y-doc-wrapper";
@@ -85,20 +86,18 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
     );
   }
 
-  // Reader app uses collaborative EPUB reader
+  // Reader app - EPUB reader
   if (appConfig.renderMode === "reader") {
     return (
       <AppSettingsProvider>
         <div className="relative h-screen bg-neutral-900">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} variant="subtle" readerPosition />
+          {/* AppSwitcherButton is inside ReaderAppInterface - shown on tap */}
           <AppSwitcherPanel
             isOpen={appSwitcherOpen}
             onClose={() => setAppSwitcherOpen(false)}
             currentApp={app}
           />
-          <YDocWrapper docId={docId}>
-            <ReaderAppInterface />
-          </YDocWrapper>
+          <ReaderAppInterface onOpenAppSwitcher={() => setAppSwitcherOpen(true)} />
         </div>
       </AppSettingsProvider>
     );
@@ -182,6 +181,32 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
           <SignalAppInterface />
         </div>
       </ToastProvider>
+    );
+  }
+
+  // Wiki app for collaborative wiki building
+  if (appConfig.renderMode === "wiki") {
+    // For wiki, we need a wiki ID. For now, use a default wiki per app
+    // In a full implementation, this would come from user selection or URL params
+    const wikiId = `wiki-${appConfig.id}`;
+    const groupId = "default-wiki-group"; // TODO: Get from user context
+
+    return (
+      <PublishGroupProvider>
+        <div className="relative h-screen bg-neutral-950">
+          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
+          <AppSwitcherPanel
+            isOpen={appSwitcherOpen}
+            onClose={() => setAppSwitcherOpen(false)}
+            currentApp={app}
+          />
+          <WikiInterface
+            wikiId={wikiId}
+            groupId={groupId}
+            ySweetUrl=""
+          />
+        </div>
+      </PublishGroupProvider>
     );
   }
 

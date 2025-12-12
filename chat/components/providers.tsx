@@ -1,15 +1,15 @@
 "use client";
 
-import { UsernamePrompt } from "./username-prompt";
+import { AuthPrompt } from "./auth-prompt";
 import { QueryProvider } from "../providers/QueryProvider";
 import { PublishGroupProvider } from "./PublishGroupContext";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryProvider>
-      <UsernamePrompt>
+      <AuthPrompt>
         <PublishGroupProvider>{children}</PublishGroupProvider>
-      </UsernamePrompt>
+      </AuthPrompt>
     </QueryProvider>
   );
 }

@@ -9,13 +9,17 @@
 export type FeatureFlagKey =
   | 'enableQueryCaching'
   | 'enableExperimentalFeatures'
-  | 'enableDebugMode';
+  | 'enableDebugMode'
+  | 'enableServerTimer'
+  | 'enableWiki';
 
 // Default values - all disabled by default
 const FEATURE_FLAG_DEFAULTS: Record<FeatureFlagKey, boolean> = {
   enableQueryCaching: false,
   enableExperimentalFeatures: false,
   enableDebugMode: false,
+  enableServerTimer: false,
+  enableWiki: false,
 };
 
 // Feature flag metadata for UI display
@@ -31,6 +35,14 @@ export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { label: string; desc
   enableDebugMode: {
     label: 'Enable Debug Mode',
     description: 'Show additional debugging information in the console',
+  },
+  enableServerTimer: {
+    label: 'Server-Side Video Timer',
+    description: 'Use Jamsocket backend for reliable video progression (fixes background tab issues)',
+  },
+  enableWiki: {
+    label: 'Wiki Builder',
+    description: 'Multi-panel wiki interface with collaborative editing and wiki-style linking',
   },
 };
 

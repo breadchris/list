@@ -35,3 +35,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+node_modules/
+.DS_Store
+public/styles.css
+.mcp.json
+data/
+extension/background.js
+
+# Environment variables (security)
+.env
+.env.local
+.env.*.local
+*.env
+lambda/function/.env*
