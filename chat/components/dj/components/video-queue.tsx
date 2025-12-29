@@ -21,7 +21,11 @@ import { VideoQueueItem } from "./video-queue-item";
 import { useQueueWithSections, useCurrentIndex } from "../hooks/use-dj-state";
 import { useQueueActions, usePlaybackActions } from "../hooks/use-dj-actions";
 
-export function VideoQueue() {
+interface VideoQueueProps {
+  readOnly?: boolean;
+}
+
+export function VideoQueue({ readOnly = false }: VideoQueueProps) {
   const queueWithSections = useQueueWithSections();
   const currentIndex = useCurrentIndex();
   const { removeVideo, reorderQueue } = useQueueActions();
@@ -92,13 +96,6 @@ export function VideoQueue() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Desktop header - hidden on mobile since we have the toggle */}
-      <div className="hidden md:block px-4 py-2 border-b border-neutral-800">
-        <h3 className="text-sm font-medium text-neutral-300">
-          Queue ({queueWithSections.length})
-        </h3>
-      </div>
-
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1 min-h-0">
         {/* Played videos (non-draggable) */}
         {played.length > 0 && (
@@ -111,6 +108,7 @@ export function VideoQueue() {
                 onPlay={playVideo}
                 onRemove={removeVideo}
                 isDraggable={false}
+                readOnly={readOnly}
               />
             ))}
           </div>
@@ -125,16 +123,17 @@ export function VideoQueue() {
               onPlay={playVideo}
               onRemove={removeVideo}
               isDraggable={false}
+              readOnly={readOnly}
             />
           </div>
         )}
 
-        {/* Upcoming videos (draggable) */}
+        {/* Upcoming videos (draggable unless readOnly) */}
         {upcoming.length > 0 && (
           <div>
             <p className="text-xs text-neutral-600 px-2 mb-1">Up Next</p>
             <DndContext
-              sensors={sensors}
+              sensors={readOnly ? [] : sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
@@ -148,7 +147,8 @@ export function VideoQueue() {
                     video={video}
                     onPlay={playVideo}
                     onRemove={removeVideo}
-                    isDraggable={true}
+                    isDraggable={!readOnly}
+                    readOnly={readOnly}
                   />
                 ))}
               </SortableContext>

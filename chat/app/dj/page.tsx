@@ -4,13 +4,13 @@ import { useState } from "react";
 import { DjLanding } from "@/components/dj/dj-landing";
 import { AppSwitcherButton } from "@/components/app-switcher-button";
 import { AppSwitcherPanel } from "@/components/app-switcher-panel";
-import { PublishGroupProvider } from "@/components/PublishGroupContext";
+import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 
 export default function DjPage() {
   const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
 
   return (
-    <PublishGroupProvider>
+    <GlobalGroupProvider>
       <div className="relative h-screen bg-neutral-950">
         <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
         <AppSwitcherPanel
@@ -20,6 +20,6 @@ export default function DjPage() {
         />
         <DjLanding />
       </div>
-    </PublishGroupProvider>
+    </GlobalGroupProvider>
   );
 }

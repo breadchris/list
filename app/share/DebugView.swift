@@ -104,9 +104,11 @@ struct DebugView: View {
                         addResult("Tested URL scheme handling")
                     }
                     
-                    Button("Check for Shared URLs") {
-                        SharedURLManager.shared.checkForSharedURLs()
-                        addResult("Checked for shared URLs")
+                    Button("Drain Shared Inbox") {
+                        Task {
+                            let success = await InboxDrainer.shared.drainInboxAsync()
+                            addResult("Drained inbox: \(success ? "success" : "failed")")
+                        }
                     }
                 }
                 

@@ -1,17 +1,42 @@
+"use client";
+
 import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { Content, contentRepository } from '@/lib/list/ContentRepository';
 import { SEOCard } from './SEOCard';
 import { LinkifiedText } from './LinkifiedText';
 import { UserAuth } from './UserAuth';
 import { ContentListSkeleton } from './SkeletonComponents';
 import { usePublicContentChildren } from '@/hooks/list/useContentQueries';
+import { PublicYouTubeSectionCard } from './PublicYouTubeSectionCard';
 
-export const PublicContentView: React.FC = () => {
-  const { contentId } = useParams<{ contentId: string }>();
+// Public content has a subset of Content fields (no group_id/user_id)
+interface PublicContent {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  type: string;
+  data: string;
+  metadata?: any;
+  parent_content_id?: string;
+  shared_at?: string;
+  shared_by?: string;
+}
+
+interface PublicContentViewProps {
+  initialContent?: PublicContent | null;
+  contentId?: string;
+}
+
+export const PublicContentView: React.FC<PublicContentViewProps> = ({
+  initialContent,
+  contentId: propContentId
+}) => {
   const router = useRouter();
-  const [content, setContent] = useState<Content | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const params = useParams<{ contentId: string }>();
+  const contentId = propContentId || params.contentId;
+  const [content, setContent] = useState<PublicContent | null>(initialContent || null);
+  const [isLoading, setIsLoading] = useState(!initialContent);
   const [error, setError] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
 
@@ -22,25 +47,33 @@ export const PublicContentView: React.FC = () => {
   } = usePublicContentChildren(contentId || null, { enabled: !!contentId && !!content });
 
   useEffect(() => {
+    // Skip fetch if we have initial content from server
+    if (initialContent) {
+      setContent(initialContent);
+      setIsLoading(false);
+      return;
+    }
+
     if (contentId) {
       loadPublicContent(contentId);
     } else {
       setError('Invalid public content URL');
       setIsLoading(false);
     }
-  }, [contentId]);
+  }, [contentId, initialContent]);
 
   const loadPublicContent = async (id: string) => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       const publicContent = await contentRepository.getPublicContent(id);
-      
+
       if (!publicContent) {
         setError('Content not found or not publicly accessible');
       } else {
-        setContent(publicContent);
+        // Cast to PublicContent (public_content view has subset of fields)
+        setContent(publicContent as PublicContent);
       }
     } catch (err) {
       console.error('Failed to load public content:', err);
@@ -184,9 +217,18 @@ export const PublicContentView: React.FC = () => {
             {/* Content Display */}
             {content.type === 'seo' && content.metadata ? (
               <div className="space-y-4">
-                <SEOCard 
+                <SEOCard
                   metadata={content.metadata}
                   className="border-0 shadow-none p-0"
+                />
+              </div>
+            ) : content.type === 'video_section' && content.metadata ? (
+              <div className="space-y-4">
+                <PublicYouTubeSectionCard
+                  youtubeUrl={content.metadata.youtube_url || ''}
+                  startTime={content.metadata.start_time || 0}
+                  endTime={content.metadata.end_time || 0}
+                  title={content.data}
                 />
               </div>
             ) : (
@@ -225,9 +267,17 @@ export const PublicContentView: React.FC = () => {
                     <div
                       key={child.id}
                       onClick={() => router.push(`/public/content/${child.id}`)}
-                      className="p-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors border border-gray-200"
+                      className={`${child.type === 'video_section' ? '' : 'p-3 bg-gray-50 hover:bg-gray-100'} rounded-lg cursor-pointer transition-colors border border-gray-200`}
                     >
-                      {child.type === 'seo' && child.metadata ? (
+                      {child.type === 'video_section' && child.metadata ? (
+                        <PublicYouTubeSectionCard
+                          youtubeUrl={child.metadata.youtube_url || ''}
+                          startTime={child.metadata.start_time || 0}
+                          endTime={child.metadata.end_time || 0}
+                          title={child.data}
+                          className="border-0"
+                        />
+                      ) : child.type === 'seo' && child.metadata ? (
                         <SEOCard
                           metadata={child.metadata}
                           className="border-0 shadow-none p-0 bg-transparent"
@@ -238,9 +288,11 @@ export const PublicContentView: React.FC = () => {
                           className="text-gray-900 text-sm line-clamp-2"
                         />
                       )}
-                      <div className="mt-1 text-xs text-gray-500">
-                        {formatRelativeTime(child.created_at)}
-                      </div>
+                      {child.type !== 'video_section' && (
+                        <div className="mt-1 text-xs text-gray-500">
+                          {formatRelativeTime(child.created_at)}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Upload } from "lucide-react";
 import { FinderSidebar } from "./FinderSidebar";
 import { FinderToolbar, type ViewMode } from "./FinderToolbar";
 import { FinderContent } from "./FinderContent";
-import { useGroupsQuery } from "@/hooks/list/useGroupQueries";
+import { useGlobalGroupOptional } from "@/components/GlobalGroupContext";
 import { useInfiniteContentByParent } from "@/hooks/useContentQueries";
 import { contentRepository, type Content } from "@/components/ContentRepository";
 import { getContentTypeFromFile } from "@/lib/fileTypeUtils";
@@ -24,17 +25,29 @@ export function Finder() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // Global group context (may be null if outside provider or anonymous)
+  const globalGroupContext = useGlobalGroupOptional();
+
+  // Local group ID for anonymous users fallback
+  const [localGroupId, setLocalGroupId] = useState<string>(ANONYMOUS_GROUP_ID);
+
   // UI state
-  const [selectedGroupId, setSelectedGroupId] = useState<string>(ANONYMOUS_GROUP_ID);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Determine selected group ID - use global context if available and user is authenticated
+  const selectedGroupId = (user && globalGroupContext?.selectedGroup?.id) || localGroupId;
+
+  // Get groups from global context, or empty array for anonymous users
+  const groups = globalGroupContext?.groups || [];
+  const groupsLoading = globalGroupContext?.isLoading || false;
 
   // Data queries
-  const { data: groups, isLoading: groupsLoading } = useGroupsQuery({
-    enabled: !!user,
-  });
   const {
     data: contentData,
     isLoading: contentLoading,
@@ -58,27 +71,25 @@ export function Finder() {
     checkAuth();
   }, []);
 
-  // Initialize group selection when groups load
+  // Sync local state with global context when available
   useEffect(() => {
-    if (user && groups?.length) {
-      const lastGroupId = localStorage.getItem("lastViewedGroupId");
-      if (lastGroupId && groups.some((g) => g.id === lastGroupId)) {
-        setSelectedGroupId(lastGroupId);
-      } else {
-        setSelectedGroupId(groups[0].id);
-      }
+    if (user && globalGroupContext?.selectedGroup) {
+      setLocalGroupId(globalGroupContext.selectedGroup.id);
     } else if (!user && !authLoading) {
-      setSelectedGroupId(ANONYMOUS_GROUP_ID);
+      setLocalGroupId(ANONYMOUS_GROUP_ID);
     }
-  }, [user, groups, authLoading]);
+  }, [user, globalGroupContext?.selectedGroup, authLoading]);
+
+  // File types to show in upload viewer (exclude text/other content types)
+  const FILE_TYPES = ['epub', 'pdf', 'image', 'audio', 'video', 'file'];
 
   // Flatten content pages
   const allContent = contentData?.pages.flatMap((page) => page.items) ?? [];
 
-  // Filter content by search
-  const filteredContent = allContent.filter((item) =>
-    item.data.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter content by file types and search
+  const filteredContent = allContent
+    .filter((item) => FILE_TYPES.includes(item.type))
+    .filter((item) => item.data.toLowerCase().includes(searchQuery.toLowerCase()));
 
   // Get user ID for uploads
   const userId = user?.id || getOrCreateAnonymousUserId();
@@ -90,22 +101,29 @@ export function Finder() {
   // Handle group selection
   const handleGroupSelect = useCallback(
     (groupId: string) => {
-      setSelectedGroupId(groupId);
-      setSearchQuery("");
-      if (user) {
-        localStorage.setItem("lastViewedGroupId", groupId);
+      // Update global context if available
+      if (globalGroupContext) {
+        const group = groups.find((g) => g.id === groupId);
+        if (group) {
+          globalGroupContext.setSelectedGroup(group);
+        }
       }
+      // Always update local state as well
+      setLocalGroupId(groupId);
+      setSearchQuery("");
       setIsSidebarOpen(false);
     },
-    [user]
+    [globalGroupContext, groups]
   );
 
   // Handle file upload
   const handleFileUpload = useCallback(
     async (files: FileList) => {
-      try {
-        const totalFiles = files.length;
+      const totalFiles = files.length;
+      setIsUploading(true);
+      setUploadProgress({ current: 0, total: totalFiles });
 
+      try {
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           const fileType = getContentTypeFromFile(file);
@@ -131,6 +149,9 @@ export function Finder() {
               uploaded_at: new Date().toISOString(),
             },
           });
+
+          // Update progress
+          setUploadProgress({ current: i + 1, total: totalFiles });
         }
 
         // Refresh file list
@@ -144,6 +165,8 @@ export function Finder() {
       } catch (error) {
         console.error("Upload failed:", error);
         toast.error("Upload failed. Please try again.");
+      } finally {
+        setIsUploading(false);
       }
     },
     [selectedGroupId, userId, queryClient]
@@ -155,7 +178,7 @@ export function Finder() {
     if (!fileUrl) return;
 
     if (content.type === "epub") {
-      window.location.href = `/reader?fileUrl=${encodeURIComponent(fileUrl)}`;
+      window.location.href = `/reader?contentId=${content.id}`;
     } else if (content.type === "pdf") {
       window.open(fileUrl, "_blank");
     } else if (content.type === "image") {
@@ -216,7 +239,6 @@ export function Finder() {
           groups={groups || []}
           selectedGroupId={selectedGroupId}
           onGroupSelect={handleGroupSelect}
-          onFileUpload={handleFileUpload}
           isLoading={groupsLoading}
         />
       </div>
@@ -236,7 +258,6 @@ export function Finder() {
                 groups={groups || []}
                 selectedGroupId={selectedGroupId}
                 onGroupSelect={handleGroupSelect}
-                onFileUpload={handleFileUpload}
                 onClose={() => setIsSidebarOpen(false)}
                 isLoading={groupsLoading}
               />
@@ -259,6 +280,16 @@ export function Finder() {
           />
         </div>
 
+        {/* Upload Progress Indicator */}
+        {isUploading && (
+          <div className="bg-blue-500 text-white px-4 py-2 flex items-center gap-2 flex-shrink-0">
+            <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+            <span>
+              Uploading {uploadProgress.current} of {uploadProgress.total} file{uploadProgress.total > 1 ? 's' : ''}...
+            </span>
+          </div>
+        )}
+
         {/* Content Area */}
         <div className="flex-1 bg-white overflow-hidden">
           <FinderContent
@@ -269,21 +300,34 @@ export function Finder() {
             onFileUpload={handleFileUpload}
             isLoading={contentLoading}
             deletingId={deletingId}
+            hasNextPage={hasNextPage}
+            onLoadMore={() => fetchNextPage()}
+            isLoadingMore={isFetchingNextPage}
           />
         </div>
 
-        {/* Load more button */}
-        {hasNextPage && (
-          <div className="p-4 border-t border-gray-200 bg-white">
-            <button
-              onClick={() => fetchNextPage()}
-              disabled={isFetchingNextPage}
-              className="w-full py-2 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
-            >
-              {isFetchingNextPage ? "Loading..." : "Load more files"}
-            </button>
-          </div>
-        )}
+        {/* Upload button */}
+        <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                handleFileUpload(e.target.files);
+                e.target.value = "";
+              }
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full py-2 text-sm text-gray-600 hover:text-gray-900 flex items-center justify-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Upload Files
+          </button>
+        </div>
       </div>
     </div>
   );

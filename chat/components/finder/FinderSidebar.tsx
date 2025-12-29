@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useRef } from "react";
-import { Folder, Upload, X } from "lucide-react";
+import React from "react";
+import { Folder, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Group {
@@ -13,7 +13,6 @@ interface FinderSidebarProps {
   groups: Group[];
   selectedGroupId: string | null;
   onGroupSelect: (groupId: string) => void;
-  onFileUpload: (files: FileList) => void;
   onClose?: () => void;
   isLoading?: boolean;
 }
@@ -22,23 +21,9 @@ export function FinderSidebar({
   groups,
   selectedGroupId,
   onGroupSelect,
-  onFileUpload,
   onClose,
   isLoading,
 }: FinderSidebarProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      onFileUpload(e.target.files);
-      e.target.value = "";
-    }
-  };
-
   return (
     <div className="h-full overflow-y-auto flex flex-col">
       {/* Mobile Close Button */}
@@ -91,24 +76,6 @@ export function FinderSidebar({
             ))
           )}
         </div>
-      </div>
-
-      {/* Upload Section */}
-      <div className="px-4 pb-4 border-t border-gray-200 pt-4 mt-auto">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={handleFileChange}
-        />
-        <button
-          onClick={handleUploadClick}
-          className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-200 rounded flex items-center"
-        >
-          <Upload className="w-3 h-3 mr-2" />
-          Upload Files
-        </button>
       </div>
     </div>
   );

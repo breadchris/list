@@ -133,14 +133,27 @@ class TestHelpers {
         }
     }
     
-    /// Test URL scheme handling
+    /// Test URL sharing by creating a test item and draining inbox
     static func testURLScheme() {
-        let testURL = URL(string: "list://share?key=test_share_key")!
-        
-        print("🔗 Test: Testing URL scheme - \(testURL)")
-        
-        // This would normally be called by the system
-        SharedURLManager.shared.handleURLScheme(testURL)
+        let testURL = "https://example.com/test-\(UUID().uuidString.prefix(8))"
+
+        print("🔗 Test: Testing URL sharing flow - \(testURL)")
+
+        do {
+            // Create a test item in the inbox
+            let inbox = try SharedInbox(appGroupId: "group.com.breadchris.share")
+            let item = ShareItem(url: testURL)
+            try inbox.enqueue(item)
+            print("✅ Test: Created test inbox item: \(item.id)")
+
+            // Trigger inbox drain
+            Task {
+                let success = await InboxDrainer.shared.drainInboxAsync()
+                print("🔄 Test: Inbox drain result: \(success ? "success" : "failed")")
+            }
+        } catch {
+            print("❌ Test: Failed to create test inbox item: \(error)")
+        }
     }
     
     /// Generate test API key and store it

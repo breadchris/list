@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { usePublishGroupOptional } from "@/components/PublishGroupContext";
-import { PublishGroupSelector } from "@/components/PublishGroupSelector";
+import { useGlobalGroupOptional } from "@/components/GlobalGroupContext";
+import { GlobalGroupSelector } from "@/components/GlobalGroupSelector";
 import { useDjRooms } from "../hooks/use-dj-rooms";
 import { supabase } from "@/lib/list/SupabaseClient";
 
@@ -26,7 +26,7 @@ export function DjRoomsModal({
   currentRoomId,
 }: DjRoomsModalProps) {
   const router = useRouter();
-  const publishGroup = usePublishGroupOptional();
+  const publishGroup = useGlobalGroupOptional();
   const [userId, setUserId] = useState<string | null>(null);
   const [username, setUsername] = useState<string | undefined>();
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
@@ -121,7 +121,7 @@ export function DjRoomsModal({
           {/* Group selector */}
           <div className="flex items-center justify-between px-1">
             <span className="text-sm text-neutral-400">Group</span>
-            <PublishGroupSelector />
+            <GlobalGroupSelector />
           </div>
 
           {/* Create room */}

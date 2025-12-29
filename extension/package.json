@@ -1,0 +1,16 @@
+{
+  "name": "share-extension",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild background.ts --bundle --platform=browser --target=chrome100 --format=iife --minify --outfile=background.js && esbuild offscreen.ts --bundle --platform=browser --target=chrome100 --format=iife --minify --outfile=offscreen.js",
+    "watch": "esbuild background.ts offscreen.ts --bundle --platform=browser --target=chrome100 --format=iife --outdir=. --watch"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.84.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1380,9 +1380,20 @@ function CollapsibleContent({
         a: ({ href, children }) => (
           <a
             href={href}
-            className="text-blue-400 hover:underline"
-            target="_blank"
-            rel="noopener noreferrer"
+            className="text-blue-400 hover:underline cursor-pointer"
+            onClick={(e) => {
+              e.preventDefault();
+              const webkit = (window as any).webkit;
+              if (webkit?.messageHandlers?.webviewHandler) {
+                webkit.messageHandlers.webviewHandler.postMessage({
+                  type: 'openUrl',
+                  url: href,
+                  title: String(children)
+                });
+              } else {
+                window.open(href, '_blank');
+              }
+            }}
           >
             {children}
           </a>

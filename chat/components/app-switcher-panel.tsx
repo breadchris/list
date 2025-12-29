@@ -4,7 +4,7 @@ import { X, Check, Home, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getAllApps } from "@/lib/apps.config";
 import { useUsername, clearUsername } from "./username-prompt";
-import { PublishGroupSelector } from "./PublishGroupSelector";
+import { GlobalGroupSelector } from "./GlobalGroupSelector";
 import { useAppSettings } from "./AppSettingsContext";
 
 interface AppSwitcherPanelProps {
@@ -45,7 +45,7 @@ export function AppSwitcherPanel({
 
       {/* Panel */}
       <div
-        className={`fixed inset-y-0 left-0 w-full sm:w-[400px] bg-neutral-950 border-r border-neutral-800 z-50 transform transition-transform duration-300 ease-out ${
+        className={`fixed inset-y-0 left-0 w-full sm:w-[400px] bg-neutral-950 border-r border-neutral-800 z-50 transform transition-transform duration-300 ease-out flex flex-col ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -68,7 +68,7 @@ export function AppSwitcherPanel({
         )}
 
         {/* Apps list */}
-        <div className="p-4 space-y-2 overflow-y-auto h-[calc(100%-120px)]">
+        <div className="p-4 space-y-2 overflow-y-auto flex-1 min-h-0">
           {/* Home/All Apps button */}
           <button
             onClick={handleHomeClick}
@@ -144,7 +144,7 @@ export function AppSwitcherPanel({
 
         {/* User section */}
         {username && (
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-neutral-800 bg-neutral-950">
+          <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center">
                 <User className="w-4 h-4 text-neutral-400" />
@@ -152,7 +152,7 @@ export function AppSwitcherPanel({
               <div className="flex-1">
                 <div className="text-sm text-neutral-300">{username}</div>
               </div>
-              <PublishGroupSelector />
+              <GlobalGroupSelector />
             </div>
           </div>
         )}

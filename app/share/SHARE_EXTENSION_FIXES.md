@@ -288,10 +288,9 @@ Supabase /rest/v1/content ✅
 - ✅ `app/share/KeychainTokenStore.swift` - Token storage (unchanged)
 - ✅ `app/share/AppDelegate.swift` - Darwin notification listener (unchanged)
 
-## Deprecated/Unused Files
+## Deleted Files
 
-- ❌ `app/share/SharedURLManager.swift` - No longer used (replaced by InboxDrainer)
-- ⚠️ Can be removed in future cleanup
+- ✅ `app/share/SharedURLManager.swift` - Deleted (was replaced by InboxDrainer)
 
 ---
 

@@ -271,3 +271,26 @@ useEffect(() => {
 - **Data corruption recovery** - Database inconsistencies, corrupt local storage
 
 Remember: If you're writing complex error handling for React state updates, you're probably solving the wrong problem.
+
+## UI Guidelines
+
+### Action Button Styling
+
+Use minimal, understated styling for action buttons:
+
+- **Text**: Short, single-word labels when possible (e.g., "Update" not "Update Published Version")
+- **Colors**: Use neutral colors (`text-neutral-400`, `bg-neutral-800`) for secondary actions
+- **Primary actions only**: Reserve prominent colors (blue, green) for primary/destructive actions
+- **Consistency**: Match surrounding UI elements in weight and emphasis
+
+```tsx
+// Secondary action - minimal
+<button className="text-neutral-400 hover:text-neutral-200 bg-neutral-800 hover:bg-neutral-700">
+  Update
+</button>
+
+// Primary action - emphasized (use sparingly)
+<button className="text-white bg-blue-600 hover:bg-blue-500">
+  Publish
+</button>
+```

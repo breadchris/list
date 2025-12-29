@@ -58,19 +58,19 @@ Before testing, ensure:
 Look for these key log messages:
 
 ### ✅ Success Messages:
-- `✅ ShareExtension: URL stored in shared container`
-- `✅ SharedURLManager: Processing shared URL`
-- `✅ Shared URL: Successfully saved to Supabase`
+- `✅ Share Extension: Successfully enqueued item to inbox`
+- `✅ InboxDrainer: Content inserted via Supabase SDK`
+- `✅ InboxDrainer: Successfully processed and removed item`
 
 ### ❌ Error Messages:
-- `❌ ShareExtension: No URL found in shared content`
-- `❌ SharedURLManager: No API key found`
-- `❌ Shared URL: User not authenticated`
+- `❌ Share Extension: No URL found in shared content`
+- `⚠️ InboxDrainer: User not authenticated via Supabase SDK`
+- `⚠️ InboxDrainer: No default group available`
 
 ### 🔍 Debug Messages:
-- `📤 ShareExtension: Sending URL to main app`
-- `📥 SharedURLManager: Processing shared URL`
-- `🔑 SharedURLManager: Using API key for URL processing`
+- `📤 Share Extension: Starting save process for URL`
+- `🚀 InboxDrainer: Starting inbox drain`
+- `📊 InboxDrainer: Found N files in inbox`
 
 ## Common Issues and Solutions
 

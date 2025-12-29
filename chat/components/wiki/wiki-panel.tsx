@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { X, ChevronLeft, MoreHorizontal, FileText, Trash2 } from "lucide-react";
 import { WikiEditor } from "./wiki-editor";
-import type { WikiPage, WikiPanel as WikiPanelType, WikiLinkClickEvent } from "@/types/wiki";
+import type { WikiPage, WikiPanel as WikiPanelType, WikiLinkClickEvent, WikiTemplate } from "@/types/wiki";
 import { pathToTitle } from "@/lib/wiki/path-utils";
 
 interface WikiPanelProps {
@@ -25,8 +25,8 @@ interface WikiPanelProps {
   onClose: () => void;
   /** Set this panel as active */
   onActivate: () => void;
-  /** Create a new page at path */
-  onCreatePage: (path: string) => Promise<WikiPage>;
+  /** Create a new page at path (synchronous, stored in Y.js) */
+  onCreatePage: (path: string) => WikiPage;
   /** Delete the page */
   onDeletePage?: () => void;
   /** Whether to show resize handle */
@@ -35,6 +35,8 @@ interface WikiPanelProps {
   width?: number;
   /** Callback for resize */
   onResize?: (width: number) => void;
+  /** Available templates for slash commands */
+  templates?: WikiTemplate[];
 }
 
 export function WikiPanel({
@@ -52,30 +54,27 @@ export function WikiPanel({
   showResizeHandle = false,
   width,
   onResize,
+  templates,
 }: WikiPanelProps) {
   const [isCreatingPage, setIsCreatingPage] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
   // Handle link clicks
   const handleLinkClick = useCallback(
-    async (event: WikiLinkClickEvent) => {
+    (event: WikiLinkClickEvent) => {
       // Check if page exists
       const exists = pageExists(event.path);
 
       if (!exists) {
-        // Create the page first
-        setIsCreatingPage(true);
+        // Create the page first (synchronous, stored in Y.js)
         try {
-          const newPage = await onCreatePage(event.path);
+          const newPage = onCreatePage(event.path);
           onLinkClick(event, newPage.id);
         } catch (error) {
           console.error("Failed to create page:", error);
-        } finally {
-          setIsCreatingPage(false);
         }
       } else {
         // Page exists, navigate to it
-        // Find the page ID
         onLinkClick(event, page?.id || "");
       }
     },
@@ -127,12 +126,11 @@ export function WikiPanel({
                 Page does not exist yet
               </div>
               <button
-                onClick={async () => {
-                  setIsCreatingPage(true);
+                onClick={() => {
                   try {
-                    await onCreatePage(panel.page_path);
-                  } finally {
-                    setIsCreatingPage(false);
+                    onCreatePage(panel.page_path);
+                  } catch (error) {
+                    console.error("Failed to create page:", error);
                   }
                 }}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-colors"
@@ -223,11 +221,13 @@ export function WikiPanel({
       {/* Editor */}
       <div className="flex-1 overflow-hidden">
         <WikiEditor
+          key={page.id}
           page={page}
           onLinkClick={handleLinkClick}
           pageExists={pageExists}
           panelId={panel.id}
           isActive={isActive}
+          templates={templates}
         />
       </div>
 

@@ -56,6 +56,7 @@ import {
   useCreateGroupMutation,
   useJoinGroupMutation,
 } from "@/hooks/list/useGroupQueries";
+import { useGlobalGroupOptional } from "@/components/GlobalGroupContext";
 import { useBulkDeleteContentMutation } from "@/hooks/list/useContentQueries";
 import { useContentSelection } from "@/hooks/list/useContentSelection";
 import { useSEOExtraction } from "@/hooks/list/useSEOExtraction";
@@ -101,6 +102,9 @@ export const ListApp: React.FC = () => {
   const isInitializingRef = useRef(false);
   // Prevent concurrent join attempts
   const isJoiningGroupRef = useRef(false);
+
+  // Global group context for cross-app sync
+  const globalGroupContext = useGlobalGroupOptional();
 
   // Standard React state management - no defensive programming needed
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
@@ -2451,7 +2455,7 @@ export const ListApp: React.FC = () => {
   // Auto-select group when groups are loaded (with localStorage persistence)
   useEffect(() => {
     if (!currentGroup && groups.length > 0) {
-      const savedGroupId = localStorage.getItem("lastViewedGroupId");
+      const savedGroupId = localStorage.getItem("global-group-id");
       const savedGroup = groups.find((g) => g.id === savedGroupId);
       setCurrentGroup(savedGroup || groups[0]);
     }
@@ -2460,9 +2464,27 @@ export const ListApp: React.FC = () => {
   // Save current group to localStorage when it changes
   useEffect(() => {
     if (currentGroup?.id) {
-      localStorage.setItem("lastViewedGroupId", currentGroup.id);
+      localStorage.setItem("global-group-id", currentGroup.id);
     }
   }, [currentGroup]);
+
+  // Bi-directional sync with global group context
+  // Sync local -> global when local changes (if not from URL navigation)
+  useEffect(() => {
+    if (globalGroupContext && currentGroup && !params.groupId) {
+      // Only sync if global is different to avoid loops
+      if (globalGroupContext.selectedGroup?.id !== currentGroup.id) {
+        globalGroupContext.setSelectedGroup(currentGroup);
+      }
+    }
+  }, [currentGroup, globalGroupContext, params.groupId]);
+
+  // Sync global -> local when global changes (if no URL param and no local selection yet)
+  useEffect(() => {
+    if (globalGroupContext?.selectedGroup && !params.groupId && !currentGroup) {
+      setCurrentGroup(globalGroupContext.selectedGroup);
+    }
+  }, [globalGroupContext?.selectedGroup, params.groupId, currentGroup]);
 
   // Load view mode from localStorage when group changes
   useEffect(() => {
@@ -2559,6 +2581,10 @@ export const ListApp: React.FC = () => {
 
   const handleGroupChange = (group: Group) => {
     setCurrentGroup(group);
+    // Sync with global context
+    if (globalGroupContext) {
+      globalGroupContext.setSelectedGroup(group);
+    }
     setShowInput(false); // Hide input when switching groups
     // Clear content selection when switching groups
     contentSelection.clearSelection();
@@ -2583,6 +2609,10 @@ export const ListApp: React.FC = () => {
       if (remainingGroups.length > 0) {
         // Switch to the first remaining group
         setCurrentGroup(remainingGroups[0]);
+        // Sync with global context
+        if (globalGroupContext) {
+          globalGroupContext.setSelectedGroup(remainingGroups[0]);
+        }
         router.push(`/list/group/${remainingGroups[0].id}`);
       } else {
         // No groups left, clear current group
@@ -2592,13 +2622,17 @@ export const ListApp: React.FC = () => {
     }
 
     // Clear any cached data for the left group
-    localStorage.removeItem("lastViewedGroupId");
+    localStorage.removeItem("global-group-id");
   };
 
   const handleCreateGroupSubmit = async (groupName: string) => {
     try {
       const newGroup = await createGroupMutation.mutateAsync(groupName);
       setCurrentGroup(newGroup);
+      // Sync with global context
+      if (globalGroupContext) {
+        globalGroupContext.setSelectedGroup(newGroup);
+      }
       setShowGroupModal(false);
     } catch (error) {
       console.error("Error creating group:", error);
@@ -2621,6 +2655,10 @@ export const ListApp: React.FC = () => {
       }
 
       setCurrentGroup(group);
+      // Sync with global context
+      if (globalGroupContext) {
+        globalGroupContext.setSelectedGroup(group);
+      }
       setShowGroupModal(false);
     } catch (error) {
       console.error("Error joining group:", error);
@@ -3017,6 +3055,50 @@ export const ListApp: React.FC = () => {
                         {/* View Mode Selector and Tag Filter */}
                         {currentGroup && (
                           <div className="flex items-center mx-2 sm:mx-4 space-x-2">
+                            {/* Search Bar */}
+                            <div className="relative">
+                              <input
+                                type="text"
+                                placeholder="Search..."
+                                value={searchQuery}
+                                onChange={handleSearchChange}
+                                className="pl-8 pr-8 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-40 sm:w-48"
+                              />
+                              <svg
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                />
+                              </svg>
+                              {searchQuery && (
+                                <button
+                                  onClick={() => handleContentSearchChange("")}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M6 18L18 6M6 6l12 12"
+                                    />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+
                             <select
                               value={viewMode}
                               onChange={(e) =>

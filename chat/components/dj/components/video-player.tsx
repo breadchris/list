@@ -25,6 +25,7 @@ import {
 } from "../hooks/use-dj-state";
 import { usePlaybackActions, useQueueActions } from "../hooks/use-dj-actions";
 import { useTimerSync, useNoOpTimerSync } from "../hooks/use-timer-sync";
+import { useExtensionPlayer, useNoOpExtensionPlayer } from "../hooks/use-extension-player";
 import { getFeatureFlag } from "@/utils/featureFlags";
 
 // Format time as MM:SS or HH:MM:SS
@@ -67,6 +68,12 @@ export function VideoPlayer({ video, timerBackendUrl }: VideoPlayerProps) {
   const timerSync = useServerTimer
     ? useTimerSync(timerBackendUrl ?? null)
     : useNoOpTimerSync();
+
+  // Use extension player for reliable background playback (Chrome only)
+  // Only enable if server timer is not being used
+  const extensionPlayer = !useServerTimer
+    ? useExtensionPlayer({ enabled: true, debug: false })
+    : useNoOpExtensionPlayer();
 
   const [duration, setDuration] = useState(0);
   const [localCurrentTime, setLocalCurrentTime] = useState(0);
@@ -132,9 +139,13 @@ export function VideoPlayer({ video, timerBackendUrl }: VideoPlayerProps) {
 
   // Detect video completion based on time (client-side fallback when server timer is disabled)
   // When server timer is enabled, the server handles video end detection
+  // When extension player is active, the extension handles video end detection
   useEffect(() => {
     // Skip client-side detection when server timer is handling it
     if (useServerTimer) return;
+
+    // Skip client-side detection when extension player is handling it
+    if (extensionPlayer.isAvailable && extensionPlayer.isInitialized) return;
 
     if (!duration || duration <= 0 || !is_playing) return;
 
@@ -154,7 +165,7 @@ export function VideoPlayer({ video, timerBackendUrl }: VideoPlayerProps) {
         setIsPlaying(false);
       }
     }
-  }, [useServerTimer, localCurrentTime, duration, is_playing, playbackState.current_index, hasNext, nextVideo, setIsPlaying]);
+  }, [useServerTimer, extensionPlayer, localCurrentTime, duration, is_playing, playbackState.current_index, hasNext, nextVideo, setIsPlaying]);
 
   // Sync duration with server timer when it changes
   useEffect(() => {
@@ -169,6 +180,31 @@ export function VideoPlayer({ video, timerBackendUrl }: VideoPlayerProps) {
       timerSync.videoChanged();
     }
   }, [useServerTimer, video?.id, timerSync]);
+
+  // Initialize extension player on mount
+  useEffect(() => {
+    if (extensionPlayer.isAvailable && !extensionPlayer.isInitialized) {
+      extensionPlayer.init();
+    }
+  }, [extensionPlayer]);
+
+  // Sync video with extension player when video changes
+  useEffect(() => {
+    if (extensionPlayer.isAvailable && extensionPlayer.isInitialized && video?.url) {
+      extensionPlayer.loadVideo(video.url, current_time);
+    }
+  }, [extensionPlayer, video?.url, video?.id]);
+
+  // Sync play state with extension player
+  useEffect(() => {
+    if (extensionPlayer.isAvailable && extensionPlayer.isInitialized) {
+      if (is_playing) {
+        extensionPlayer.play();
+      } else {
+        extensionPlayer.pause();
+      }
+    }
+  }, [extensionPlayer, is_playing]);
 
   // Handle player ready
   const handleReady = useCallback(() => {
@@ -274,8 +310,12 @@ export function VideoPlayer({ video, timerBackendUrl }: VideoPlayerProps) {
       if (useServerTimer) {
         timerSync.setRate(rate);
       }
+      // Sync to extension player
+      if (extensionPlayer.isAvailable && extensionPlayer.isInitialized) {
+        extensionPlayer.setRate(rate);
+      }
     },
-    [setPlaybackRate, useServerTimer, timerSync],
+    [setPlaybackRate, useServerTimer, timerSync, extensionPlayer],
   );
 
   // Handle seek
@@ -292,8 +332,12 @@ export function VideoPlayer({ video, timerBackendUrl }: VideoPlayerProps) {
       if (useServerTimer) {
         timerSync.seek(seekTime);
       }
+      // Sync to extension player
+      if (extensionPlayer.isAvailable && extensionPlayer.isInitialized) {
+        extensionPlayer.seek(seekTime);
+      }
     },
-    [duration, seekTo, useServerTimer, timerSync],
+    [duration, seekTo, useServerTimer, timerSync, extensionPlayer],
   );
 
   // Handle controls visibility

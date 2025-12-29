@@ -80,12 +80,23 @@ export const LinkifiedText: React.FC<LinkifiedTextProps> = ({
             <a
               key={index}
               href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
+              className="text-blue-600 hover:underline cursor-pointer"
               onClick={(e) => {
-                // Prevent the click from bubbling up to parent elements
+                e.preventDefault();
                 e.stopPropagation();
+
+                // Check if running in iOS WKWebView
+                const webkit = (window as any).webkit;
+                if (webkit?.messageHandlers?.webviewHandler) {
+                  webkit.messageHandlers.webviewHandler.postMessage({
+                    type: 'openUrl',
+                    url: href,
+                    title: segment.text
+                  });
+                } else {
+                  // Fallback for web browser
+                  window.open(href, '_blank');
+                }
               }}
             >
               {segment.text}

@@ -41,6 +41,7 @@ export function WikiSidebar({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [showNewPage, setShowNewPage] = useState(false);
   const [newPagePath, setNewPagePath] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Toggle expanded state for a path
   const toggleExpanded = useCallback((path: string) => {
@@ -71,10 +72,18 @@ export function WikiSidebar({
     if (!newPagePath.trim()) return;
 
     const path = titleToPath(newPagePath);
+
+    // Check if page already exists
+    if (getPage(path)) {
+      setCreateError(`A page named "${newPagePath}" already exists`);
+      return;
+    }
+
+    setCreateError(null);
     onCreatePage(path);
     setNewPagePath("");
     setShowNewPage(false);
-  }, [newPagePath, onCreatePage]);
+  }, [newPagePath, onCreatePage, getPage]);
 
   // Filter pages by search query
   const filterNodes = useCallback(
@@ -147,23 +156,33 @@ export function WikiSidebar({
             type="text"
             placeholder="Page name..."
             value={newPagePath}
-            onChange={(e) => setNewPagePath(e.target.value)}
+            onChange={(e) => {
+              setNewPagePath(e.target.value);
+              setCreateError(null); // Clear error when user types
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 handleCreatePage();
               } else if (e.key === "Escape") {
                 setShowNewPage(false);
                 setNewPagePath("");
+                setCreateError(null);
               }
             }}
             autoFocus
-            className="w-full px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded-md text-sm text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+            className={`w-full px-3 py-1.5 bg-neutral-800 border rounded-md text-sm text-neutral-200 placeholder-neutral-500 focus:outline-none ${
+              createError ? "border-red-500" : "border-neutral-700 focus:border-blue-500"
+            }`}
           />
+          {createError && (
+            <div className="mt-1 text-xs text-red-400">{createError}</div>
+          )}
           <div className="flex justify-end gap-2 mt-2">
             <button
               onClick={() => {
                 setShowNewPage(false);
                 setNewPagePath("");
+                setCreateError(null);
               }}
               className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200 transition-colors"
             >

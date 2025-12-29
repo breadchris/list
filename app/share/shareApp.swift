@@ -31,9 +31,16 @@ class StatusBarHostingController<Content: View>: UIHostingController<Content> {
     }
 
     @objc private func handleStatusBarChange(_ notification: Notification) {
-        if let hidden = notification.userInfo?["hidden"] as? Bool {
-            isStatusBarHidden = hidden
-            setNeedsStatusBarAppearanceUpdate()
+        guard let hidden = notification.userInfo?["hidden"] as? Bool else { return }
+
+        print("📱 StatusBar: Received notification, hidden=\(hidden)")
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.isStatusBarHidden = hidden
+            UIView.animate(withDuration: 0.3) {
+                self.setNeedsStatusBarAppearanceUpdate()
+            }
         }
     }
 

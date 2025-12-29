@@ -211,6 +211,7 @@ function generateIframeHTML(
     }
   }
   </script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -221,11 +222,6 @@ function generateIframeHTML(
     #root {
       min-height: 50px;
     }
-    /* Tailwind-like utilities for common styles */
-    .p-4 { padding: 1rem; }
-    .rounded { border-radius: 0.375rem; }
-    .border { border: 1px solid #e5e7eb; }
-    .shadow { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); }
   </style>
 </head>
 <body>

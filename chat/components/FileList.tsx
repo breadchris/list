@@ -54,7 +54,7 @@ export function FileList({ groupId }: FileListProps) {
     if (!fileUrl) return;
 
     if (content.type === "epub") {
-      window.location.href = `/reader?fileUrl=${encodeURIComponent(fileUrl)}`;
+      window.location.href = `/reader?contentId=${content.id}`;
     } else if (content.type === "pdf") {
       window.open(fileUrl, "_blank");
     } else if (content.type === "image") {

@@ -27,6 +27,9 @@ interface FinderContentProps {
   onFileUpload: (files: FileList) => void;
   isLoading?: boolean;
   deletingId?: string | null;
+  hasNextPage?: boolean;
+  onLoadMore?: () => void;
+  isLoadingMore?: boolean;
 }
 
 function getFileIcon(type: string, name: string) {
@@ -96,6 +99,9 @@ interface ListViewProps {
   onFileClick: (content: Content) => void;
   onFileDelete: (content: Content) => void;
   deletingId?: string | null;
+  hasNextPage?: boolean;
+  onLoadMore?: () => void;
+  isLoadingMore?: boolean;
 }
 
 function ListView({
@@ -103,6 +109,9 @@ function ListView({
   onFileClick,
   onFileDelete,
   deletingId,
+  hasNextPage,
+  onLoadMore,
+  isLoadingMore,
 }: ListViewProps) {
   return (
     <div className="h-full overflow-auto">
@@ -184,6 +193,19 @@ function ListView({
           </div>
         ))}
       </div>
+
+      {/* Load more button */}
+      {hasNextPage && onLoadMore && (
+        <div className="flex justify-center py-4 px-4">
+          <button
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="px-6 py-2 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
+          >
+            {isLoadingMore ? "Loading..." : "Load more files"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -193,6 +215,9 @@ interface IconViewProps {
   onFileClick: (content: Content) => void;
   onFileDelete: (content: Content) => void;
   deletingId?: string | null;
+  hasNextPage?: boolean;
+  onLoadMore?: () => void;
+  isLoadingMore?: boolean;
 }
 
 function IconView({
@@ -200,6 +225,9 @@ function IconView({
   onFileClick,
   onFileDelete,
   deletingId,
+  hasNextPage,
+  onLoadMore,
+  isLoadingMore,
 }: IconViewProps) {
   return (
     <div className="h-full overflow-auto p-4 md:p-6">
@@ -240,6 +268,19 @@ function IconView({
           </div>
         ))}
       </div>
+
+      {/* Load more button */}
+      {hasNextPage && onLoadMore && (
+        <div className="flex justify-center py-4">
+          <button
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="px-6 py-2 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
+          >
+            {isLoadingMore ? "Loading..." : "Load more files"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -252,6 +293,9 @@ export function FinderContent({
   onFileUpload,
   isLoading,
   deletingId,
+  hasNextPage,
+  onLoadMore,
+  isLoadingMore,
 }: FinderContentProps) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -337,6 +381,9 @@ export function FinderContent({
           onFileClick={onFileClick}
           onFileDelete={onFileDelete}
           deletingId={deletingId}
+          hasNextPage={hasNextPage}
+          onLoadMore={onLoadMore}
+          isLoadingMore={isLoadingMore}
         />
       ) : (
         <IconView
@@ -344,6 +391,9 @@ export function FinderContent({
           onFileClick={onFileClick}
           onFileDelete={onFileDelete}
           deletingId={deletingId}
+          hasNextPage={hasNextPage}
+          onLoadMore={onLoadMore}
+          isLoadingMore={isLoadingMore}
         />
       )}
     </div>

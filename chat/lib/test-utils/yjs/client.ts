@@ -43,8 +43,10 @@ export async function connectToYSweet(
   );
 
   // Create Y-Sweet provider using the official client
-  // Type assertion needed because local YSweetClientToken matches y-sweet ClientToken shape
-  const provider = createYjsProvider(doc, token as any, {} as any);
+  // Pass the auth endpoint for token refresh and the initial token we already fetched
+  const provider = createYjsProvider(doc, options.doc_id, options.auth_endpoint, {
+    initialClientToken: token as any,
+  });
 
   // Set up connection promise
   const connected = new Promise<void>((resolve, reject) => {

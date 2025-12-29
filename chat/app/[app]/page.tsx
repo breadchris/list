@@ -15,7 +15,7 @@ import { WikiInterface } from "@/components/wiki/wiki-interface";
 import { AppSwitcherButton } from "@/components/app-switcher-button";
 import { AppSwitcherPanel } from "@/components/app-switcher-panel";
 import { YDocWrapper } from "@/components/y-doc-wrapper";
-import { PublishGroupProvider } from "@/components/PublishGroupContext";
+import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 import { AppSettingsProvider } from "@/components/AppSettingsContext";
 import { ToastProvider } from "@/components/list/ToastProvider";
 import { getAppById } from "@/lib/apps.config";
@@ -26,7 +26,7 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
   const router = useRouter();
 
-  // Redirect list and dj apps to their dedicated routes
+  // Redirect list, dj, wiki, time, and code apps to their dedicated routes
   useEffect(() => {
     if (appConfig?.renderMode === "list") {
       router.replace("/list");
@@ -34,14 +34,23 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
     if (appConfig?.renderMode === "dj") {
       router.replace("/dj");
     }
+    if (appConfig?.renderMode === "wiki") {
+      router.replace("/wiki");
+    }
+    if (appConfig?.renderMode === "time") {
+      router.replace("/time");
+    }
+    if (appConfig?.renderMode === "code") {
+      router.replace("/code");
+    }
   }, [appConfig, router]);
 
   if (!appConfig) {
     notFound();
   }
 
-  // List and DJ apps have their own route structures
-  if (appConfig.renderMode === "list" || appConfig.renderMode === "dj") {
+  // List, DJ, Wiki, Time, and Code apps have their own route structures
+  if (appConfig.renderMode === "list" || appConfig.renderMode === "dj" || appConfig.renderMode === "wiki" || appConfig.renderMode === "time" || appConfig.renderMode === "code") {
     return null; // Will redirect
   }
 
@@ -51,7 +60,7 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   // Chat app uses a different interface
   if (appConfig.renderMode === "chat") {
     return (
-      <PublishGroupProvider>
+      <GlobalGroupProvider>
         <div className="relative h-screen bg-neutral-950">
           <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
           <AppSwitcherPanel
@@ -63,14 +72,14 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
             <ChatInterface />
           </YDocWrapper>
         </div>
-      </PublishGroupProvider>
+      </GlobalGroupProvider>
     );
   }
 
   // Calendar app uses split view with chat + calendar
   if (appConfig.renderMode === "calendar") {
     return (
-      <PublishGroupProvider>
+      <GlobalGroupProvider>
         <div className="relative h-screen bg-neutral-950">
           <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
           <AppSwitcherPanel
@@ -82,24 +91,26 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
             <CalendarChatInterface />
           </YDocWrapper>
         </div>
-      </PublishGroupProvider>
+      </GlobalGroupProvider>
     );
   }
 
   // Reader app - EPUB reader
   if (appConfig.renderMode === "reader") {
     return (
-      <AppSettingsProvider>
-        <div className="relative h-screen bg-neutral-900">
-          {/* AppSwitcherButton is inside ReaderAppInterface - shown on tap */}
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp={app}
-          />
-          <ReaderAppInterface onOpenAppSwitcher={() => setAppSwitcherOpen(true)} />
-        </div>
-      </AppSettingsProvider>
+      <GlobalGroupProvider>
+        <AppSettingsProvider>
+          <div className="relative h-screen bg-neutral-900">
+            {/* AppSwitcherButton is inside ReaderAppInterface - shown on tap */}
+            <AppSwitcherPanel
+              isOpen={appSwitcherOpen}
+              onClose={() => setAppSwitcherOpen(false)}
+              currentApp={app}
+            />
+            <ReaderAppInterface onToggleAppSwitcher={() => setAppSwitcherOpen(prev => !prev)} />
+          </div>
+        </AppSettingsProvider>
+      </GlobalGroupProvider>
     );
   }
 
@@ -192,7 +203,7 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
     const groupId = "default-wiki-group"; // TODO: Get from user context
 
     return (
-      <PublishGroupProvider>
+      <GlobalGroupProvider>
         <div className="relative h-screen bg-neutral-950">
           <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
           <AppSwitcherPanel
@@ -206,7 +217,7 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
             ySweetUrl=""
           />
         </div>
-      </PublishGroupProvider>
+      </GlobalGroupProvider>
     );
   }
 

@@ -4,20 +4,23 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { getAllApps } from "@/lib/apps.config";
 import { useSupabaseUser } from "@/hooks/useSupabaseAuth";
-import { usePublishGroup } from "./PublishGroupContext";
+import { useGlobalGroup } from "./GlobalGroupContext";
 import { AuthModal } from "./AuthModal";
 import { ChevronDown } from "lucide-react";
+import { supabase } from "@/lib/list/SupabaseClient";
 import { useState, useRef, useEffect } from "react";
 
 function UserGroupHeader() {
   const { user, isLoading: authLoading } = useSupabaseUser();
   const { selectedGroup, setSelectedGroup, groups, isLoading: groupsLoading } =
-    usePublishGroup();
+    useGlobalGroup();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -26,10 +29,21 @@ function UserGroupHeader() {
       ) {
         setIsDropdownOpen(false);
       }
+      if (
+        userDropdownRef.current &&
+        !userDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsUserDropdownOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setIsUserDropdownOpen(false);
+  };
 
   const isLoading = authLoading || groupsLoading;
 
@@ -55,9 +69,24 @@ function UserGroupHeader() {
         className="flex flex-col items-center gap-1 text-sm"
       >
         {user ? (
-          <span className="text-neutral-400 truncate max-w-[200px]">
-            {user.email}
-          </span>
+          <div className="relative" ref={userDropdownRef}>
+            <button
+              onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
+              className="text-neutral-400 hover:text-neutral-300 truncate max-w-[200px] transition-colors"
+            >
+              {user.email}
+            </button>
+            {isUserDropdownOpen && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-neutral-900 border border-neutral-800 rounded-lg shadow-lg overflow-hidden z-50 min-w-[120px]">
+                <button
+                  onClick={handleSignOut}
+                  className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-neutral-800 transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <button
             onClick={() => setShowAuthModal(true)}

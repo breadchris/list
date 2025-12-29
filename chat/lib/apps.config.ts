@@ -9,11 +9,15 @@ import {
   Stamp,
   ListVideo,
   BookText,
+  UsersRound,
+  Calendar,
+  Code2,
+  Camera,
   type LucideIcon,
 } from "lucide-react";
 import type { z } from "zod";
 
-export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki";
+export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki" | "bookclub" | "time" | "code" | "photos";
 
 export interface AppConfig {
   id: string;
@@ -139,6 +143,50 @@ export const apps: AppConfig[] = [
     bgColor: "bg-teal-400/10",
     placeholder: "Create and link wiki pages...",
     renderMode: "wiki",
+  },
+  {
+    id: "bookclub",
+    name: "club",
+    description:
+      "Collaborative book clubs with shared reading progress and highlights",
+    icon: UsersRound,
+    color: "text-orange-400",
+    bgColor: "bg-orange-400/10",
+    placeholder: "Create or join a book club...",
+    renderMode: "bookclub",
+  },
+  {
+    id: "time",
+    name: "time",
+    description:
+      "Collaborative calendar with real-time event sync",
+    icon: Calendar,
+    color: "text-sky-400",
+    bgColor: "bg-sky-400/10",
+    placeholder: "Click to add an event...",
+    renderMode: "time",
+  },
+  {
+    id: "code",
+    name: "code",
+    description:
+      "Generate and preview TSX components with Claude Code",
+    icon: Code2,
+    color: "text-indigo-400",
+    bgColor: "bg-indigo-400/10",
+    placeholder: "Describe your component...",
+    renderMode: "code",
+  },
+  {
+    id: "photos",
+    name: "photos",
+    description:
+      "Search Pexels for images, edit, and save to your library",
+    icon: Camera,
+    color: "text-fuchsia-400",
+    bgColor: "bg-fuchsia-400/10",
+    placeholder: "Search for photos...",
+    renderMode: "photos",
   },
 ];
 

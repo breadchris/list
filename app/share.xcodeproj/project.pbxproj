@@ -7,8 +7,23 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4C0DAB862EF25BCE00222ABC /* ExyteChat in Frameworks */ = {isa = PBXBuildFile; productRef = 4C0DAB852EF25BCE00222ABC /* ExyteChat */; };
+		4C0DAB882EF25F2600222ABC /* SupabaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB872EF25F2600222ABC /* SupabaseManager.swift */; };
+		4C0DAB8C2EF25F6E00222ABC /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 4C0DAB8B2EF25F6E00222ABC /* Supabase */; };
+		4C0DAB8E2EF25F9C00222ABC /* KeychainAuthStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB8D2EF25F9C00222ABC /* KeychainAuthStorage.swift */; };
+		4C0DAB932EF26CA500222ABC /* ChatRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB912EF26CA500222ABC /* ChatRepository.swift */; };
+		4C0DAB942EF26CA500222ABC /* GroupSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB922EF26CA500222ABC /* GroupSelectorView.swift */; };
+		4C0DAB952EF26CA500222ABC /* ChatGroupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB8F2EF26CA500222ABC /* ChatGroupManager.swift */; };
+		4C0DAB962EF26CA500222ABC /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB902EF26CA500222ABC /* ChatMessage.swift */; };
+		4C0DAB9E2EF4581500222ABC /* EPUBReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB9C2EF4581500222ABC /* EPUBReaderView.swift */; };
+		4C0DAB9F2EF4581500222ABC /* EPUBSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB9D2EF4581500222ABC /* EPUBSectionView.swift */; };
+		4C0DABA02EF4581500222ABC /* EPUBItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB9B2EF4581500222ABC /* EPUBItem.swift */; };
+		4C0DABA12EF4581500222ABC /* ChatWithReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DAB9A2EF4581500222ABC /* ChatWithReaderView.swift */; };
+		4C0DABA32EF7ADD100222ABC /* WebContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DABA22EF7ADD100222ABC /* WebContentView.swift */; };
+		4C0DABA72EF8DD1D00222ABC /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DABA52EF8DD1D00222ABC /* ThreadView.swift */; };
+		4C0DABA82EF8DD1D00222ABC /* ThreadSubjectHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DABA42EF8DD1D00222ABC /* ThreadSubjectHeader.swift */; };
+		4C0DABA92EF8DD1D00222ABC /* ThreadViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0DABA62EF8DD1D00222ABC /* ThreadViewModel.swift */; };
 		4C5AE86A2E8B63FE005D092E /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5AE8692E8B63FE005D092E /* ShareViewController.swift */; };
-		4C5AE86C2E8B6417005D092E /* SharedURLManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5AE86B2E8B6417005D092E /* SharedURLManager.swift */; };
 		4C5AE86E2E8B644F005D092E /* ShareExtension-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4C5AE86D2E8B644F005D092E /* ShareExtension-Info.plist */; };
 		4C5AE8702E8B6458005D092E /* MainApp-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4C5AE86F2E8B6458005D092E /* MainApp-Info.plist */; };
 		4C5AE8732E8B6510005D092E /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5AE8722E8B6510005D092E /* TestHelpers.swift */; };
@@ -17,18 +32,29 @@
 		4C5AE8792E8B657E005D092E /* setup_testing.sh in Resources */ = {isa = PBXBuildFile; fileRef = 4C5AE8782E8B657E005D092E /* setup_testing.sh */; };
 		4C6D284A2CE5CCAF00FCED19 /* shareApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6D28492CE5CCAF00FCED19 /* shareApp.swift */; };
 		4C6D284C2CE5CCAF00FCED19 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */; };
-		4CAPP00112EE13066004C3D24 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAPP00012EE13066004C3D24 /* AppDelegate.swift */; };
-		4CINB00112EE13066004C3D24 /* InboxDrainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CINB00012EE13066004C3D24 /* InboxDrainer.swift */; };
-		4CKEY00112EE13066004C3D24 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CKEY00012EE13066004C3D24 /* KeychainTokenStore.swift */; };
-		4CSHR00112EE13066004C3D24 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CSHR00012EE13066004C3D24 /* SharedInbox.swift */; };
-		4CSIT00112EE13066004C3D24 /* ShareItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CSIT00012EE13066004C3D24 /* ShareItem.swift */; };
 		4C6D284E2CE5CCB000FCED19 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C6D284D2CE5CCB000FCED19 /* Assets.xcassets */; };
 		4C6D28512CE5CCB000FCED19 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C6D28502CE5CCB000FCED19 /* Preview Assets.xcassets */; };
 		4C6D285E2CE5CCE100FCED19 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6D285D2CE5CCE100FCED19 /* ShareViewController.swift */; };
-		4CEXT00112EE13066004C3D24 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEXT00012EE13066004C3D24 /* SharedInbox.swift */; };
-		4CEXT00122EE13066004C3D24 /* ShareItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEXT00022EE13066004C3D24 /* ShareItem.swift */; };
 		4C6D28612CE5CCE200FCED19 /* MainInterface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4C6D285F2CE5CCE200FCED19 /* MainInterface.storyboard */; };
 		4C6D28652CE5CCE200FCED19 /* ext.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4C6D285B2CE5CCE100FCED19 /* ext.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		4CAPP00112EE13066004C3D24 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAPP00012EE13066004C3D24 /* AppDelegate.swift */; };
+		4CCHT00112EE13066004C3D24 /* ChatTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCHT00012EE13066004C3D24 /* ChatTab.swift */; };
+		4CCVM00112EE13066004C3D24 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCVM00012EE13066004C3D24 /* ChatViewModel.swift */; };
+		4CEXT00112EE13066004C3D24 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEXT00012EE13066004C3D24 /* SharedInbox.swift */; };
+		4CEXT00122EE13066004C3D24 /* ShareItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEXT00022EE13066004C3D24 /* ShareItem.swift */; };
+		4CINB00112EE13066004C3D24 /* InboxDrainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CINB00012EE13066004C3D24 /* InboxDrainer.swift */; };
+		4CKEY00112EE13066004C3D24 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CKEY00012EE13066004C3D24 /* KeychainTokenStore.swift */; };
+		4CMCD00112EE13066004C3D24 /* MockChatData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CMCD00012EE13066004C3D24 /* MockChatData.swift */; };
+		4CMTV00112EE13066004C3D24 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CMTV00012EE13066004C3D24 /* MainTabView.swift */; };
+		4COFF00112EE13066004C3D24 /* PendingChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4COFF00012EE13066004C3D24 /* PendingChatMessage.swift */; };
+		4COFF00212EE13066004C3D24 /* MessageOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4COFF00022EE13066004C3D24 /* MessageOutbox.swift */; };
+		4COFF00312EE13066004C3D24 /* MessageSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4COFF00032EE13066004C3D24 /* MessageSyncService.swift */; };
+		4COFF00412EE13066004C3D24 /* MessageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4COFF00042EE13066004C3D24 /* MessageCache.swift */; };
+		4COFF00512EE13066004C3D24 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4COFF00052EE13066004C3D24 /* NetworkMonitor.swift */; };
+		4CPKG00032EE13066004C3D24 /* ExyteChat in Frameworks */ = {isa = PBXBuildFile; productRef = 4CPKG00022EE13066004C3D24 /* ExyteChat */; };
+		4CSHR00112EE13066004C3D24 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CSHR00012EE13066004C3D24 /* SharedInbox.swift */; };
+		4CSIT00112EE13066004C3D24 /* ShareItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CSIT00012EE13066004C3D24 /* ShareItem.swift */; };
+		4CWVT00112EE13066004C3D24 /* WebViewTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CWVT00012EE13066004C3D24 /* WebViewTab.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,8 +82,21 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		4C0DAB872EF25F2600222ABC /* SupabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseManager.swift; sourceTree = "<group>"; };
+		4C0DAB8D2EF25F9C00222ABC /* KeychainAuthStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainAuthStorage.swift; sourceTree = "<group>"; };
+		4C0DAB8F2EF26CA500222ABC /* ChatGroupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGroupManager.swift; sourceTree = "<group>"; };
+		4C0DAB902EF26CA500222ABC /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
+		4C0DAB912EF26CA500222ABC /* ChatRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRepository.swift; sourceTree = "<group>"; };
+		4C0DAB922EF26CA500222ABC /* GroupSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupSelectorView.swift; sourceTree = "<group>"; };
+		4C0DAB9A2EF4581500222ABC /* ChatWithReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWithReaderView.swift; sourceTree = "<group>"; };
+		4C0DAB9B2EF4581500222ABC /* EPUBItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EPUBItem.swift; sourceTree = "<group>"; };
+		4C0DAB9C2EF4581500222ABC /* EPUBReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EPUBReaderView.swift; sourceTree = "<group>"; };
+		4C0DAB9D2EF4581500222ABC /* EPUBSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EPUBSectionView.swift; sourceTree = "<group>"; };
+		4C0DABA22EF7ADD100222ABC /* WebContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentView.swift; sourceTree = "<group>"; };
+		4C0DABA42EF8DD1D00222ABC /* ThreadSubjectHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadSubjectHeader.swift; sourceTree = "<group>"; };
+		4C0DABA52EF8DD1D00222ABC /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
+		4C0DABA62EF8DD1D00222ABC /* ThreadViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadViewModel.swift; sourceTree = "<group>"; };
 		4C5AE8692E8B63FE005D092E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
-		4C5AE86B2E8B6417005D092E /* SharedURLManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedURLManager.swift; sourceTree = "<group>"; };
 		4C5AE86D2E8B644F005D092E /* ShareExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "ShareExtension-Info.plist"; sourceTree = "<group>"; };
 		4C5AE86F2E8B6458005D092E /* MainApp-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "MainApp-Info.plist"; sourceTree = "<group>"; };
 		4C5AE8712E8B6464005D092E /* Share 2.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Share 2.entitlements"; sourceTree = "<group>"; };
@@ -75,15 +114,25 @@
 		4C6D285D2CE5CCE100FCED19 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		4C6D28602CE5CCE200FCED19 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/MainInterface.storyboard; sourceTree = "<group>"; };
 		4C6D28622CE5CCE200FCED19 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		4CAPP00012EE13066004C3D24 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		4CC4D5502E6BF5FC007C1BF4 /* share.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = share.entitlements; sourceTree = "<group>"; };
 		4CC4D5512E6BF6FC007C1BF4 /* ext.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ext.entitlements; sourceTree = "<group>"; };
+		4CCHT00012EE13066004C3D24 /* ChatTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTab.swift; sourceTree = "<group>"; };
+		4CCVM00012EE13066004C3D24 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		4CEXT00012EE13066004C3D24 /* SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedInbox.swift; sourceTree = "<group>"; };
 		4CEXT00022EE13066004C3D24 /* ShareItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareItem.swift; sourceTree = "<group>"; };
-		4CAPP00012EE13066004C3D24 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		4CINB00012EE13066004C3D24 /* InboxDrainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxDrainer.swift; sourceTree = "<group>"; };
 		4CKEY00012EE13066004C3D24 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
+		4CMCD00012EE13066004C3D24 /* MockChatData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockChatData.swift; sourceTree = "<group>"; };
+		4CMTV00012EE13066004C3D24 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		4COFF00012EE13066004C3D24 /* PendingChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingChatMessage.swift; sourceTree = "<group>"; };
+		4COFF00022EE13066004C3D24 /* MessageOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageOutbox.swift; sourceTree = "<group>"; };
+		4COFF00032EE13066004C3D24 /* MessageSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageSyncService.swift; sourceTree = "<group>"; };
+		4COFF00042EE13066004C3D24 /* MessageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCache.swift; sourceTree = "<group>"; };
+		4COFF00052EE13066004C3D24 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		4CSHR00012EE13066004C3D24 /* SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedInbox.swift; sourceTree = "<group>"; };
 		4CSIT00012EE13066004C3D24 /* ShareItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareItem.swift; sourceTree = "<group>"; };
+		4CWVT00012EE13066004C3D24 /* WebViewTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewTab.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,6 +140,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4C0DAB862EF25BCE00222ABC /* ExyteChat in Frameworks */,
+				4CPKG00032EE13066004C3D24 /* ExyteChat in Frameworks */,
+				4C0DAB8C2EF25F6E00222ABC /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,11 +156,19 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		4C0DAB8A2EF25F6E00222ABC /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		4C6D283D2CE5CCAF00FCED19 = {
 			isa = PBXGroup;
 			children = (
 				4C6D28482CE5CCAF00FCED19 /* share */,
 				4C6D285C2CE5CCE100FCED19 /* ext */,
+				4C0DAB8A2EF25F6E00222ABC /* Frameworks */,
 				4C6D28472CE5CCAF00FCED19 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -125,6 +185,8 @@
 		4C6D28482CE5CCAF00FCED19 /* share */ = {
 			isa = PBXGroup;
 			children = (
+				4C0DAB8D2EF25F9C00222ABC /* KeychainAuthStorage.swift */,
+				4C0DAB872EF25F2600222ABC /* SupabaseManager.swift */,
 				4C5C09AB2EE13066004C3D24 /* Info.plist */,
 				4CC4D5502E6BF5FC007C1BF4 /* share.entitlements */,
 				4C6D28492CE5CCAF00FCED19 /* shareApp.swift */,
@@ -134,10 +196,13 @@
 				4CSHR00012EE13066004C3D24 /* SharedInbox.swift */,
 				4CSIT00012EE13066004C3D24 /* ShareItem.swift */,
 				4C6D284B2CE5CCAF00FCED19 /* ContentView.swift */,
+				4CMTV00012EE13066004C3D24 /* MainTabView.swift */,
+				4CWVT00012EE13066004C3D24 /* WebViewTab.swift */,
+				4COFF00052EE13066004C3D24 /* NetworkMonitor.swift */,
+				4CCHAT00002EE13066004C3D24 /* Chat */,
 				4C6D284D2CE5CCB000FCED19 /* Assets.xcassets */,
 				4C6D284F2CE5CCB000FCED19 /* Preview Content */,
 				4C5AE8692E8B63FE005D092E /* ShareViewController.swift */,
-				4C5AE86B2E8B6417005D092E /* SharedURLManager.swift */,
 				4C5AE86D2E8B644F005D092E /* ShareExtension-Info.plist */,
 				4C5AE86F2E8B6458005D092E /* MainApp-Info.plist */,
 				4C5AE8712E8B6464005D092E /* Share 2.entitlements */,
@@ -170,6 +235,32 @@
 			path = ext;
 			sourceTree = "<group>";
 		};
+		4CCHAT00002EE13066004C3D24 /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				4C0DABA42EF8DD1D00222ABC /* ThreadSubjectHeader.swift */,
+				4C0DABA52EF8DD1D00222ABC /* ThreadView.swift */,
+				4C0DABA62EF8DD1D00222ABC /* ThreadViewModel.swift */,
+				4C0DABA22EF7ADD100222ABC /* WebContentView.swift */,
+				4C0DAB9A2EF4581500222ABC /* ChatWithReaderView.swift */,
+				4C0DAB9B2EF4581500222ABC /* EPUBItem.swift */,
+				4C0DAB9C2EF4581500222ABC /* EPUBReaderView.swift */,
+				4C0DAB9D2EF4581500222ABC /* EPUBSectionView.swift */,
+				4C0DAB8F2EF26CA500222ABC /* ChatGroupManager.swift */,
+				4C0DAB902EF26CA500222ABC /* ChatMessage.swift */,
+				4C0DAB912EF26CA500222ABC /* ChatRepository.swift */,
+				4C0DAB922EF26CA500222ABC /* GroupSelectorView.swift */,
+				4CCHT00012EE13066004C3D24 /* ChatTab.swift */,
+				4CCVM00012EE13066004C3D24 /* ChatViewModel.swift */,
+				4CMCD00012EE13066004C3D24 /* MockChatData.swift */,
+				4COFF00012EE13066004C3D24 /* PendingChatMessage.swift */,
+				4COFF00022EE13066004C3D24 /* MessageOutbox.swift */,
+				4COFF00032EE13066004C3D24 /* MessageSyncService.swift */,
+				4COFF00042EE13066004C3D24 /* MessageCache.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -188,6 +279,11 @@
 				4C6D28642CE5CCE200FCED19 /* PBXTargetDependency */,
 			);
 			name = share;
+			packageProductDependencies = (
+				4CPKG00022EE13066004C3D24 /* ExyteChat */,
+				4C0DAB852EF25BCE00222ABC /* ExyteChat */,
+				4C0DAB8B2EF25F6E00222ABC /* Supabase */,
+			);
 			productName = share;
 			productReference = 4C6D28462CE5CCAF00FCED19 /* share.app */;
 			productType = "com.apple.product-type.application";
@@ -236,6 +332,10 @@
 				Base,
 			);
 			mainGroup = 4C6D283D2CE5CCAF00FCED19;
+			packageReferences = (
+				4C0DAB842EF25BCE00222ABC /* XCRemoteSwiftPackageReference "Chat" */,
+				4C0DAB892EF25F5000222ABC /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			productRefGroup = 4C6D28472CE5CCAF00FCED19 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -279,13 +379,36 @@
 				4C5AE86A2E8B63FE005D092E /* ShareViewController.swift in Sources */,
 				4C5AE8732E8B6510005D092E /* TestHelpers.swift in Sources */,
 				4C6D284C2CE5CCAF00FCED19 /* ContentView.swift in Sources */,
-				4C5AE86C2E8B6417005D092E /* SharedURLManager.swift in Sources */,
+				4C0DABA32EF7ADD100222ABC /* WebContentView.swift in Sources */,
 				4C6D284A2CE5CCAF00FCED19 /* shareApp.swift in Sources */,
 				4CAPP00112EE13066004C3D24 /* AppDelegate.swift in Sources */,
+				4C0DAB9E2EF4581500222ABC /* EPUBReaderView.swift in Sources */,
+				4C0DAB9F2EF4581500222ABC /* EPUBSectionView.swift in Sources */,
+				4C0DABA02EF4581500222ABC /* EPUBItem.swift in Sources */,
+				4C0DABA12EF4581500222ABC /* ChatWithReaderView.swift in Sources */,
+				4C0DAB8E2EF25F9C00222ABC /* KeychainAuthStorage.swift in Sources */,
 				4CINB00112EE13066004C3D24 /* InboxDrainer.swift in Sources */,
 				4CKEY00112EE13066004C3D24 /* KeychainTokenStore.swift in Sources */,
 				4CSHR00112EE13066004C3D24 /* SharedInbox.swift in Sources */,
 				4CSIT00112EE13066004C3D24 /* ShareItem.swift in Sources */,
+				4C0DAB882EF25F2600222ABC /* SupabaseManager.swift in Sources */,
+				4CMTV00112EE13066004C3D24 /* MainTabView.swift in Sources */,
+				4CWVT00112EE13066004C3D24 /* WebViewTab.swift in Sources */,
+				4C0DAB932EF26CA500222ABC /* ChatRepository.swift in Sources */,
+				4C0DAB942EF26CA500222ABC /* GroupSelectorView.swift in Sources */,
+				4C0DAB952EF26CA500222ABC /* ChatGroupManager.swift in Sources */,
+				4C0DAB962EF26CA500222ABC /* ChatMessage.swift in Sources */,
+				4C0DABA72EF8DD1D00222ABC /* ThreadView.swift in Sources */,
+				4C0DABA82EF8DD1D00222ABC /* ThreadSubjectHeader.swift in Sources */,
+				4C0DABA92EF8DD1D00222ABC /* ThreadViewModel.swift in Sources */,
+				4CCHT00112EE13066004C3D24 /* ChatTab.swift in Sources */,
+				4CCVM00112EE13066004C3D24 /* ChatViewModel.swift in Sources */,
+				4CMCD00112EE13066004C3D24 /* MockChatData.swift in Sources */,
+				4COFF00112EE13066004C3D24 /* PendingChatMessage.swift in Sources */,
+				4COFF00212EE13066004C3D24 /* MessageOutbox.swift in Sources */,
+				4COFF00312EE13066004C3D24 /* MessageSyncService.swift in Sources */,
+				4COFF00412EE13066004C3D24 /* MessageCache.swift in Sources */,
+				4COFF00512EE13066004C3D24 /* NetworkMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -595,6 +718,42 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		4C0DAB842EF25BCE00222ABC /* XCRemoteSwiftPackageReference "Chat" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/exyte/Chat.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.7.6;
+			};
+		};
+		4C0DAB892EF25F5000222ABC /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4C0DAB852EF25BCE00222ABC /* ExyteChat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4C0DAB842EF25BCE00222ABC /* XCRemoteSwiftPackageReference "Chat" */;
+			productName = ExyteChat;
+		};
+		4C0DAB8B2EF25F6E00222ABC /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4C0DAB892EF25F5000222ABC /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		4CPKG00022EE13066004C3D24 /* ExyteChat */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ExyteChat;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4C6D283E2CE5CCAF00FCED19 /* Project object */;
 }

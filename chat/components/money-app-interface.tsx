@@ -1,30 +1,26 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { contentRepository } from '@/lib/list/ContentRepository';
 import { getCurrentUser } from '@/lib/list/SupabaseClient';
 import { TellerConnectButton } from '@/components/list/TellerConnectButton';
 import { UnifiedTransactionFeed } from '@/components/list/UnifiedTransactionFeed';
 import { MonthlyView } from '@/components/list/MonthlyView';
+import { useGlobalGroup } from '@/components/GlobalGroupContext';
 import { Wallet, Plus } from 'lucide-react';
 
 type ViewMode = 'daily' | 'monthly';
 
-interface Group {
-  id: string;
-  name: string;
-}
-
 export function MoneyAppInterface() {
   const [userId, setUserId] = useState<string | null>(null);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
 
-  // Get user and groups on mount
+  // Use global group context
+  const { selectedGroup, setSelectedGroup, groups, isLoading: groupsLoading } = useGlobalGroup();
+
+  // Get user on mount
   useEffect(() => {
     const init = async () => {
       try {
@@ -39,15 +35,6 @@ export function MoneyAppInterface() {
           return;
         }
         setUserId(user.id);
-
-        // Get user's groups
-        const userGroups = await contentRepository.getUserGroups();
-        setGroups(userGroups);
-
-        // Select first group by default
-        if (userGroups.length > 0) {
-          setSelectedGroup(userGroups[0]);
-        }
       } catch (err) {
         console.error('Error initializing money app:', err);
         setError('Failed to load your data');
@@ -64,7 +51,7 @@ export function MoneyAppInterface() {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  if (loading && !userId) {
+  if ((loading || groupsLoading) && !userId) {
     return (
       <div className="h-full bg-neutral-950 flex items-center justify-center">
         <div className="text-center">
@@ -109,7 +96,7 @@ export function MoneyAppInterface() {
                 value={selectedGroup?.id || ''}
                 onChange={(e) => {
                   const group = groups.find(g => g.id === e.target.value);
-                  setSelectedGroup(group || null);
+                  if (group) setSelectedGroup(group);
                 }}
                 className="bg-neutral-800 border border-neutral-700 text-neutral-300 text-sm rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               >

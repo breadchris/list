@@ -5,9 +5,9 @@ import { useYDoc, useYjsProvider } from "@y-sweet/react";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import { X, Upload, Check, Loader2, ExternalLink } from "lucide-react";
-import { supabase } from "./SupabaseClient";
-import { usePublishGroupOptional } from "./PublishGroupContext";
+import { useGlobalGroupOptional } from "./GlobalGroupContext";
 import { contentRepository } from "@/lib/list/ContentRepository";
+import { useStorageUpload } from "@/hooks/use-storage-upload";
 
 import {
   FormattingToolbar,
@@ -21,9 +21,19 @@ import {
   UnnestBlockButton,
   CreateLinkButton,
 } from "@blocknote/react";
+import {
+  AIExtension,
+  AIMenuController,
+  AIToolbarButton,
+  getAISlashMenuItems,
+} from "@blocknote/xl-ai";
+import { DefaultChatTransport } from "ai";
+import { en } from "@blocknote/core/locales";
+import { en as aiEn } from "@blocknote/xl-ai/locales";
 
 import "@blocknote/shadcn/style.css";
 import "@blocknote/core/fonts/inter.css";
+import "@blocknote/xl-ai/style.css";
 
 interface Message {
   id: string;
@@ -75,7 +85,7 @@ export function BlockNoteEditorAppInterface({
   const [userColor] = useState(() => generateUserColor());
 
   // Publish state
-  const publishGroupContext = usePublishGroupOptional();
+  const publishGroupContext = useGlobalGroupOptional();
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
   const [publishedContentId, setPublishedContentId] = useState<string | null>(null);
@@ -108,31 +118,16 @@ export function BlockNoteEditorAppInterface({
   // Determine if we're in panel mode (has messageId and onClose)
   const isPanelMode = Boolean(messageId && onClose);
 
-  // Upload file to Supabase storage
-  const uploadFile = useCallback(async (file: File): Promise<string> => {
-    const timestamp = Date.now();
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const folder = messageId || "blocknote-uploads";
-    const filePath = `${folder}/${timestamp}-${sanitizedName}`;
-
-    const { error } = await supabase.storage
-      .from("content")
-      .upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: false,
-      });
-
-    if (error) {
-      console.error("Upload failed:", error);
-      throw error;
-    }
-
-    const { data: urlData } = supabase.storage
-      .from("content")
-      .getPublicUrl(filePath);
-
-    return urlData.publicUrl;
-  }, [messageId]);
+  // Centralized file upload with RLS-compliant paths
+  const { uploadFile } = useStorageUpload({
+    contentId: publishedContentId || undefined,
+    groupId: publishGroupContext?.selectedGroup?.id,
+    onContentCreated: (id) => {
+      setPublishedContentId(id);
+      // Also persist to Y.js Map for cross-session sync
+      publishMetaMap?.set("content_id", id);
+    },
+  });
 
   // Handle publish/update content
   const handlePublish = useCallback(async (editor: any) => {
@@ -211,7 +206,7 @@ export function BlockNoteEditorAppInterface({
     return doc.getXmlFragment(messageId || "blocknote-content");
   }, [doc, messageId]);
 
-  // Create BlockNote editor with collaboration and file upload
+  // Create BlockNote editor with collaboration, file upload, and AI
   const editor = useCreateBlockNote(
     fragment
       ? {
@@ -224,10 +219,52 @@ export function BlockNoteEditorAppInterface({
             },
           },
           uploadFile: uploadFile,
+          extensions: [
+            AIExtension({
+              transport: new DefaultChatTransport({
+                api: "/api/blocknote-ai",
+              }),
+            }),
+          ],
+          dictionary: {
+            ...en,
+            ai: aiEn,
+          },
         }
       : {},
     [fragment, ysweetProvider, userName, userColor, uploadFile]
   );
+
+  // Track when editor view is ready (prevents "posAtDOM" errors on early clicks)
+  const [isEditorMounted, setIsEditorMounted] = useState(false);
+
+  useEffect(() => {
+    if (!editor) {
+      setIsEditorMounted(false);
+      return;
+    }
+
+    // Check if view is already available
+    const tiptapEditor = (editor as unknown as { _tiptapEditor?: { view?: unknown } })._tiptapEditor;
+    if (tiptapEditor?.view) {
+      setIsEditorMounted(true);
+      return;
+    }
+
+    // Poll for view availability (TipTap mounts async)
+    const checkMount = setInterval(() => {
+      const editor_internal = (editor as unknown as { _tiptapEditor?: { view?: unknown } })._tiptapEditor;
+      if (editor_internal?.view) {
+        setIsEditorMounted(true);
+        clearInterval(checkMount);
+      }
+    }, 10);
+
+    return () => {
+      clearInterval(checkMount);
+      setIsEditorMounted(false);
+    };
+  }, [editor]);
 
   // Don't render until we have a fragment
   if (!fragment) {
@@ -330,7 +367,7 @@ export function BlockNoteEditorAppInterface({
         )}
 
         {/* Editor */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto" style={{ pointerEvents: isEditorMounted ? 'auto' : 'none' }}>
           <BlockNoteView
             editor={editor}
             theme="dark"
@@ -351,17 +388,22 @@ export function BlockNoteEditorAppInterface({
                   <NestBlockButton key="nestBlockButton" />
                   <UnnestBlockButton key="unnestBlockButton" />
                   <CreateLinkButton key="createLinkButton" />
+                  <AIToolbarButton key="aiToolbarButton" />
                 </FormattingToolbar>
               )}
             />
             <SuggestionMenuController
               triggerCharacter="/"
               getItems={async (query) =>
-                getDefaultReactSlashMenuItems(editor).filter(
-                  (item) => item.title.toLowerCase().includes(query.toLowerCase())
+                [
+                  ...getDefaultReactSlashMenuItems(editor),
+                  ...getAISlashMenuItems(editor),
+                ].filter((item) =>
+                  item.title.toLowerCase().includes(query.toLowerCase())
                 )
               }
             />
+            <AIMenuController />
           </BlockNoteView>
         </div>
       </div>
@@ -370,7 +412,7 @@ export function BlockNoteEditorAppInterface({
 
   // Full-screen mode layout
   return (
-    <div className="h-screen w-full">
+    <div className="h-screen w-full" style={{ pointerEvents: isEditorMounted ? 'auto' : 'none' }}>
       <BlockNoteView
         editor={editor}
         theme="dark"
@@ -391,17 +433,22 @@ export function BlockNoteEditorAppInterface({
               <NestBlockButton key="nestBlockButton" />
               <UnnestBlockButton key="unnestBlockButton" />
               <CreateLinkButton key="createLinkButton" />
+              <AIToolbarButton key="aiToolbarButton" />
             </FormattingToolbar>
           )}
         />
         <SuggestionMenuController
           triggerCharacter="/"
           getItems={async (query) =>
-            getDefaultReactSlashMenuItems(editor).filter(
-              (item) => item.title.toLowerCase().includes(query.toLowerCase())
+            [
+              ...getDefaultReactSlashMenuItems(editor),
+              ...getAISlashMenuItems(editor),
+            ].filter((item) =>
+              item.title.toLowerCase().includes(query.toLowerCase())
             )
           }
         />
+        <AIMenuController />
       </BlockNoteView>
     </div>
   );

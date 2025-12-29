@@ -42,15 +42,27 @@ interface AddVideoDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   username?: string;
+  isGuest?: boolean;
 }
 
 export function AddVideoDialog({
   open,
   onOpenChange,
   username,
+  isGuest = false,
 }: AddVideoDialogProps) {
   const [query, setQuery] = useState("");
+  const [guestName, setGuestName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('dj-guest-username') || '';
+    }
+    return '';
+  });
+  const [showNamePrompt, setShowNamePrompt] = useState(false);
   const { addVideo } = useQueueActions();
+
+  // Effective username: use stored username for auth users, guest name for guests
+  const effectiveUsername = isGuest ? guestName : username;
 
   const handleAdd = useCallback(() => {
     const trimmedUrl = query.trim();
@@ -59,16 +71,28 @@ export function AddVideoDialog({
     const videoId = extractYouTubeId(trimmedUrl);
     if (!videoId) return;
 
+    // For guests, require a name
+    if (isGuest && !guestName.trim()) {
+      setShowNamePrompt(true);
+      return;
+    }
+
+    // Save guest name to localStorage
+    if (isGuest && guestName.trim()) {
+      localStorage.setItem('dj-guest-username', guestName.trim());
+    }
+
     addVideo({
       url: trimmedUrl,
       title: `YouTube Video (${videoId})`,
       thumbnail: getYouTubeThumbnail(videoId),
-      added_by: username,
+      added_by: effectiveUsername,
     });
 
     setQuery("");
+    setShowNamePrompt(false);
     onOpenChange(false);
-  }, [query, addVideo, username, onOpenChange]);
+  }, [query, addVideo, effectiveUsername, isGuest, guestName, onOpenChange]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -114,25 +138,49 @@ export function AddVideoDialog({
         )}
 
         {isValidUrl && videoId && (
-          <CommandItem
-            onSelect={handleAdd}
-            className="flex items-center gap-3 cursor-pointer"
-          >
-            <div className="w-16 h-9 rounded overflow-hidden bg-neutral-800 shrink-0">
-              <img
-                src={getYouTubeThumbnail(videoId)}
-                alt="Video thumbnail"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-neutral-300 truncate">
-                Add YouTube video
-              </p>
-              <p className="text-xs text-neutral-500 truncate">{query.trim()}</p>
-            </div>
-            <Plus className="w-4 h-4 text-neutral-500 shrink-0" />
-          </CommandItem>
+          <>
+            {/* Guest name input */}
+            {isGuest && (
+              <div className="px-3 py-2 border-b border-neutral-800">
+                <label className="text-xs text-neutral-500 block mb-1">Your name</label>
+                <input
+                  type="text"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="Enter your name..."
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && guestName.trim()) {
+                      e.preventDefault();
+                      handleAdd();
+                    }
+                  }}
+                />
+                {showNamePrompt && !guestName.trim() && (
+                  <p className="text-xs text-red-400 mt-1">Please enter your name</p>
+                )}
+              </div>
+            )}
+            <CommandItem
+              onSelect={handleAdd}
+              className="flex items-center gap-3 cursor-pointer"
+            >
+              <div className="w-16 h-9 rounded overflow-hidden bg-neutral-800 shrink-0">
+                <img
+                  src={getYouTubeThumbnail(videoId)}
+                  alt="Video thumbnail"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-neutral-300 truncate">
+                  Add YouTube video
+                </p>
+                <p className="text-xs text-neutral-500 truncate">{query.trim()}</p>
+              </div>
+              <Plus className="w-4 h-4 text-neutral-500 shrink-0" />
+            </CommandItem>
+          </>
         )}
       </CommandList>
     </CommandDialog>

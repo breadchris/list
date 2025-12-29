@@ -18,6 +18,13 @@ const mapkitPrivateKey = config.requireSecret('mapkit_private_key');
 const tellerClientCert = config.requireSecret('teller_client_cert');
 const tellerClientKey = config.requireSecret('teller_client_key');
 
+// APNs Push Notification Configuration
+const apnsTeamId = config.get('apns_team_id') || '';
+const apnsKeyId = config.get('apns_key_id') || '';
+const apnsPrivateKey = config.getSecret('apns_private_key') || pulumi.output('');
+const apnsBundleId = config.get('apns_bundle_id') || 'com.breadchris.list';
+const apnsEnvironment = config.get('apns_environment') || 'sandbox';
+
 // Create S3 bucket for Claude Code sessions
 const sessionBucket = new aws.s3.Bucket('claude-code-sessions', {
 	bucket: 'claude-code-sessions',
@@ -192,7 +199,13 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			TELLER_CLIENT_CERT: tellerClientCert,
 			TELLER_CLIENT_KEY: tellerClientKey,
 			HOME: '/tmp', // Claude CLI needs a HOME directory for config
-			IS_SANDBOX: '1' // Enable bypassPermissions mode for Claude CLI
+			IS_SANDBOX: '1', // Enable bypassPermissions mode for Claude CLI
+			// APNs Push Notification Configuration
+			APNS_TEAM_ID: apnsTeamId,
+			APNS_KEY_ID: apnsKeyId,
+			APNS_PRIVATE_KEY: apnsPrivateKey,
+			APNS_BUNDLE_ID: apnsBundleId,
+			APNS_ENVIRONMENT: apnsEnvironment
 		}
 	},
 	tags: {

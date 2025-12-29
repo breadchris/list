@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { Grid3X3, List, Search, X, Menu } from "lucide-react";
+import { Grid3X3, List, Search, X, Menu, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { GlobalGroupSelector } from "@/components/GlobalGroupSelector";
 
 export type ViewMode = "list" | "icons";
 
@@ -61,16 +62,28 @@ export function FinderToolbar({
         </div>
       </div>
 
-      {/* Center section: Group name */}
-      <div className="hidden md:flex items-center text-sm text-gray-700 font-medium">
-        {groupName || "Select a group"}
+      {/* Center section: Group selector */}
+      <div className="hidden md:flex items-center">
+        <GlobalGroupSelector
+          trigger={
+            <button className="flex items-center gap-1 text-sm text-gray-700 font-medium hover:text-gray-900 transition-colors">
+              <span>{groupName || "Select a group"}</span>
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            </button>
+          }
+        />
       </div>
 
-      {/* Mobile Group name */}
+      {/* Mobile Group selector */}
       <div className="md:hidden flex items-center flex-1 justify-center mx-2 min-w-0">
-        <span className="text-xs text-gray-700 truncate font-medium">
-          {groupName || "Select a group"}
-        </span>
+        <GlobalGroupSelector
+          trigger={
+            <button className="flex items-center gap-1 text-xs text-gray-700 font-medium hover:text-gray-900 transition-colors">
+              <span className="truncate">{groupName || "Select a group"}</span>
+              <ChevronDown className="w-3 h-3 text-gray-400 flex-shrink-0" />
+            </button>
+          }
+        />
       </div>
 
       {/* Right section: Search */}

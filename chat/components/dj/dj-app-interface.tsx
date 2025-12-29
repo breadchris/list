@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ListVideo, Link2, ChevronUp, ChevronDown, Plus } from "lucide-react";
+import { Link2, ChevronUp, ChevronDown, Plus } from "lucide-react";
 import { useDjInitialization } from "./hooks/use-dj-initialization";
 import { useCurrentVideo } from "./hooks/use-dj-state";
 import { useDjRoomQuery } from "@/hooks/list/useDjRoomQueries";
@@ -15,9 +15,11 @@ interface DjAppInterfaceProps {
   roomId: string;
   /** Pre-spawned Jamsocket timer backend URL (from server component) */
   timerBackendUrl?: string | null;
+  /** Guest mode: 'watch' for view-only, 'contribute' for adding videos */
+  guestMode?: 'watch' | 'contribute';
 }
 
-export function DjAppInterface({ roomId, timerBackendUrl }: DjAppInterfaceProps) {
+export function DjAppInterface({ roomId, timerBackendUrl, guestMode }: DjAppInterfaceProps) {
   // Initialize Yjs document
   useDjInitialization();
 
@@ -27,6 +29,11 @@ export function DjAppInterface({ roomId, timerBackendUrl }: DjAppInterfaceProps)
   const [username, setUsername] = useState<string | undefined>();
   const [queueOpen, setQueueOpen] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
+
+  // Guest access flags
+  const isGuest = !!guestMode;
+  const canAddVideos = !isGuest || guestMode === 'contribute';
+  const canModifyQueue = !isGuest; // Only authenticated users can remove/reorder
 
   // Check if server timer is enabled
   const useServerTimer = getFeatureFlag("enableServerTimer");
@@ -45,8 +52,9 @@ export function DjAppInterface({ roomId, timerBackendUrl }: DjAppInterfaceProps)
     }
   }, []);
 
-  // Cmd+K to open add video dialog
+  // Cmd+K to open add video dialog (only if user can add videos)
   useEffect(() => {
+    if (!canAddVideos) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
@@ -55,7 +63,7 @@ export function DjAppInterface({ roomId, timerBackendUrl }: DjAppInterfaceProps)
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [canAddVideos]);
 
   const handleCopyLink = async () => {
     const url = `${window.location.origin}/dj/${roomId}`;
@@ -71,50 +79,12 @@ export function DjAppInterface({ roomId, timerBackendUrl }: DjAppInterfaceProps)
   const roomName = room?.data || "DJ Room";
 
   return (
-    <div className="h-full flex flex-col md:flex-row bg-neutral-950">
-      {/* Register settings panel */}
-      <DjSettingsPanel roomId={roomId} roomName={roomName} />
+    <div className={`h-full flex flex-col md:flex-row bg-neutral-950 ${isGuest ? 'pt-10' : ''}`}>
+      {/* Register settings panel (not for guests) */}
+      {!isGuest && <DjSettingsPanel roomId={roomId} roomName={roomName} />}
 
       {/* Main content - Video Player */}
       <div className="flex-1 flex flex-col min-h-0">
-        {/* Header */}
-        <div className="flex items-center gap-2 md:gap-3 px-3 md:px-6 py-3 md:py-4 border-b border-neutral-800">
-          <div className="p-1.5 md:p-2 rounded-lg bg-violet-400/10 shrink-0">
-            <ListVideo className="w-4 h-4 md:w-5 md:h-5 text-violet-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-base md:text-lg font-semibold text-neutral-100 truncate">
-              {roomName}
-            </h1>
-            <p className="text-xs md:text-sm text-neutral-500 hidden sm:block">
-              Collaborative video queue for watching together
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleCopyLink}
-              className="p-2 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors"
-              title="Copy room link"
-            >
-              {copySuccess ? (
-                <span className="text-xs text-green-400">Copied!</span>
-              ) : (
-                <Link2 className="w-4 h-4" />
-              )}
-            </button>
-            <button
-              onClick={() => setCommandOpen(true)}
-              className="px-2 md:px-3 py-1.5 text-sm text-neutral-400 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors flex items-center gap-1 md:gap-2"
-            >
-              <Plus className="w-4 h-4 md:hidden" />
-              <span className="hidden md:inline">Add Video</span>
-              <kbd className="text-xs bg-neutral-700 px-1.5 py-0.5 rounded hidden md:inline">
-                ⌘K
-              </kbd>
-            </button>
-          </div>
-        </div>
-
         {/* Video Player area */}
         <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0">
           <div className="w-full max-w-4xl h-full flex items-center">
@@ -134,31 +104,100 @@ export function DjAppInterface({ roomId, timerBackendUrl }: DjAppInterfaceProps)
           md:transition-none
         `}
       >
-        {/* Mobile toggle header */}
-        <button
-          onClick={() => setQueueOpen(!queueOpen)}
-          className="md:hidden flex items-center justify-between px-4 py-3 bg-neutral-900 border-b border-neutral-800"
-        >
+        {/* Mobile toggle header with actions */}
+        <div className="md:hidden flex items-center justify-between px-4 py-3 bg-neutral-900 border-b border-neutral-800">
+          <button
+            onClick={() => setQueueOpen(!queueOpen)}
+            className="flex items-center gap-2"
+          >
+            <span className="text-sm font-medium text-neutral-300">Queue</span>
+            {queueOpen ? (
+              <ChevronDown className="w-4 h-4 text-neutral-500" />
+            ) : (
+              <ChevronUp className="w-4 h-4 text-neutral-500" />
+            )}
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopyLink}
+              className="p-1.5 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors"
+              title="Copy room link"
+            >
+              {copySuccess ? (
+                <span className="text-xs text-green-400">Copied!</span>
+              ) : (
+                <Link2 className="w-4 h-4" />
+              )}
+            </button>
+            {canAddVideos && (
+              <button
+                onClick={() => setCommandOpen(true)}
+                className="p-1.5 text-neutral-400 hover:bg-neutral-700 rounded transition-colors"
+                title="Add video (⌘K)"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Desktop header with actions */}
+        <div className="hidden md:flex items-center justify-between px-4 py-2 border-b border-neutral-800">
           <span className="text-sm font-medium text-neutral-300">Queue</span>
-          {queueOpen ? (
-            <ChevronDown className="w-4 h-4 text-neutral-500" />
-          ) : (
-            <ChevronUp className="w-4 h-4 text-neutral-500" />
-          )}
-        </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopyLink}
+              className="p-1.5 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors"
+              title="Copy room link"
+            >
+              {copySuccess ? (
+                <span className="text-xs text-green-400">Copied!</span>
+              ) : (
+                <Link2 className="w-4 h-4" />
+              )}
+            </button>
+            {canAddVideos && (
+              <button
+                onClick={() => setCommandOpen(true)}
+                className="p-1.5 text-neutral-400 hover:bg-neutral-700 rounded transition-colors"
+                title="Add video (⌘K)"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
 
         {/* Queue content */}
         <div className={`flex-1 overflow-hidden ${!queueOpen ? "hidden md:flex md:flex-col" : "flex flex-col"}`}>
-          <VideoQueue />
+          <VideoQueue readOnly={!canModifyQueue} />
         </div>
       </div>
 
       {/* Add Video Dialog */}
-      <AddVideoDialog
-        open={commandOpen}
-        onOpenChange={setCommandOpen}
-        username={username}
-      />
+      {canAddVideos && (
+        <AddVideoDialog
+          open={commandOpen}
+          onOpenChange={setCommandOpen}
+          username={username}
+          isGuest={isGuest}
+        />
+      )}
+
+      {/* Guest Banner */}
+      {isGuest && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-neutral-900/95 border-b border-neutral-800 px-4 py-2 flex items-center justify-between">
+          <span className="text-sm text-neutral-400">
+            {guestMode === 'watch' ? 'Watching as guest' : 'Contributing as guest'}
+          </span>
+          <a
+            href="/auth/login"
+            className="text-sm text-violet-400 hover:text-violet-300"
+          >
+            Sign in
+          </a>
+        </div>
+      )}
     </div>
   );
 }

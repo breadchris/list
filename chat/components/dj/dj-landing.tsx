@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { ListVideo, Plus, Link2, Trash2, ExternalLink, Users, ChevronRight } from "lucide-react";
-import { usePublishGroup } from "@/components/PublishGroupContext";
-import { PublishGroupSelector } from "@/components/PublishGroupSelector";
+import { useGlobalGroup } from "@/components/GlobalGroupContext";
+import { GlobalGroupSelector } from "@/components/GlobalGroupSelector";
 import { useDjRooms } from "./hooks/use-dj-rooms";
 import { supabase } from "@/lib/list/SupabaseClient";
 
@@ -12,7 +12,7 @@ const ANONYMOUS_GROUP_ID = "00000000-0000-0000-0000-000000000001";
 const ANONYMOUS_USER_ID = "00000000-0000-0000-0000-000000000000";
 
 export function DjLanding() {
-  const { selectedGroup, groups, isLoading: groupsLoading } = usePublishGroup();
+  const { selectedGroup, groups, isLoading: groupsLoading } = useGlobalGroup();
   const [userId, setUserId] = useState<string | null>(null);
   const [username, setUsername] = useState<string | undefined>();
   const [newRoomName, setNewRoomName] = useState("");
@@ -97,7 +97,7 @@ export function DjLanding() {
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="max-w-2xl mx-auto space-y-6">
           {/* Group selector - entire card is clickable */}
-          <PublishGroupSelector
+          <GlobalGroupSelector
             trigger={
               <button className="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-4 hover:border-neutral-700 transition-colors text-left">
                 <div className="flex items-center justify-between">

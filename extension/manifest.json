@@ -10,13 +10,14 @@
     "storage",
     "management",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "offscreen"
   ],
   "host_permissions": [
     "http://localhost:8080/*",
     "https://localhost:8080/*",
-    "http://localhost:3002/*",
-    "https://localhost:3002/*",
+    "http://localhost:3000/*",
+    "https://localhost:3000/*",
     "https://zazsrepfnamdmibcyenx.supabase.co/*"
   ],
   "background": {
@@ -39,9 +40,6 @@
     }
   ],
   "externally_connectable": {
-    "matches": [
-      "http://localhost:3002/*",
-      "https://justshare.io/*"
-    ]
+    "matches": ["http://localhost:3000/*", "https://justshare.io/*"]
   }
 }

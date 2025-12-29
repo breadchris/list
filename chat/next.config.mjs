@@ -18,7 +18,14 @@ const nextConfig = {
     // - yjs: "Yjs was already imported" warning
     config.resolve.alias = {
       ...config.resolve.alias,
+      // Deduplicate yjs
       yjs: path.resolve(__dirname, 'node_modules/yjs'),
+      // Deduplicate ProseMirror packages (fixes "Duplicate use of selection JSON ID" error)
+      'prosemirror-state': path.resolve(__dirname, 'node_modules/prosemirror-state'),
+      'prosemirror-view': path.resolve(__dirname, 'node_modules/prosemirror-view'),
+      'prosemirror-model': path.resolve(__dirname, 'node_modules/prosemirror-model'),
+      'prosemirror-transform': path.resolve(__dirname, 'node_modules/prosemirror-transform'),
+      'y-prosemirror': path.resolve(__dirname, 'node_modules/y-prosemirror'),
     };
 
     // Mark optional AI SDK schema libraries as external

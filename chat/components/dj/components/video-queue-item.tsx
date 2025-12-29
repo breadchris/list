@@ -42,6 +42,7 @@ interface VideoQueueItemProps {
   onPlay: (index: number) => void;
   onRemove: (videoId: string) => void;
   isDraggable: boolean;
+  readOnly?: boolean;
 }
 
 export function VideoQueueItem({
@@ -49,6 +50,7 @@ export function VideoQueueItem({
   onPlay,
   onRemove,
   isDraggable,
+  readOnly = false,
 }: VideoQueueItemProps) {
   const {
     attributes,
@@ -149,8 +151,8 @@ export function VideoQueueItem({
         )}
       </div>
 
-      {/* Remove button - only for upcoming */}
-      {isUpcoming && (
+      {/* Remove button - only for upcoming and not readOnly */}
+      {isUpcoming && !readOnly && (
         <button
           onClick={() => onRemove(video.id)}
           className="shrink-0 p-1 text-neutral-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"

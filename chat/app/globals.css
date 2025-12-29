@@ -104,7 +104,12 @@
   border-color: var(--border);
 }
 
+html {
+  height: 100dvh;
+}
+
 body {
+  height: 100%;
   background-color: var(--background);
   color: var(--foreground);
 }
@@ -116,4 +121,9 @@ body {
 
 .bn-editor {
   background-color: transparent !important;
+}
+
+/* Hide empty blocks that only contain a trailing break in read-only views */
+.bn-block-outer:has(> .bn-block > .bn-block-content > .bn-inline-content > .ProseMirror-trailingBreak:only-child) {
+  display: none;
 }

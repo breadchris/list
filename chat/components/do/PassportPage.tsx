@@ -52,9 +52,7 @@ export function PassportPage({
 
     const handleTouchMove = (e: TouchEvent) => {
       if (heldStamp && !heldStamp.isAnimating) {
-        if (heldStamp.hasInk) {
-          e.preventDefault();
-        }
+        e.preventDefault();
         const touch = e.touches[0];
         setHeldStamp({
           ...heldStamp,

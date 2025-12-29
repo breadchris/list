@@ -31,10 +31,11 @@ export interface Wiki {
 }
 
 /**
- * A single wiki page
- * Stored in content table with type: "wiki-page"
+ * A single wiki page stored in Y.js
+ * Content is stored in Y.XmlFragment, metadata in Y.Map
  */
 export interface WikiPage {
+  /** Local UUID generated with crypto.randomUUID() */
   id: string;
   /** Path relative to wiki root, e.g., "index", "guide/getting-started" */
   path: string;
@@ -42,10 +43,8 @@ export interface WikiPage {
   title: string;
   /** Parent wiki content ID */
   wiki_id: string;
-  /** Content (markdown or BlockNote blocks) */
-  data: string;
+  /** ISO timestamp when page was created */
   created_at: string;
-  updated_at: string;
 }
 
 /**
@@ -65,7 +64,9 @@ export interface WikiPageMetadata {
  */
 export interface WikiMetadata {
   /** Wiki display name */
-  name: string;
+  title?: string;
+  /** Creator username */
+  created_by_username?: string;
   /** User settings */
   settings?: WikiSettings;
 }
@@ -195,3 +196,69 @@ export const DEFAULT_WIKI_SETTINGS: WikiSettings = {
  */
 export const WIKI_CONTENT_TYPE = "wiki" as const;
 export const WIKI_PAGE_CONTENT_TYPE = "wiki-page" as const;
+export const WIKI_TEMPLATE_CONTENT_TYPE = "wiki-template" as const;
+
+/**
+ * A wiki template (AI prompt/command)
+ * Stored in Y.js Y.Map
+ */
+export interface WikiTemplate {
+  /** Local UUID generated with crypto.randomUUID() */
+  id: string;
+  /** Template name (displayed in slash menu) */
+  name: string;
+  /** Parent wiki content ID */
+  wiki_id: string;
+  /** Template prompt/instructions (BlockNote blocks JSON when prompt_format is 'blocknote') */
+  prompt: string;
+  /** Format of the prompt field: 'text' for legacy plain text, 'blocknote' for BlockNote blocks JSON */
+  prompt_format?: 'text' | 'blocknote';
+  /** AI model to use for this template */
+  model?: string;
+  /** Optional description for subtext in slash menu */
+  description?: string;
+  /** Aliases for slash command matching */
+  aliases?: string[];
+  /** ISO timestamp when template was created */
+  created_at: string;
+}
+
+/**
+ * Available AI models for wiki templates
+ */
+export const WIKI_TEMPLATE_MODELS = [
+  { id: 'gpt-5', name: 'GPT-5', provider: 'OpenAI' },
+  { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', provider: 'Anthropic' },
+] as const;
+
+/**
+ * Default AI model for new templates
+ */
+export const DEFAULT_TEMPLATE_MODEL = 'gpt-5';
+
+/**
+ * Metadata stored in content.metadata for wiki templates
+ */
+export interface WikiTemplateMetadata {
+  /** Template display name */
+  name: string;
+  /** Optional description */
+  description?: string;
+  /** Aliases for slash command matching */
+  aliases?: string[];
+  /** Parent wiki ID */
+  wiki_id?: string;
+}
+
+/**
+ * Navigation item for public wiki viewer sidebar
+ * Simpler than WikiPageTreeNode - no id or expansion state
+ */
+export interface WikiNavItem {
+  /** Page path */
+  path: string;
+  /** Page title */
+  title: string;
+  /** Child navigation items */
+  children?: WikiNavItem[];
+}

@@ -3,6 +3,18 @@
 <plist version="1.0">
 <dict>
 	<key>UIBackgroundModes</key>
-	<array/>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow access to your photo library to share images in chat</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Allow camera access to take photos for chat</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow microphone access to record voice messages</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

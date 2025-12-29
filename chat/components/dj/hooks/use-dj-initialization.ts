@@ -1,21 +1,25 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useYDoc } from "@y-sweet/react";
+import { useYDoc, useConnectionStatus } from "@y-sweet/react";
 import * as Y from "yjs";
 import { DEFAULT_VOLUME, DEFAULT_PLAYBACK_RATE } from "../constants";
 
 // Initialize the default DJ state in the Y-Sweet document
 export function useDjInitialization() {
   const doc = useYDoc();
+  const connectionStatus = useConnectionStatus();
   const initialized = useRef(false);
 
   useEffect(() => {
+    // Wait for connection to be established before initializing
+    // This ensures remote state has synced before we check if doc is empty
+    if (connectionStatus !== "connected") return;
     if (initialized.current || !doc) return;
 
     const rootMap = doc.getMap("djState");
 
-    // Check if already initialized
+    // Check if already initialized (now checks AFTER remote sync)
     if (rootMap.has("queue") && rootMap.has("playback")) {
       initialized.current = true;
       return;
@@ -42,7 +46,7 @@ export function useDjInitialization() {
     });
 
     initialized.current = true;
-  }, [doc]);
+  }, [doc, connectionStatus]);
 
   return { initialized: initialized.current };
 }

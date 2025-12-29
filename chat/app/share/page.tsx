@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SharePage } from '@/components/share/SharePage';
-import { useGroupsQuery } from '@/hooks/list/useGroupQueries';
+import { useGlobalGroup } from '@/components/GlobalGroupContext';
 import { supabase } from '@/lib/list/SupabaseClient';
 import type { User } from '@supabase/supabase-js';
 
@@ -23,12 +23,9 @@ export default function ShareRoutePage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
-  // Fetch user's groups
-  const { data: groups, isLoading: groupsLoading } = useGroupsQuery({
-    enabled: !!user,
-  });
+  // Use global group context
+  const { selectedGroup, setSelectedGroup, groups, isLoading: groupsLoading } = useGlobalGroup();
 
   // Check authentication
   useEffect(() => {
@@ -49,16 +46,6 @@ export default function ShareRoutePage() {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  // Auto-select first group when groups load
-  useEffect(() => {
-    if (groups && groups.length > 0 && !selectedGroupId) {
-      setSelectedGroupId(groups[0].id);
-    }
-  }, [groups, selectedGroupId]);
-
-  // Get selected group
-  const selectedGroup = groups?.find(g => g.id === selectedGroupId);
 
   // Get user display name
   const userName = user?.user_metadata?.name ||
@@ -145,7 +132,7 @@ export default function ShareRoutePage() {
               {groups.map(group => (
                 <DropdownMenuItem
                   key={group.id}
-                  onClick={() => setSelectedGroupId(group.id)}
+                  onClick={() => setSelectedGroup(group)}
                 >
                   {group.name}
                 </DropdownMenuItem>
@@ -175,8 +162,8 @@ export default function ShareRoutePage() {
               {groups.map(group => (
                 <DropdownMenuItem
                   key={group.id}
-                  onClick={() => setSelectedGroupId(group.id)}
-                  className={group.id === selectedGroupId ? 'bg-accent' : ''}
+                  onClick={() => setSelectedGroup(group)}
+                  className={group.id === selectedGroup.id ? 'bg-accent' : ''}
                 >
                   {group.name}
                 </DropdownMenuItem>
@@ -193,8 +180,8 @@ export default function ShareRoutePage() {
       {/* Share page content (without its own header) */}
       <div className="flex-1 overflow-hidden">
         <SharePageContent
-          key={selectedGroupId!} // Re-mount when group changes
-          groupId={selectedGroupId!}
+          key={selectedGroup.id} // Re-mount when group changes
+          groupId={selectedGroup.id}
           groupName={selectedGroup.name}
           userId={user.id}
           userName={userName}

@@ -1,27 +1,17 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useYDoc } from "@y-sweet/react";
 import * as Y from "yjs";
-import type {
-  WikiPage,
-  WikiPageMetadata,
-  WikiMetadata,
-  WikiPageTreeNode,
-  WIKI_CONTENT_TYPE,
-  WIKI_PAGE_CONTENT_TYPE,
-} from "@/types/wiki";
-import { contentRepository } from "@/lib/list/ContentRepository";
+import type { WikiPage, WikiPageTreeNode } from "@/types/wiki";
 import {
   normalizePath,
   pathToTitle,
   getParentPath,
-  isChildPath,
 } from "@/lib/wiki/path-utils";
 
 interface UseWikiPagesOptions {
   wiki_id: string;
-  group_id: string;
 }
 
 interface UseWikiPagesReturn {
@@ -29,26 +19,20 @@ interface UseWikiPagesReturn {
   pages: Map<string, WikiPage>;
   /** Page tree for sidebar navigation */
   pageTree: WikiPageTreeNode[];
-  /** Loading state */
-  isLoading: boolean;
-  /** Error state */
-  error: string | null;
+  /** Whether Y.js doc is ready */
+  isReady: boolean;
   /** Get a page by path */
   getPage: (path: string) => WikiPage | undefined;
   /** Get a page by ID */
   getPageById: (id: string) => WikiPage | undefined;
   /** Create a new page */
-  createPage: (path: string, initialContent?: string) => Promise<WikiPage>;
-  /** Update a page's content */
-  updatePage: (pageId: string, content: string) => Promise<void>;
+  createPage: (path: string) => WikiPage;
   /** Rename a page (change its path) */
-  renamePage: (pageId: string, newPath: string) => Promise<void>;
+  renamePage: (pageId: string, newPath: string) => void;
   /** Delete a page */
-  deletePage: (pageId: string) => Promise<void>;
+  deletePage: (pageId: string) => void;
   /** Check if a page exists */
   pageExists: (path: string) => boolean;
-  /** Refresh pages from database */
-  refresh: () => Promise<void>;
 }
 
 /**
@@ -102,89 +86,31 @@ function buildPageTree(pages: Map<string, WikiPage>): WikiPageTreeNode[] {
 /**
  * Hook for managing wiki pages
  *
- * Handles:
- * - Loading pages from database
- * - Creating/updating/deleting pages
- * - Building page tree for navigation
- * - Real-time sync via Y.js
+ * All state is stored in Y.js:
+ * - Page metadata in Y.Map('wiki-pages')
+ * - Page content in Y.XmlFragment('wiki-page-{pageId}')
+ *
+ * No database operations - content is only persisted on explicit publish.
  */
 export function useWikiPages({
   wiki_id,
-  group_id,
 }: UseWikiPagesOptions): UseWikiPagesReturn {
   const doc = useYDoc();
 
-  // Pages state
+  // Pages state (derived from Y.js)
   const [pages, setPages] = useState<Map<string, WikiPage>>(new Map());
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Y.js map for page metadata sync
-  const pagesMap = doc?.getMap<WikiPage>(`wiki-pages-${wiki_id}`);
+  // Y.js map for page metadata
+  const pagesMap = useMemo(() => {
+    if (!doc) return null;
+    return doc.getMap<WikiPage>("wiki-pages");
+  }, [doc]);
 
-  // Load pages from database
-  const loadPages = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Query all wiki-page content items for this wiki
-      // Using getContentByParent with correct signature: (groupId, parentId, offset, limit)
-      const result = await contentRepository.getContentByParent(
-        group_id,
-        wiki_id,
-        0,
-        1000 // Get all pages
-      );
-
-      const newPages = new Map<string, WikiPage>();
-
-      for (const content of result) {
-        if (content.type === "wiki-page") {
-          const metadata = content.metadata as WikiPageMetadata | null;
-          const path = metadata?.path || content.id;
-
-          newPages.set(normalizePath(path), {
-            id: content.id,
-            path: normalizePath(path),
-            title: metadata?.title || pathToTitle(path),
-            wiki_id,
-            data: content.data || "",
-            created_at: content.created_at,
-            updated_at: content.updated_at,
-          });
-        }
-      }
-
-      setPages(newPages);
-
-      // Sync to Y.js
-      if (pagesMap) {
-        doc?.transact(() => {
-          pagesMap.clear();
-          for (const [path, page] of newPages) {
-            pagesMap.set(path, page);
-          }
-        });
-      }
-    } catch (err) {
-      console.error("Failed to load wiki pages:", err);
-      setError("Failed to load wiki pages");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [wiki_id, group_id, doc, pagesMap]);
-
-  // Load pages on mount
-  useEffect(() => {
-    loadPages();
-  }, [loadPages]);
-
-  // Listen for Y.js changes
+  // Sync pages from Y.js map to React state
   useEffect(() => {
     if (!pagesMap) return;
 
-    const observer = () => {
+    const syncFromYjs = () => {
       const newPages = new Map<string, WikiPage>();
       pagesMap.forEach((page, path) => {
         newPages.set(path, page);
@@ -192,21 +118,39 @@ export function useWikiPages({
       setPages(newPages);
     };
 
-    pagesMap.observe(observer);
-    return () => pagesMap.unobserve(observer);
+    // Initial sync
+    syncFromYjs();
+
+    // Listen for changes
+    pagesMap.observe(syncFromYjs);
+    return () => pagesMap.unobserve(syncFromYjs);
   }, [pagesMap]);
 
   // Get page by path
+  // Read directly from Y.js map for synchronous access (avoids race condition)
   const getPage = useCallback(
     (path: string): WikiPage | undefined => {
+      if (pagesMap) {
+        return pagesMap.get(normalizePath(path));
+      }
       return pages.get(normalizePath(path));
     },
-    [pages]
+    [pages, pagesMap]
   );
 
   // Get page by ID
+  // Read directly from Y.js map for synchronous access (avoids race condition)
   const getPageById = useCallback(
     (id: string): WikiPage | undefined => {
+      // Try Y.js map first for synchronous access
+      if (pagesMap) {
+        let found: WikiPage | undefined;
+        pagesMap.forEach((page) => {
+          if (page.id === id) found = page;
+        });
+        if (found) return found;
+      }
+      // Fallback to React state
       for (const page of pages.values()) {
         if (page.id === id) {
           return page;
@@ -214,199 +158,143 @@ export function useWikiPages({
       }
       return undefined;
     },
-    [pages]
+    [pages, pagesMap]
   );
 
   // Check if page exists
+  // Read directly from Y.js map for synchronous access (avoids race condition)
   const pageExists = useCallback(
     (path: string): boolean => {
+      if (pagesMap) {
+        return pagesMap.has(normalizePath(path));
+      }
       return pages.has(normalizePath(path));
     },
-    [pages]
+    [pages, pagesMap]
   );
 
-  // Create a new page
+  // Create a new page (Y.js only, no database)
   const createPage = useCallback(
-    async (path: string, initialContent: string = ""): Promise<WikiPage> => {
-      const normalizedPath = normalizePath(path);
-      const title = pathToTitle(normalizedPath);
+    (path: string): WikiPage => {
+      if (!pagesMap || !doc) {
+        throw new Error("Y.js document not ready");
+      }
 
-      // Create in database
-      const content = await contentRepository.createContent({
-        type: "wiki-page",
-        data: initialContent,
-        group_id,
-        parent_content_id: wiki_id,
-        metadata: {
-          path: normalizedPath,
-          title,
-          wiki_id,
-        } as Record<string, unknown>,
-      });
+      const normalizedPath = normalizePath(path);
+
+      // Return existing page if it already exists (idempotent)
+      const existing = pagesMap.get(normalizedPath);
+      if (existing) {
+        return existing;
+      }
+
+      const title = pathToTitle(normalizedPath);
+      const pageId = crypto.randomUUID();
 
       const newPage: WikiPage = {
-        id: content.id,
+        id: pageId,
         path: normalizedPath,
         title,
         wiki_id,
-        data: initialContent,
-        created_at: content.created_at,
-        updated_at: content.updated_at,
+        created_at: new Date().toISOString(),
       };
 
-      // Update local state
-      setPages((prev) => {
-        const newPages = new Map(prev);
-        newPages.set(normalizedPath, newPage);
-        return newPages;
-      });
-
-      // Sync to Y.js
-      if (pagesMap) {
-        pagesMap.set(normalizedPath, newPage);
-      }
+      // Add to Y.js map (this triggers the observer and updates React state)
+      pagesMap.set(normalizedPath, newPage);
 
       return newPage;
     },
-    [wiki_id, group_id, pagesMap]
-  );
-
-  // Update a page's content
-  const updatePage = useCallback(
-    async (pageId: string, content: string): Promise<void> => {
-      await contentRepository.updateContent(pageId, {
-        data: content,
-      });
-
-      // Update local state
-      setPages((prev) => {
-        const newPages = new Map(prev);
-        for (const [path, page] of newPages) {
-          if (page.id === pageId) {
-            newPages.set(path, {
-              ...page,
-              data: content,
-              updated_at: new Date().toISOString(),
-            });
-            break;
-          }
-        }
-        return newPages;
-      });
-    },
-    []
+    [wiki_id, pagesMap, doc]
   );
 
   // Rename a page (change its path)
   const renamePage = useCallback(
-    async (pageId: string, newPath: string): Promise<void> => {
+    (pageId: string, newPath: string): void => {
+      if (!pagesMap || !doc) {
+        throw new Error("Y.js document not ready");
+      }
+
       const normalizedNewPath = normalizePath(newPath);
+
+      // Check if target path already exists (and isn't the same page)
+      const existingPage = pagesMap.get(normalizedNewPath);
+      if (existingPage && existingPage.id !== pageId) {
+        throw new Error(
+          `A page with path '${normalizedNewPath}' already exists`
+        );
+      }
+
       const newTitle = pathToTitle(normalizedNewPath);
 
       // Find the old page
       let oldPath: string | undefined;
       let oldPage: WikiPage | undefined;
 
-      for (const [path, page] of pages) {
+      pagesMap.forEach((page, path) => {
         if (page.id === pageId) {
           oldPath = path;
           oldPage = page;
-          break;
         }
-      }
+      });
 
       if (!oldPage || !oldPath) {
         throw new Error("Page not found");
       }
 
-      // Update in database
-      await contentRepository.updateContent(pageId, {
-        metadata: {
-          path: normalizedNewPath,
-          title: newTitle,
-          wiki_id,
-        } as Record<string, unknown>,
-      });
-
-      // Update local state
-      setPages((prev) => {
-        const newPages = new Map(prev);
-        newPages.delete(oldPath!);
-        newPages.set(normalizedNewPath, {
+      // Update in Y.js (atomic transaction)
+      doc.transact(() => {
+        pagesMap.delete(oldPath!);
+        pagesMap.set(normalizedNewPath, {
           ...oldPage!,
           path: normalizedNewPath,
           title: newTitle,
-          updated_at: new Date().toISOString(),
         });
-        return newPages;
       });
-
-      // Sync to Y.js
-      if (pagesMap) {
-        doc?.transact(() => {
-          pagesMap.delete(oldPath!);
-          pagesMap.set(normalizedNewPath, {
-            ...oldPage!,
-            path: normalizedNewPath,
-            title: newTitle,
-            updated_at: new Date().toISOString(),
-          });
-        });
-      }
     },
-    [pages, wiki_id, doc, pagesMap]
+    [pagesMap, doc]
   );
 
   // Delete a page
   const deletePage = useCallback(
-    async (pageId: string): Promise<void> => {
+    (pageId: string): void => {
+      if (!pagesMap || !doc) {
+        throw new Error("Y.js document not ready");
+      }
+
       // Find the page path
       let pagePath: string | undefined;
 
-      for (const [path, page] of pages) {
+      pagesMap.forEach((page, path) => {
         if (page.id === pageId) {
           pagePath = path;
-          break;
         }
-      }
+      });
 
       if (!pagePath) {
         throw new Error("Page not found");
       }
 
-      // Delete from database
-      await contentRepository.deleteContent(pageId);
+      // Delete from Y.js map
+      pagesMap.delete(pagePath);
 
-      // Update local state
-      setPages((prev) => {
-        const newPages = new Map(prev);
-        newPages.delete(pagePath!);
-        return newPages;
-      });
-
-      // Sync to Y.js
-      if (pagesMap) {
-        pagesMap.delete(pagePath);
-      }
+      // Note: The XmlFragment for this page remains in the Y.Doc
+      // but won't be serialized during publish since the page metadata is gone
     },
-    [pages, pagesMap]
+    [pagesMap, doc]
   );
 
   // Build page tree
-  const pageTree = buildPageTree(pages);
+  const pageTree = useMemo(() => buildPageTree(pages), [pages]);
 
   return {
     pages,
     pageTree,
-    isLoading,
-    error,
+    isReady: !!doc,
     getPage,
     getPageById,
     createPage,
-    updatePage,
     renamePage,
     deletePage,
     pageExists,
-    refresh: loadPages,
   };
 }

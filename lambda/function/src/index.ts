@@ -24,6 +24,11 @@ import {
 	handleTellerTransactions
 } from './content-handlers.js';
 import { handleMapKitTokenRequest } from './mapkit-token-handler.js';
+import {
+	handleSendNotification,
+	handleRegisterDevice,
+	handleUnregisterDevice
+} from './apns-handler.js';
 import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
 import { writeFileSync } from 'fs';
 
@@ -1475,6 +1480,18 @@ Current message:
 		switch (action) {
 			case 'chat-message':
 				result = await handleChatMessage(supabase, payload);
+				break;
+
+			case 'send-notification':
+				result = await handleSendNotification(supabase, payload);
+				break;
+
+			case 'register-device':
+				result = await handleRegisterDevice(supabase, payload);
+				break;
+
+			case 'unregister-device':
+				result = await handleUnregisterDevice(supabase, payload);
 				break;
 
 			case 'get-job':

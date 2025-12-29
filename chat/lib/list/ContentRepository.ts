@@ -1,5 +1,11 @@
 import { supabase, withRetry } from "@/lib/list/SupabaseClient";
 import { LambdaClient } from "@/lib/list/LambdaClient";
+import type { ReadingPosition, Highlight } from "@/types/reading-position";
+import { READING_POSITION_TYPE } from "@/types/reading-position";
+
+// Book Club content types
+export const BOOK_CLUB_TYPE = "book-club";
+export const BOOK_CLUB_ROOM_TYPE = "book-club-room";
 
 // Types based on our database schema
 export interface User {
@@ -156,6 +162,29 @@ export interface SerializedContent {
     data: string;
     metadata: any;
   }>;
+}
+
+export interface ClubMemberProgress {
+  user_id: string;
+  email: string;
+  avatar_url?: string;
+  display_name?: string;
+  progress_percent: number;
+  last_read_at: string;
+  highlights: Highlight[];
+}
+
+export interface BookClubRoom {
+  id: string;
+  name: string;
+  group_id: string;
+  book_content_id: string;
+  book_title: string;
+  book_url: string;
+  created_at: string;
+  created_by?: string;
+  created_by_username?: string;
+  member_count?: number;
 }
 
 // Content Repository class for data access
@@ -1918,7 +1947,13 @@ export class ContentRepository {
         throw new Error(error.message);
       }
 
-      return data as SharingResponse;
+      // Override publicUrl with client-side generated URL (database returns placeholder)
+      const response = data as SharingResponse;
+      if (response.isPublic) {
+        response.publicUrl = `${window.location.origin}/public/content/${contentId}`;
+      }
+
+      return response;
     } catch (error) {
       console.error("Failed to toggle content sharing:", error);
       throw error;
@@ -3120,6 +3155,737 @@ export class ContentRepository {
       console.error("Error deleting child relationships:", childError);
       throw new Error(childError.message);
     }
+  }
+
+  // ============================================================================
+  // Reading Position Methods
+  // ============================================================================
+
+  /**
+   * Get reading position for a book and user
+   * Returns the reading-position child content if it exists
+   */
+  async getReadingPosition(
+    bookContentId: string,
+    userId: string
+  ): Promise<Content | null> {
+    try {
+      const { data, error } = await supabase
+        .from("content")
+        .select("*")
+        .eq("parent_content_id", bookContentId)
+        .eq("type", READING_POSITION_TYPE)
+        .eq("user_id", userId)
+        .single();
+
+      if (error) {
+        if (error.code === "PGRST116") {
+          // Not found
+          return null;
+        }
+        console.error("Error fetching reading position:", error);
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      console.error("Failed to get reading position:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create or update reading position for a book
+   * Uses upsert pattern: checks for existing, then creates or updates
+   */
+  async upsertReadingPosition(
+    bookContentId: string,
+    groupId: string,
+    position: ReadingPosition
+  ): Promise<Content> {
+    try {
+      // Get current user
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
+      // Check if reading position already exists for this user and book
+      const existing = await this.getReadingPosition(bookContentId, user.id);
+
+      if (existing) {
+        // Update existing reading position
+        const { data, error } = await supabase
+          .from("content")
+          .update({
+            data: position.location,
+            metadata: {
+              progress_percent: position.progress_percent,
+              last_read_at: position.last_read_at,
+              bookmarks: position.bookmarks,
+              highlights: position.highlights,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existing.id)
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Error updating reading position:", error);
+          throw new Error(error.message);
+        }
+
+        return data;
+      } else {
+        // Create new reading position
+        const { data, error } = await supabase
+          .from("content")
+          .insert([
+            {
+              type: READING_POSITION_TYPE,
+              data: position.location,
+              group_id: groupId,
+              parent_content_id: bookContentId,
+              user_id: user.id,
+              metadata: {
+                progress_percent: position.progress_percent,
+                last_read_at: position.last_read_at,
+                bookmarks: position.bookmarks,
+                highlights: position.highlights,
+              },
+            },
+          ])
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Error creating reading position:", error);
+          throw new Error(error.message);
+        }
+
+        return data;
+      }
+    } catch (error) {
+      console.error("Failed to upsert reading position:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get recent reading positions for a user with parent book data
+   * Returns reading-position content joined with parent epub content
+   */
+  async getRecentReadingPositions(
+    userId: string,
+    limit: number = 10
+  ): Promise<Array<Content & { parent: Content | null }>> {
+    try {
+      const { data, error } = await supabase
+        .from("content")
+        .select(
+          `
+          *,
+          parent:content!parent_content_id (
+            id,
+            data,
+            metadata,
+            type,
+            group_id,
+            created_at,
+            updated_at
+          )
+        `
+        )
+        .eq("type", READING_POSITION_TYPE)
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error("Error fetching recent reading positions:", error);
+        throw new Error(error.message);
+      }
+
+      // Filter out entries where parent is null (deleted books)
+      // and cast to proper type
+      return (data || [])
+        .filter((item: any) => item.parent !== null)
+        .map((item: any) => ({
+          ...item,
+          parent: item.parent as Content,
+        }));
+    } catch (error) {
+      console.error("Failed to get recent reading positions:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all EPUBs for a group with user's reading progress
+   * Returns books sorted by last read (most recent first), then by creation date
+   */
+  async getEpubsForGroup(
+    groupId: string,
+    userId: string
+  ): Promise<
+    Array<{
+      book: Content;
+      readingPosition: {
+        location: string;
+        progress_percent: number;
+        last_read_at: string;
+      } | null;
+    }>
+  > {
+    try {
+      // Get all EPUB content for this group
+      const { data: epubs, error: epubError } = await supabase
+        .from("content")
+        .select("*")
+        .eq("group_id", groupId)
+        .eq("type", "epub")
+        .order("created_at", { ascending: false });
+
+      if (epubError) {
+        console.error("Error fetching EPUBs:", epubError);
+        throw new Error(epubError.message);
+      }
+
+      if (!epubs || epubs.length === 0) {
+        return [];
+      }
+
+      // Get reading positions for this user and these books
+      const bookIds = epubs.map((epub) => epub.id);
+      const { data: positions, error: posError } = await supabase
+        .from("content")
+        .select("*")
+        .eq("type", READING_POSITION_TYPE)
+        .eq("user_id", userId)
+        .in("parent_content_id", bookIds);
+
+      if (posError) {
+        console.error("Error fetching reading positions:", posError);
+        // Continue without positions if there's an error
+      }
+
+      // Create a map of book ID to reading position
+      const positionMap = new Map<
+        string,
+        { location: string; progress_percent: number; last_read_at: string }
+      >();
+      if (positions) {
+        for (const pos of positions) {
+          const metadata = pos.metadata || {};
+          positionMap.set(pos.parent_content_id, {
+            location: pos.data || "",
+            progress_percent: metadata.progress_percent || 0,
+            last_read_at: metadata.last_read_at || pos.updated_at,
+          });
+        }
+      }
+
+      // Combine books with positions
+      const results = epubs.map((epub) => ({
+        book: epub as Content,
+        readingPosition: positionMap.get(epub.id) || null,
+      }));
+
+      // Sort: books with reading positions (by last_read_at) first, then unread books
+      results.sort((a, b) => {
+        // Both have positions - sort by last_read_at
+        if (a.readingPosition && b.readingPosition) {
+          return (
+            new Date(b.readingPosition.last_read_at).getTime() -
+            new Date(a.readingPosition.last_read_at).getTime()
+          );
+        }
+        // Only a has position - a comes first
+        if (a.readingPosition) return -1;
+        // Only b has position - b comes first
+        if (b.readingPosition) return 1;
+        // Neither has position - sort by created_at
+        return (
+          new Date(b.book.created_at).getTime() -
+          new Date(a.book.created_at).getTime()
+        );
+      });
+
+      return results;
+    } catch (error) {
+      console.error("Failed to get EPUBs for group:", error);
+      return [];
+    }
+  }
+
+  // Book Club Methods
+
+  /**
+   * Get the club book for a group
+   * Returns the book-club content marker if one exists
+   */
+  async getClubBook(groupId: string): Promise<Content | null> {
+    try {
+      const { data, error } = await supabase
+        .from("content")
+        .select("*")
+        .eq("type", BOOK_CLUB_TYPE)
+        .eq("group_id", groupId)
+        .limit(1)
+        .single();
+
+      if (error) {
+        if (error.code === "PGRST116") {
+          // Not found
+          return null;
+        }
+        console.error("Error fetching club book:", error);
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      console.error("Failed to get club book:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Set a book as the club book for a group
+   * Replaces any existing club book for the group
+   */
+  async setClubBook(
+    groupId: string,
+    bookContentId: string
+  ): Promise<Content> {
+    try {
+      // Get current user
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
+      // Check if a club book already exists for this group
+      const existing = await this.getClubBook(groupId);
+
+      if (existing) {
+        // Update existing club book to point to new book
+        const { data, error } = await supabase
+          .from("content")
+          .update({
+            parent_content_id: bookContentId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existing.id)
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Error updating club book:", error);
+          throw new Error(error.message);
+        }
+
+        return data;
+      } else {
+        // Create new club book marker
+        const { data, error } = await supabase
+          .from("content")
+          .insert([
+            {
+              type: BOOK_CLUB_TYPE,
+              data: "",
+              group_id: groupId,
+              parent_content_id: bookContentId,
+              user_id: user.id,
+              metadata: {},
+            },
+          ])
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Error creating club book:", error);
+          throw new Error(error.message);
+        }
+
+        return data;
+      }
+    } catch (error) {
+      console.error("Failed to set club book:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear the club book for a group
+   * Deletes the book-club content marker
+   */
+  async clearClubBook(groupId: string): Promise<void> {
+    try {
+      const existing = await this.getClubBook(groupId);
+
+      if (existing) {
+        const { error } = await supabase
+          .from("content")
+          .delete()
+          .eq("id", existing.id);
+
+        if (error) {
+          console.error("Error deleting club book:", error);
+          throw new Error(error.message);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to clear club book:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all group members' reading progress for a book
+   * Returns progress, highlights, and user info for each member
+   */
+  async getClubMemberProgress(
+    bookContentId: string,
+    groupId: string
+  ): Promise<ClubMemberProgress[]> {
+    try {
+      // Get all reading positions for this book in this group
+      const { data: positions, error } = await supabase
+        .from("content")
+        .select("*")
+        .eq("type", READING_POSITION_TYPE)
+        .eq("parent_content_id", bookContentId)
+        .eq("group_id", groupId);
+
+      if (error) {
+        console.error("Error fetching club member progress:", error);
+        throw new Error(error.message);
+      }
+
+      if (!positions || positions.length === 0) {
+        return [];
+      }
+
+      // Get user info for each position
+      const userIds = positions.map((p) => p.user_id);
+      const { data: users, error: userError } = await supabase
+        .from("users")
+        .select("id, email, avatar_url, display_name")
+        .in("id", userIds);
+
+      if (userError) {
+        console.error("Error fetching users:", userError);
+        // Continue without user info
+      }
+
+      // Create a map of user ID to user info
+      const userMap = new Map<
+        string,
+        { email: string; avatar_url?: string; display_name?: string }
+      >();
+      if (users) {
+        for (const user of users) {
+          userMap.set(user.id, {
+            email: user.email || "",
+            avatar_url: user.avatar_url,
+            display_name: user.display_name,
+          });
+        }
+      }
+
+      // Combine positions with user info
+      return positions.map((pos) => {
+        const userInfo = userMap.get(pos.user_id) || { email: "" };
+        const metadata = pos.metadata || {};
+        return {
+          user_id: pos.user_id,
+          email: userInfo.email,
+          avatar_url: userInfo.avatar_url,
+          display_name: userInfo.display_name,
+          progress_percent: metadata.progress_percent || 0,
+          last_read_at: metadata.last_read_at || pos.updated_at,
+          highlights: metadata.highlights || [],
+        };
+      });
+    } catch (error) {
+      console.error("Failed to get club member progress:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get club book with the actual book content
+   * Returns both the club marker and the parent book
+   */
+  async getClubBookWithContent(
+    groupId: string
+  ): Promise<{ club: Content; book: Content } | null> {
+    try {
+      const { data, error } = await supabase
+        .from("content")
+        .select(
+          `
+          *,
+          book:content!parent_content_id (
+            id,
+            data,
+            metadata,
+            type,
+            group_id,
+            created_at,
+            updated_at
+          )
+        `
+        )
+        .eq("type", BOOK_CLUB_TYPE)
+        .eq("group_id", groupId)
+        .limit(1)
+        .single();
+
+      if (error) {
+        if (error.code === "PGRST116") {
+          return null;
+        }
+        console.error("Error fetching club book with content:", error);
+        throw new Error(error.message);
+      }
+
+      if (!data || !data.book) {
+        return null;
+      }
+
+      return {
+        club: data as Content,
+        book: data.book as Content,
+      };
+    } catch (error) {
+      console.error("Failed to get club book with content:", error);
+      return null;
+    }
+  }
+
+  // ==================== Book Club Room Methods ====================
+
+  /**
+   * Get all book club rooms for a group
+   */
+  async getBookClubRooms(groupId: string): Promise<BookClubRoom[]> {
+    try {
+      const { data, error } = await supabase
+        .from("content")
+        .select(
+          `
+          *,
+          book:content!parent_content_id (
+            id,
+            data,
+            metadata,
+            type
+          )
+        `
+        )
+        .eq("type", BOOK_CLUB_ROOM_TYPE)
+        .eq("group_id", groupId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching book club rooms:", error);
+        throw new Error(error.message);
+      }
+
+      if (!data) return [];
+
+      // Transform to BookClubRoom format
+      return data.map((room) => {
+        const book = room.book as Content | null;
+        const metadata = room.metadata || {};
+        const bookMetadata = book?.metadata || {};
+
+        // Extract book title
+        let bookTitle = bookMetadata.filename || "";
+        if (!bookTitle && book?.data) {
+          try {
+            const url = new URL(book.data);
+            const pathParts = url.pathname.split("/");
+            bookTitle = decodeURIComponent(pathParts[pathParts.length - 1] || "");
+          } catch {
+            bookTitle = "Unknown Book";
+          }
+        }
+        if (bookTitle.toLowerCase().endsWith(".epub")) {
+          bookTitle = bookTitle.slice(0, -5);
+        }
+
+        return {
+          id: room.id,
+          name: room.data || "Untitled Club",
+          group_id: room.group_id,
+          book_content_id: room.parent_content_id || "",
+          book_title: bookTitle || "Unknown Book",
+          book_url: bookMetadata.file_url || book?.data || "",
+          created_at: room.created_at,
+          created_by: metadata.created_by,
+          created_by_username: metadata.created_by_username,
+        };
+      });
+    } catch (error) {
+      console.error("Failed to get book club rooms:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get a single book club room by ID
+   */
+  async getBookClubRoom(clubId: string): Promise<BookClubRoom | null> {
+    try {
+      const { data, error } = await supabase
+        .from("content")
+        .select(
+          `
+          *,
+          book:content!parent_content_id (
+            id,
+            data,
+            metadata,
+            type
+          )
+        `
+        )
+        .eq("type", BOOK_CLUB_ROOM_TYPE)
+        .eq("id", clubId)
+        .single();
+
+      if (error) {
+        if (error.code === "PGRST116") return null;
+        console.error("Error fetching book club room:", error);
+        throw new Error(error.message);
+      }
+
+      if (!data) return null;
+
+      const book = data.book as Content | null;
+      const metadata = data.metadata || {};
+      const bookMetadata = book?.metadata || {};
+
+      // Extract book title
+      let bookTitle = bookMetadata.filename || "";
+      if (!bookTitle && book?.data) {
+        try {
+          const url = new URL(book.data);
+          const pathParts = url.pathname.split("/");
+          bookTitle = decodeURIComponent(pathParts[pathParts.length - 1] || "");
+        } catch {
+          bookTitle = "Unknown Book";
+        }
+      }
+      if (bookTitle.toLowerCase().endsWith(".epub")) {
+        bookTitle = bookTitle.slice(0, -5);
+      }
+
+      return {
+        id: data.id,
+        name: data.data || "Untitled Club",
+        group_id: data.group_id,
+        book_content_id: data.parent_content_id || "",
+        book_title: bookTitle || "Unknown Book",
+        book_url: bookMetadata.file_url || book?.data || "",
+        created_at: data.created_at,
+        created_by: metadata.created_by,
+        created_by_username: metadata.created_by_username,
+      };
+    } catch (error) {
+      console.error("Failed to get book club room:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create a new book club room
+   */
+  async createBookClubRoom(
+    groupId: string,
+    name: string,
+    bookContentId: string,
+    userId?: string,
+    username?: string
+  ): Promise<BookClubRoom | null> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const effectiveUserId = userId || user?.id;
+
+      const { data, error } = await supabase
+        .from("content")
+        .insert([
+          {
+            type: BOOK_CLUB_ROOM_TYPE,
+            data: name,
+            group_id: groupId,
+            parent_content_id: bookContentId,
+            user_id: effectiveUserId,
+            metadata: {
+              created_by: effectiveUserId,
+              created_by_username: username,
+            },
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating book club room:", error);
+        throw new Error(error.message);
+      }
+
+      // Fetch the full room with book info
+      return this.getBookClubRoom(data.id);
+    } catch (error) {
+      console.error("Failed to create book club room:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete a book club room
+   */
+  async deleteBookClubRoom(clubId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from("content")
+        .delete()
+        .eq("id", clubId)
+        .eq("type", BOOK_CLUB_ROOM_TYPE);
+
+      if (error) {
+        console.error("Error deleting book club room:", error);
+        throw new Error(error.message);
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Failed to delete book club room:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Get member progress for a book club room
+   * Uses the book's content ID to fetch all reading positions
+   */
+  async getBookClubRoomMembers(
+    bookContentId: string,
+    groupId: string
+  ): Promise<ClubMemberProgress[]> {
+    // Reuse existing method
+    return this.getClubMemberProgress(bookContentId, groupId);
   }
 }
 

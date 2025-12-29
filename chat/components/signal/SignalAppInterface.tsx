@@ -1,26 +1,22 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { contentRepository } from "@/lib/list/ContentRepository";
 import { getCurrentUser } from "@/lib/list/SupabaseClient";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { ChatView } from "./ChatView";
+import { useGlobalGroup } from "@/components/GlobalGroupContext";
 import { MessageCircle } from "lucide-react";
-
-interface Group {
-  id: string;
-  name: string;
-}
 
 export function SignalAppInterface() {
   const [userId, setUserId] = useState<string | null>(null);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [showChat, setShowChat] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Get user and groups on mount
+  // Use global group context
+  const { selectedGroup, setSelectedGroup, groups, isLoading: groupsLoading } = useGlobalGroup();
+
+  // Get user on mount
   useEffect(() => {
     const init = async () => {
       try {
@@ -34,9 +30,6 @@ export function SignalAppInterface() {
           return;
         }
         setUserId(user.id);
-
-        const userGroups = await contentRepository.getUserGroups();
-        setGroups(userGroups);
       } catch (err) {
         console.error("Error initializing signal app:", err);
         setError("Failed to load your data");
@@ -48,16 +41,16 @@ export function SignalAppInterface() {
     init();
   }, []);
 
-  const handleSelectGroup = useCallback((group: Group) => {
+  const handleSelectGroup = useCallback((group: { id: string; name: string }) => {
     setSelectedGroup(group);
     setShowChat(true);
-  }, []);
+  }, [setSelectedGroup]);
 
   const handleBackToList = useCallback(() => {
     setShowChat(false);
   }, []);
 
-  if (loading && !userId) {
+  if ((loading || groupsLoading) && !userId) {
     return (
       <div className="h-full bg-[#2d2d2d] flex items-center justify-center">
         <div className="text-center">
@@ -91,7 +84,7 @@ export function SignalAppInterface() {
           groups={groups}
           selectedGroupId={selectedGroup?.id ?? null}
           onSelectGroup={handleSelectGroup}
-          isLoading={loading}
+          isLoading={groupsLoading}
         />
       </div>
 
