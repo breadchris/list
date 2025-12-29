@@ -124,6 +124,6 @@ body {
 }
 
 /* Hide empty blocks that only contain a trailing break in read-only views */
-.bn-block-outer:has(> .bn-block > .bn-block-content > .bn-inline-content > .ProseMirror-trailingBreak:only-child) {
+.bn-editor[contenteditable="false"] .bn-block-outer:has(> .bn-block > .bn-block-content > .bn-inline-content > .ProseMirror-trailingBreak:only-child) {
   display: none;
 }
