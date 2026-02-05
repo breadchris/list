@@ -21,6 +21,16 @@ import {
   setPageFromMarkdown,
 } from "../lib/test-utils/wiki/server-editor";
 import type * as Y from "yjs";
+import { createClient } from "@supabase/supabase-js";
+import * as fs from "fs/promises";
+import * as path from "path";
+
+// Supabase client for Node.js (no browser-specific features)
+const SUPABASE_URL = "https://zazsrepfnamdmibcyenx.supabase.co";
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphenNyZXBmbmFtZG1pYmN5ZW54Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTI5NjI3MywiZXhwIjoyMDcwODcyMjczfQ.dqaqUakGZJfrUibVNjGrTmphbUy1-KwbbuAiWkxGOcc";
+const supabaseNode = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // Polyfill WebSocket for Node.js
 (globalThis as any).WebSocket = require("ws");
@@ -89,9 +99,14 @@ async function main(): Promise<void> {
     "http://localhost:3000/api/y-sweet-auth";
   const docId = args.docId || process.env.DOC_ID || "wiki-test";
 
-  // Help command doesn't need connection
+  // Commands that don't need Y-Sweet connection
   if (command === "help") {
     printHelp();
+    return;
+  }
+
+  if (command === "export-code") {
+    await executeExportCode(args);
     return;
   }
 
@@ -123,6 +138,77 @@ async function main(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     disconnect();
   }
+}
+
+/**
+ * Execute export-code command (doesn't need Y-Sweet)
+ */
+async function executeExportCode(args: Record<string, any>): Promise<void> {
+  const { id, output } = args;
+
+  if (!id) {
+    printError("export-code requires --id (content UUID)");
+    return;
+  }
+
+  if (!output) {
+    printError("export-code requires --output (directory path)");
+    return;
+  }
+
+  // Fetch content from Supabase
+  const { data, error } = await supabaseNode
+    .from("content")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error || !data) {
+    printResult({
+      success: false,
+      error: error?.message || `Content not found: ${id}`,
+    });
+    return;
+  }
+
+  // Validate it's a code session
+  if (data.type !== "code_session") {
+    printResult({
+      success: false,
+      error: `Content ${id} is not a code session (type: ${data.type})`,
+    });
+    return;
+  }
+
+  // Get latest version
+  const versions = data.metadata?.versions || [];
+  if (versions.length === 0) {
+    printResult({
+      success: false,
+      error: "No versions found in code session",
+    });
+    return;
+  }
+
+  const latestVersion = versions[versions.length - 1];
+
+  // Write to output directory
+  await fs.mkdir(output, { recursive: true });
+  const filePath = path.join(output, latestVersion.filename || "Component.tsx");
+  await fs.writeFile(filePath, latestVersion.tsx_code, "utf-8");
+
+  printResult({
+    success: true,
+    data: {
+      session_id: id,
+      session_name: data.data,
+      version_id: latestVersion.id,
+      timestamp: latestVersion.timestamp,
+      filename: latestVersion.filename,
+      output_path: filePath,
+      message: "Code exported successfully",
+    },
+  });
 }
 
 /**
@@ -420,6 +506,10 @@ COMMANDS:
     --path <string>      Page path
     --markdown <string>  Markdown content
 
+  export-code       Export latest code from a code session to local directory
+    --id <uuid>          Code session content ID (from Supabase)
+    --output <path>      Local directory to write files to
+
   help              Show this help message
 
 OPTIONS:
@@ -460,6 +550,9 @@ EXAMPLES:
 
   # Set page content from JSON blocks
   npx tsx scripts/wiki-cli.ts set-page-content --path "index" --blocks '[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]' --docId wiki-abc123
+
+  # Export code session to local directory (no Y-Sweet connection needed)
+  npx tsx scripts/wiki-cli.ts export-code --id "abc123-def456-..." --output "./my-component"
 `);
 }
 

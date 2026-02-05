@@ -8,10 +8,13 @@
 import SwiftUI
 import WebKit
 
+// MARK: - WebContentView
+
 struct WebContentView: View {
     let url: URL
     let title: String
     @EnvironmentObject var viewModel: ChatViewModel
+    @StateObject private var store = WebContentStore()
     @State private var highlights: [String] = []
 
     private let repository = ChatRepository()
@@ -48,8 +51,8 @@ struct WebContentView: View {
 
             Divider()
 
-            // WebView with highlights and context menu action
-            WebContentWebView(url: url, highlights: highlights) { selectedText in
+            // WebView with highlights and floating popup for selection
+            WebContentWebView(url: url, highlights: highlights, store: store) { selectedText in
                 // Add to local highlights immediately for instant visual feedback
                 highlights.append(selectedText)
                 // Send to chat and save as highlight
@@ -74,43 +77,129 @@ struct WebContentView: View {
     }
 }
 
-// MARK: - Custom WKWebView with Send to Chat menu item
+// MARK: - Selection Message Handler
+
+class WebContentSelectionHandler: NSObject, WKScriptMessageHandler {
+    weak var webView: ChatWebView?
+    private var highlightPopup: HighlightPopupView?
+    private var tapOverlay: UIView?
+    private var currentSelectedText: String?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              let type = body["type"] as? String else { return }
+
+        switch type {
+        case "textSelected":
+            if let text = body["text"] as? String,
+               let rectX = body["rect_x"] as? CGFloat,
+               let rectY = body["rect_y"] as? CGFloat,
+               let rectWidth = body["rect_width"] as? CGFloat,
+               let rectHeight = body["rect_height"] as? CGFloat {
+                let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedText.isEmpty else {
+                    dismissPopup()
+                    return
+                }
+                let selectionRect = CGRect(x: rectX, y: rectY, width: rectWidth, height: rectHeight)
+                showFloatingHighlightButton(at: selectionRect, text: trimmedText)
+            }
+        case "selectionCleared":
+            dismissPopup()
+        default:
+            break
+        }
+    }
+
+    private func showFloatingHighlightButton(at rect: CGRect, text: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let webView = self.webView else { return }
+
+            // Remove existing popup if any
+            self.dismissPopupImmediate()
+
+            // Store the selected text
+            self.currentSelectedText = text
+
+            // Create new popup
+            let popup = HighlightPopupView()
+            popup.onHighlight = { [weak self, weak popup] in
+                // Trigger the highlight callback
+                if let selectedText = self?.currentSelectedText {
+                    self?.webView?.onSendToChat?(selectedText)
+                }
+                // Clear selection
+                self?.webView?.evaluateJavaScript("window.getSelection().removeAllRanges()") { _, _ in }
+                popup?.animateOut {
+                    self?.highlightPopup = nil
+                    self?.removeTapOverlay()
+                    self?.currentSelectedText = nil
+                }
+            }
+
+            // Add to webView
+            webView.addSubview(popup)
+            popup.position(above: rect, in: webView)
+            popup.animateIn()
+            self.highlightPopup = popup
+
+            // Add tap overlay to detect taps outside popup
+            self.addTapOverlay(in: webView)
+        }
+    }
+
+    private func addTapOverlay(in containerView: UIView) {
+        let overlay = UIView(frame: containerView.bounds)
+        overlay.backgroundColor = .clear
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleOverlayTap))
+        overlay.addGestureRecognizer(tapGesture)
+
+        // Insert below the popup
+        if let popup = highlightPopup {
+            containerView.insertSubview(overlay, belowSubview: popup)
+        } else {
+            containerView.addSubview(overlay)
+        }
+        tapOverlay = overlay
+    }
+
+    private func removeTapOverlay() {
+        tapOverlay?.removeFromSuperview()
+        tapOverlay = nil
+    }
+
+    @objc private func handleOverlayTap() {
+        dismissPopup()
+        // Clear selection in webview
+        webView?.evaluateJavaScript("window.getSelection().removeAllRanges()") { _, _ in }
+    }
+
+    func dismissPopup() {
+        DispatchQueue.main.async { [weak self] in
+            self?.highlightPopup?.animateOut {
+                self?.highlightPopup = nil
+            }
+            self?.removeTapOverlay()
+            self?.currentSelectedText = nil
+        }
+    }
+
+    private func dismissPopupImmediate() {
+        highlightPopup?.removeFromSuperview()
+        highlightPopup = nil
+        removeTapOverlay()
+        currentSelectedText = nil
+    }
+}
+
+// MARK: - Custom WKWebView with selection handling
 
 class ChatWebView: WKWebView {
     var onSendToChat: ((String) -> Void)?
     var highlights: [String] = []
-
-    override func buildMenu(with builder: any UIMenuBuilder) {
-        super.buildMenu(with: builder)
-
-        // Add "Send to Chat" action to the edit menu
-        let sendToChatAction = UIAction(
-            title: "Send to Chat",
-            image: UIImage(systemName: "bubble.left")
-        ) { [weak self] _ in
-            self?.sendSelectionToChat()
-        }
-
-        let customMenu = UIMenu(
-            title: "",
-            options: .displayInline,
-            children: [sendToChatAction]
-        )
-
-        // Insert at the beginning of the menu
-        builder.insertChild(customMenu, atStartOfMenu: .root)
-    }
-
-    private func sendSelectionToChat() {
-        evaluateJavaScript("window.getSelection().toString()") { [weak self] result, _ in
-            if let text = result as? String,
-               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                DispatchQueue.main.async {
-                    self?.onSendToChat?(text.trimmingCharacters(in: .whitespacesAndNewlines))
-                }
-            }
-        }
-    }
+    var selectionHandler: WebContentSelectionHandler?
 
     /// Inject JavaScript to highlight quotes on the page
     func applyHighlights() {
@@ -192,6 +281,54 @@ class ChatWebView: WKWebView {
             }
         }
     }
+
+    /// Inject JavaScript to detect text selection and send coordinates
+    func injectSelectionScript() {
+        let script = """
+        (function() {
+            if (window._selectionHandlerInstalled) return;
+            window._selectionHandlerInstalled = true;
+
+            let debounceTimer = null;
+
+            document.addEventListener('selectionchange', () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    const selection = window.getSelection();
+                    if (selection && selection.toString().trim().length > 0 && selection.rangeCount > 0) {
+                        const range = selection.getRangeAt(0);
+                        const rect = range.getBoundingClientRect();
+                        window.webkit.messageHandlers.selectionHandler.postMessage({
+                            type: 'textSelected',
+                            text: selection.toString(),
+                            rect_x: rect.left,
+                            rect_y: rect.top,
+                            rect_width: rect.width,
+                            rect_height: rect.height
+                        });
+                    } else {
+                        window.webkit.messageHandlers.selectionHandler.postMessage({
+                            type: 'selectionCleared'
+                        });
+                    }
+                }, 300);
+            });
+
+            // Dismiss on scroll
+            window.addEventListener('scroll', () => {
+                window.webkit.messageHandlers.selectionHandler.postMessage({
+                    type: 'selectionCleared'
+                });
+            }, true);
+        })();
+        """
+
+        evaluateJavaScript(script) { _, error in
+            if let error = error {
+                print("❌ ChatWebView: Failed to inject selection script: \(error)")
+            }
+        }
+    }
 }
 
 // MARK: - WKWebView Wrapper
@@ -199,6 +336,7 @@ class ChatWebView: WKWebView {
 struct WebContentWebView: UIViewRepresentable {
     let url: URL
     let highlights: [String]
+    let store: WebContentStore
     var onSendToChat: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -206,21 +344,19 @@ struct WebContentWebView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> ChatWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.allowsInlineMediaPlayback = true
-
-        let webView = ChatWebView(frame: .zero, configuration: configuration)
-        webView.allowsBackForwardNavigationGestures = true
-        webView.navigationDelegate = context.coordinator
-        webView.onSendToChat = onSendToChat
-        webView.highlights = highlights
-        context.coordinator.webView = webView
-        webView.load(URLRequest(url: url))
-
-        return webView
+        // Use store to get or create webview (persists across view updates)
+        return store.getOrCreateWebView(
+            for: url,
+            highlights: highlights,
+            onSendToChat: onSendToChat,
+            coordinator: context.coordinator
+        )
     }
 
     func updateUIView(_ uiView: ChatWebView, context: Context) {
+        // Update callback
+        uiView.onSendToChat = onSendToChat
+
         // Update highlights if they changed
         if uiView.highlights != highlights {
             uiView.highlights = highlights
@@ -228,10 +364,8 @@ struct WebContentWebView: UIViewRepresentable {
             uiView.applyHighlights()
         }
 
-        // Only reload if URL changed
-        if uiView.url != url {
-            uiView.load(URLRequest(url: url))
-        }
+        // Only reload if URL changed (handled by store)
+        store.loadURL(url)
     }
 
     // MARK: - Coordinator for navigation delegate
@@ -240,9 +374,69 @@ struct WebContentWebView: UIViewRepresentable {
         weak var webView: ChatWebView?
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard let chatWebView = webView as? ChatWebView else { return }
             // Apply highlights after page loads
-            (webView as? ChatWebView)?.applyHighlights()
+            chatWebView.applyHighlights()
+            // Inject selection handling script
+            chatWebView.injectSelectionScript()
         }
+    }
+}
+
+// MARK: - WebContent Store (persists webview across view updates)
+
+@MainActor
+class WebContentStore: ObservableObject {
+    var webView: ChatWebView?
+    var selectionHandler: WebContentSelectionHandler?
+    private(set) var currentURL: URL?
+
+    func getOrCreateWebView(
+        for url: URL,
+        highlights: [String],
+        onSendToChat: @escaping (String) -> Void,
+        coordinator: WebContentWebView.Coordinator
+    ) -> ChatWebView {
+        // If webview exists and URL is same, return existing
+        if let existing = webView, currentURL == url {
+            existing.onSendToChat = onSendToChat
+            existing.highlights = highlights
+            return existing
+        }
+
+        // Create new webview
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+
+        // Add selection message handler
+        let handler = WebContentSelectionHandler()
+        configuration.userContentController.add(handler, name: "selectionHandler")
+
+        let newWebView = ChatWebView(frame: .zero, configuration: configuration)
+        newWebView.allowsBackForwardNavigationGestures = true
+        newWebView.navigationDelegate = coordinator
+        newWebView.onSendToChat = onSendToChat
+        newWebView.highlights = highlights
+        newWebView.selectionHandler = handler
+        handler.webView = newWebView
+        coordinator.webView = newWebView
+
+        // Store references
+        webView = newWebView
+        selectionHandler = handler
+        currentURL = url
+
+        // Load URL
+        newWebView.load(URLRequest(url: url))
+
+        return newWebView
+    }
+
+    /// Load a new URL if different from current
+    func loadURL(_ url: URL) {
+        guard url != currentURL else { return }
+        currentURL = url
+        webView?.load(URLRequest(url: url))
     }
 }
 

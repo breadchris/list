@@ -4,6 +4,7 @@ import { Group, contentRepository } from '@/lib/list/ContentRepository';
 import { useGroupsQuery, useUserInviteStatsQuery, useCreateInviteCodeMutation, useLeaveGroupMutation, useCreateGroupMutation, useJoinGroupMutation } from '@/hooks/list/useGroupQueries';
 import { useToast } from './ToastProvider';
 import { InviteTreeVisualization } from './InviteTreeVisualization';
+import { AccessLinksManager } from './AccessLinksManager';
 
 export const GroupSettingsPage: React.FC = () => {
   const { groupId } = useParams<{ groupId: string }>();
@@ -296,6 +297,9 @@ export const GroupSettingsPage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Access Links Card */}
+          <AccessLinksManager groupId={groupId!} />
 
           {/* All Groups Card */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">

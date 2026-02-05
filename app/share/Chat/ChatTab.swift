@@ -10,6 +10,9 @@ import ExyteChat
 
 struct ChatTab: View {
     @StateObject private var viewModel = ChatViewModel()
+    @State private var showAppsMenu = false
+    @State private var showBookPicker = false
+    @State private var showCalendar = false
 
     var body: some View {
         NavigationStack {
@@ -43,6 +46,13 @@ struct ChatTab: View {
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showAppsMenu = true
+                    } label: {
+                        Image(systemName: "square.grid.2x2")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         viewModel.showGroupPicker()
@@ -65,6 +75,41 @@ struct ChatTab: View {
                         parentTitle: threadData.title
                     )
                 }
+            }
+            .sheet(isPresented: $showAppsMenu) {
+                AppsMenuView(
+                    onSelectBooks: {
+                        showBookPicker = true
+                    },
+                    onSelectCalendar: {
+                        showCalendar = true
+                    }
+                )
+            }
+            .fullScreenCover(isPresented: $showCalendar) {
+                CalendarTab()
+            }
+            .sheet(isPresented: $showBookPicker) {
+                BookPickerView(
+                    epubs: viewModel.epubs,
+                    isLoading: viewModel.isLoadingEPUBs,
+                    onSelectEPUB: { epub in
+                        viewModel.selectEPUB(epub)
+                    }
+                )
+            }
+            .sheet(isPresented: $viewModel.showAddNotesPrompt) {
+                AddNotesPromptSheet(
+                    onAddNotes: {
+                        if let photoId = viewModel.lastSentPhotoId {
+                            viewModel.dismissNotesPrompt()
+                            viewModel.openPhotoThread(photoId: photoId)
+                        }
+                    },
+                    onDismiss: {
+                        viewModel.dismissNotesPrompt()
+                    }
+                )
             }
             .alert("Error", isPresented: .constant(viewModel.error != nil)) {
                 Button("OK") {

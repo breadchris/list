@@ -17,8 +17,8 @@ export async function POST(req: Request) {
   const pageTitle = req.headers.get('X-Wiki-Page-Title');
   const pagePath = req.headers.get('X-Wiki-Page-Path');
 
-  // Get requested model from headers (defaults to gpt-5)
-  const requestedModel = req.headers.get('X-AI-Model') || 'gpt-5';
+  // Get requested model from headers (defaults to gpt-4.1-nano)
+  const requestedModel = req.headers.get('X-AI-Model') || 'gpt-4.1-nano';
 
   // Build context-aware system prompt
   let systemPrompt = aiDocumentFormats.html.systemPrompt;

@@ -6,12 +6,13 @@
  * Simplified version of use-wiki-yjs-doc.ts for public viewers:
  * - No IndexedDB persistence (public viewers don't need local storage)
  * - Uses readonly auth endpoint (mutations are ignored by server)
- * - No awareness (public viewers don't show presence)
+ * - Exposes awareness for presence tracking
  */
 
 import { useEffect, useState, useRef } from 'react';
 import * as Y from 'yjs';
 import { createYjsProvider, YSweetProvider } from '@y-sweet/client';
+import type { Awareness } from 'y-protocols/awareness';
 
 export interface UseReadonlyWikiDocOptions {
   wiki_id: string;
@@ -20,6 +21,7 @@ export interface UseReadonlyWikiDocOptions {
 export interface ReadonlyWikiDocState {
   doc: Y.Doc | null;
   provider: YSweetProvider | null;
+  awareness: Awareness | null;
   is_synced: boolean;
   is_ready: boolean;
   error: Error | null;
@@ -34,6 +36,7 @@ export function useReadonlyWikiDoc(options: UseReadonlyWikiDocOptions): Readonly
   const [state, setState] = useState<ReadonlyWikiDocState>({
     doc: null,
     provider: null,
+    awareness: null,
     is_synced: false,
     is_ready: false,
     error: null,
@@ -112,6 +115,7 @@ export function useReadonlyWikiDoc(options: UseReadonlyWikiDocOptions): Readonly
           setState(prev => ({
             ...prev,
             provider,
+            awareness: provider.awareness as Awareness,
           }));
         }
       } catch (error) {
@@ -143,6 +147,7 @@ export function useReadonlyWikiDoc(options: UseReadonlyWikiDocOptions): Readonly
       setState({
         doc: null,
         provider: null,
+        awareness: null,
         is_synced: false,
         is_ready: false,
         error: null,

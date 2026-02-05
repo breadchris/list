@@ -21,6 +21,8 @@ export interface YSweetClientOptions {
   doc_id: string;
   /** Optional custom fetch function */
   fetch?: typeof fetch;
+  /** Connection timeout in milliseconds (default: 10000) */
+  timeout_ms?: number;
 }
 
 /**
@@ -49,10 +51,11 @@ export async function connectToYSweet(
   });
 
   // Set up connection promise
+  const timeoutMs = options.timeout_ms || 10000;
   const connected = new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error("Connection timeout"));
-    }, 10000);
+    }, timeoutMs);
 
     provider.on("sync", () => {
       clearTimeout(timeout);

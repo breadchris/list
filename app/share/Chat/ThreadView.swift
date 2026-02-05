@@ -23,12 +23,19 @@ struct ThreadView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Subject header
-            ThreadSubjectHeader(
-                title: viewModel.parentTitle,
-                url: viewModel.parentURL,
-                childCount: viewModel.childMessages.count
-            )
+            // Subject header - photo or URL
+            if viewModel.hasImage {
+                PhotoThreadHeader(
+                    imageURL: viewModel.parentImageURL,
+                    noteCount: viewModel.childMessages.count
+                )
+            } else {
+                ThreadSubjectHeader(
+                    title: viewModel.parentTitle,
+                    url: viewModel.parentURL,
+                    childCount: viewModel.childMessages.count
+                )
+            }
 
             Divider()
 

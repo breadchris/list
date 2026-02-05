@@ -134,11 +134,11 @@ class InboxDrainer {
     }
 
     private func sendToSupabaseAsync(item: ShareItem, groupId: String) async throws {
-        try await SupabaseManager.shared.insertContent(
-            url: item.url,
+        try await SupabaseManager.shared.sendChatMessage(
+            text: item.url,
             groupId: groupId,
-            note: item.note
+            sharedFrom: "ios_share_extension"
         )
-        print("✅ InboxDrainer: Content inserted via Supabase SDK")
+        print("✅ InboxDrainer: Chat message sent via Supabase SDK")
     }
 }

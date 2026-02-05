@@ -48,6 +48,11 @@ final class ChatViewModel: ObservableObject {
     // Thread navigation state
     @Published var selectedThreadContent: ThreadNavigationData? = nil
 
+    // Photo notes state
+    @Published var noteCounts: [String: Int] = [:]
+    @Published var showAddNotesPrompt: Bool = false
+    @Published var lastSentPhotoId: String? = nil
+
     // MARK: - Private Properties
 
     private let repository = ChatRepository()
@@ -111,6 +116,12 @@ final class ChatViewModel: ObservableObject {
                       groupId == self.currentGroupId else { return }
 
                 self.handleMessageSynced(localId: localId, serverId: serverId)
+
+                // Check if the synced message has images - prompt for notes
+                if let message = self.messages.first(where: { $0.id == serverId || $0.id == localId }),
+                   !message.attachments.isEmpty {
+                    self.promptForPhotoNotes(photoId: serverId)
+                }
             }
             .store(in: &cancellables)
 
@@ -145,6 +156,9 @@ final class ChatViewModel: ObservableObject {
 
     /// Select a group and load its messages
     func selectGroup(_ group: GroupInfo) {
+        // Clear messages immediately to prevent UITableView batch update crashes
+        messages = []
+
         currentGroupId = group.id
         currentGroupName = group.name
         ChatGroupManager.shared.selectGroup(id: group.id, name: group.name)
@@ -319,6 +333,52 @@ final class ChatViewModel: ObservableObject {
         selectedThreadContent = nil
     }
 
+    // MARK: - Photo Notes
+
+    /// Prompt user to add notes after sending a photo
+    private func promptForPhotoNotes(photoId: String) {
+        lastSentPhotoId = photoId
+        showAddNotesPrompt = true
+    }
+
+    /// Dismiss the notes prompt
+    func dismissNotesPrompt() {
+        showAddNotesPrompt = false
+        lastSentPhotoId = nil
+    }
+
+    /// Open thread view for a photo to add notes
+    func openPhotoThread(photoId: String) {
+        guard let groupId = currentGroupId else { return }
+
+        selectedThreadContent = ThreadNavigationData(
+            id: photoId,
+            url: nil,
+            title: "Photo Notes",
+            groupId: groupId
+        )
+    }
+
+    /// Fetch note counts for a list of message IDs
+    func fetchNoteCounts(for messageIds: [String]) async {
+        for id in messageIds {
+            // Skip if already cached
+            if noteCounts[id] != nil { continue }
+
+            do {
+                let count = try await repository.fetchNoteCount(parentId: id)
+                noteCounts[id] = count
+            } catch {
+                print("⚠️ ChatViewModel: Failed to fetch note count for \(id)")
+            }
+        }
+    }
+
+    /// Increment note count when a new note is added
+    func incrementNoteCount(for parentId: String) {
+        noteCounts[parentId] = (noteCounts[parentId] ?? 0) + 1
+    }
+
     /// Extract first URL from text
     private func extractURL(from text: String) -> URL? {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
@@ -423,13 +483,23 @@ final class ChatViewModel: ObservableObject {
 
     /// Handle when a message is successfully synced
     private func handleMessageSynced(localId: String, serverId: String) {
-        guard let index = messages.firstIndex(where: { $0.id == localId }) else {
+        // CRITICAL: Add to pendingServerIds FIRST
+        pendingServerIds.insert(serverId)
+        pendingLocalIds.remove(localId)
+
+        // Check if realtime already added a message with the server ID
+        // If so, just remove the local pending message (race condition handled)
+        if messages.contains(where: { $0.id == serverId }) {
+            messages.removeAll { $0.id == localId }
+            print("✅ ChatViewModel: Message synced (realtime already delivered): \(localId) → \(serverId)")
             return
         }
 
-        // Remove from pending tracking
-        pendingLocalIds.remove(localId)
-        pendingServerIds.insert(serverId)
+        guard let index = messages.firstIndex(where: { $0.id == localId }) else {
+            // Local message not found - realtime might have handled it
+            print("⚠️ ChatViewModel: Local message not found for sync: \(localId)")
+            return
+        }
 
         // Update message with sent status and server ID
         let oldMessage = messages[index]
@@ -490,6 +560,32 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
+    /// Retry uploading a pending message
+    func retryMessage(id: String) {
+        guard let uuid = UUID(uuidString: id) else {
+            print("⚠️ ChatViewModel: Invalid UUID for retry: \(id)")
+            return
+        }
+
+        // Update UI to show sending state
+        if let index = messages.firstIndex(where: { $0.id == id }) {
+            let oldMessage = messages[index]
+            messages[index] = ChatMessage(
+                id: id,
+                user: oldMessage.user,
+                status: .sending,
+                createdAt: oldMessage.createdAt,
+                text: oldMessage.text,
+                attachments: oldMessage.attachments
+            )
+            pendingLocalIds.insert(id)
+        }
+
+        Task {
+            await syncService.retryMessage(id: uuid)
+        }
+    }
+
     /// Show the group selector modal
     func showGroupPicker() {
         showGroupSelector = true
@@ -504,11 +600,17 @@ final class ChatViewModel: ObservableObject {
         // Unsubscribe from any existing channel
         unsubscribe()
 
+        // Capture groupId at subscription time to guard against group switches
+        let subscribedGroupId = groupId
+
         realtimeChannel = repository.subscribeToMessages(
             groupId: groupId,
             onInsert: { [weak self] content in
                 Task { @MainActor in
                     guard let self = self else { return }
+
+                    // Ignore events from old group subscriptions
+                    guard self.currentGroupId == subscribedGroupId else { return }
 
                     // Skip if this is a message we just sent (already handled)
                     if self.pendingServerIds.remove(content.id) != nil {
@@ -528,6 +630,8 @@ final class ChatViewModel: ObservableObject {
                 }
             },
             onDelete: { [weak self] id in
+                // Ignore events from old group subscriptions
+                guard self?.currentGroupId == subscribedGroupId else { return }
                 self?.messages.removeAll { $0.id == id }
                 print("✅ ChatViewModel: Removed message: \(id)")
             }

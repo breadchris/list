@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useTheme } from "next-themes";
 import { useYDoc, useYjsProvider } from "@y-sweet/react";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
@@ -15,26 +16,34 @@ import {
   NestBlockButton,
   UnnestBlockButton,
   CreateLinkButton,
+  type DefaultReactSuggestionItem,
 } from "@blocknote/react";
 import {
   AIExtension,
   AIMenuController,
   AIToolbarButton,
-  getAISlashMenuItems,
+  aiDocumentFormats,
 } from "@blocknote/xl-ai";
+import { offset, size } from "@floating-ui/react";
+import type { FloatingUIOptions } from "@blocknote/react";
 import { DefaultChatTransport } from "ai";
-import { RiSparkling2Fill } from "react-icons/ri";
-import { Sparkles, Square, Youtube } from "lucide-react";
+import { Sparkles, Youtube, Calendar } from "lucide-react";
 import { en } from "@blocknote/core/locales";
 import { en as aiEn } from "@blocknote/xl-ai/locales";
 import { wikiSchema } from "./wiki-schema";
 import { extractYouTubeId, isYouTubeUrl } from "./youtube-block";
-import { useWikiEditorRegistry } from "./wiki-interface";
+import { useWikiEditorRegistry, useWikiAIContext, useWikiAIScratch } from "./wiki-interface";
 import { useStorageUpload } from "@/hooks/use-storage-upload";
 import type { WikiLinkClickEvent, WikiPage, WikiTemplate } from "@/types/wiki";
-import { resolvePath } from "@/lib/wiki/path-utils";
+import { resolvePath, getTodayPath } from "@/lib/wiki/path-utils";
+import { getDailyQuote } from "@/lib/wiki/daily-quotes";
+import { WikiPageMentionMenu } from "./wiki-page-mention-menu";
+import { WikiPageExistsContext } from "./wiki-link-inline";
+import { WikiAICancelFAB } from "./wiki-ai-cancel-fab";
+import { useBlockNoteAIStatus } from "@/hooks/wiki/use-blocknote-ai-status";
 
 import "@blocknote/shadcn/style.css";
+import "@blocknote/xl-ai/style.css";
 
 /**
  * Convert BlockNote blocks to plain text
@@ -82,6 +91,34 @@ function getTemplatePromptText(template: WikiTemplate): string {
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/xl-ai/style.css";
 
+// Inline AI menu configuration - appears attached to block instead of floating
+const inlineAIMenuOptions: FloatingUIOptions = {
+  useFloatingOptions: {
+    placement: "bottom-start",
+    middleware: [
+      offset(0),
+      size({
+        apply({ rects, elements }) {
+          const width =
+            rects.reference.width > 0 ? `${rects.reference.width}px` : "100%";
+          Object.assign(elements.floating.style, {
+            width,
+            minWidth: "300px",
+          });
+        },
+      }),
+    ],
+  },
+  elementProps: {
+    style: {
+      zIndex: 100,
+      boxShadow: "none",
+      borderRadius: 0,
+      borderTop: "1px solid var(--bn-colors-border)",
+    },
+  },
+};
+
 // Generate a random user color
 const generateUserColor = () => {
   const colors = [
@@ -119,6 +156,10 @@ interface WikiEditorProps {
   isActive?: boolean;
   /** Available templates for slash commands */
   templates?: WikiTemplate[];
+  /** All wiki pages for mention search */
+  pages: Map<string, WikiPage>;
+  /** Create a new page (for daily notes) */
+  onCreatePage?: (path: string) => WikiPage;
 }
 
 export function WikiEditor({
@@ -128,7 +169,10 @@ export function WikiEditor({
   panelId,
   isActive = false,
   templates = [],
+  pages,
+  onCreatePage,
 }: WikiEditorProps) {
+  const { resolvedTheme } = useTheme();
   const doc = useYDoc();
   const ysweetProvider = useYjsProvider();
   const awareness = ysweetProvider?.awareness || null;
@@ -137,8 +181,23 @@ export function WikiEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isEditorMounted, setIsEditorMounted] = useState(false);
   const isEditorMountedRef = useRef(false);
-  const [isAIGenerating, setIsAIGenerating] = useState(false);
   const editorRegistry = useWikiEditorRegistry();
+  const wikiAIContext = useWikiAIContext();
+  const wikiAIScratch = useWikiAIScratch();
+
+  // State for [[ bracket menu
+  const [bracketMenuState, setBracketMenuState] = useState<{
+    query: string;
+    position: { top: number; left: number };
+    isAbsoluteMode: boolean;
+  } | null>(null);
+
+  // State for # hash menu
+  const [hashMenuState, setHashMenuState] = useState<{
+    query: string;
+    position: { top: number; left: number };
+    isAbsoluteMode: boolean;
+  } | null>(null);
 
   // Create Yjs fragment for this page
   const fragment = useMemo(() => {
@@ -151,19 +210,6 @@ export function WikiEditor({
   const { uploadFile } = useStorageUpload({
     contentId: page.wiki_id,
   });
-
-  // Create transport with page context headers for AI
-  const aiTransport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: "/api/blocknote-ai",
-        headers: {
-          "X-Wiki-Page-Title": page.title,
-          "X-Wiki-Page-Path": page.path,
-        },
-      }),
-    [page.title, page.path],
-  );
 
   // Create BlockNote editor with wiki schema and AI
   const editor = useCreateBlockNote(
@@ -181,7 +227,13 @@ export function WikiEditor({
           uploadFile: uploadFile,
           extensions: [
             AIExtension({
-              transport: aiTransport,
+              transport: new DefaultChatTransport({
+                api: "/api/blocknote-ai",
+              }),
+              streamToolsProvider:
+                aiDocumentFormats.html.getStreamToolsProvider({
+                  withDelays: false,
+                }),
             }),
           ],
           dictionary: {
@@ -190,8 +242,11 @@ export function WikiEditor({
           },
         }
       : { schema: wikiSchema },
-    [fragment, ysweetProvider, userName, userColor, uploadFile, aiTransport],
+    [fragment, ysweetProvider, userName, userColor, uploadFile],
   );
+
+  // Track AI status for cancel FAB
+  const { isAIActive, cancel: cancelAI } = useBlockNoteAIStatus(editor);
 
   // Generate a unique ID that changes when editor is recreated
   // Used as key prop on BlockNoteView to force clean remount during provider transitions
@@ -208,33 +263,6 @@ export function WikiEditor({
       editorRegistry.unregisterEditor(page.id);
     };
   }, [editor, editorRegistry, page.id]);
-
-  // Subscribe to AI extension state to track generation status
-  useEffect(() => {
-    if (!editor) return;
-    const ai = editor.getExtension(AIExtension);
-    if (!ai) return;
-
-    // Subscribe to AI state changes
-    const unsubscribe = ai.store.subscribe(() => {
-      const state = ai.store.state;
-      const isGenerating =
-        state.aiMenuState !== "closed" &&
-        (state.aiMenuState.status === "thinking" ||
-          state.aiMenuState.status === "ai-writing");
-      setIsAIGenerating(isGenerating);
-    });
-
-    return unsubscribe;
-  }, [editor]);
-
-  // Handler to stop AI generation
-  const handleStopAI = useCallback(async () => {
-    const ai = editor?.getExtension(AIExtension);
-    if (ai) {
-      await ai.abort("User cancelled");
-    }
-  }, [editor]);
 
   // Track when editor view is ready (prevents "posAtDOM" errors on early clicks)
   useEffect(() => {
@@ -471,10 +499,401 @@ export function WikiEditor({
     };
   }, [editor]);
 
+  // Detect [[ pattern for bracket menu
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleBracketDetection = () => {
+      if (!isEditorMountedRef.current) return;
+
+      const selection = editor.getTextCursorPosition();
+      if (!selection?.block) {
+        setBracketMenuState(null);
+        return;
+      }
+
+      const block = selection.block;
+      if (block.type !== "paragraph" && block.type !== "heading") {
+        setBracketMenuState(null);
+        return;
+      }
+
+      const content = block.content;
+      if (!Array.isArray(content)) {
+        setBracketMenuState(null);
+        return;
+      }
+
+      // Find text with [[ but no closing ]]
+      for (const item of content) {
+        const textItem = item as { type?: string; text?: string };
+        if (textItem.type === "text" && textItem.text) {
+          // Match [[ followed by non-] chars at end of text (no closing ]])
+          const match = textItem.text.match(/\[\[([^\]]*?)$/);
+          if (match) {
+            const query = match[1];
+            // Detect absolute mode: query starts with /
+            const isAbsoluteMode = query.startsWith("/");
+            // Get cursor position for dropdown placement
+            try {
+              const domSelection = window.getSelection();
+              if (domSelection && domSelection.rangeCount > 0) {
+                const range = domSelection.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+                // Validate rect - collapsed ranges can return zero values
+                if (rect.bottom > 0 && rect.left >= 0) {
+                  setBracketMenuState({
+                    query,
+                    position: { top: rect.bottom + 4, left: rect.left },
+                    isAbsoluteMode,
+                  });
+                }
+                // If rect is invalid, skip this frame - next onChange will retry
+                return;
+              }
+            } catch {
+              // Selection not available, skip this frame
+              return;
+            }
+          }
+        }
+      }
+      setBracketMenuState(null);
+    };
+
+    let timeout: NodeJS.Timeout;
+    const debouncedHandler = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(handleBracketDetection, 50);
+    };
+
+    editor.onChange(debouncedHandler);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [editor]);
+
+  // Detect # pattern for hash menu
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleHashDetection = () => {
+      if (!isEditorMountedRef.current) return;
+
+      const selection = editor.getTextCursorPosition();
+      if (!selection?.block) {
+        setHashMenuState(null);
+        return;
+      }
+
+      const block = selection.block;
+      if (block.type !== "paragraph" && block.type !== "heading") {
+        setHashMenuState(null);
+        return;
+      }
+
+      const content = block.content;
+      if (!Array.isArray(content)) {
+        setHashMenuState(null);
+        return;
+      }
+
+      // Find text with # followed by non-whitespace chars at end
+      for (const item of content) {
+        const textItem = item as { type?: string; text?: string };
+        if (textItem.type === "text" && textItem.text) {
+          // Match # followed by any non-whitespace chars at end of text
+          const match = textItem.text.match(/#([^\s]*)$/);
+          if (match) {
+            const query = match[1];
+            // Detect absolute mode: query starts with /
+            const isAbsoluteMode = query.startsWith("/");
+            // Get cursor position for dropdown placement
+            try {
+              const domSelection = window.getSelection();
+              if (domSelection && domSelection.rangeCount > 0) {
+                const range = domSelection.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+                // Validate rect - collapsed ranges can return zero values
+                if (rect.bottom > 0 && rect.left >= 0) {
+                  setHashMenuState({
+                    query,
+                    position: { top: rect.bottom + 4, left: rect.left },
+                    isAbsoluteMode,
+                  });
+                }
+                // If rect is invalid, skip this frame - next onChange will retry
+                return;
+              }
+            } catch {
+              // Selection not available, skip this frame
+              return;
+            }
+          }
+        }
+      }
+      setHashMenuState(null);
+    };
+
+    let timeout: NodeJS.Timeout;
+    const debouncedHandler = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(handleHashDetection, 50);
+    };
+
+    editor.onChange(debouncedHandler);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [editor]);
+
+  // Handle bracket menu selection - replace [[query with wikiLink
+  const handleBracketMenuSelect = useCallback(
+    (selectedPath: string, exists: boolean) => {
+      if (!editor || !bracketMenuState) return;
+
+      const selection = editor.getTextCursorPosition();
+      if (!selection?.block) return;
+
+      const block = selection.block;
+      const content = block.content;
+      if (!Array.isArray(content)) return;
+
+      // Find and replace [[query with wikiLink
+      for (let i = 0; i < content.length; i++) {
+        const item = content[i] as {
+          type?: string;
+          text?: string;
+          styles?: Record<string, unknown>;
+        };
+        if (item.type === "text" && item.text) {
+          const match = item.text.match(/\[\[([^\]]*?)$/);
+          if (match) {
+            const matchStart = match.index!;
+            const beforeText = item.text.substring(0, matchStart);
+
+            // Build new content array
+            const newContent: Array<unknown> = [];
+
+            // Add content items before the matched text item
+            for (let j = 0; j < i; j++) {
+              newContent.push(content[j]);
+            }
+
+            // Add text before the [[
+            if (beforeText) {
+              newContent.push({
+                type: "text",
+                text: beforeText,
+                styles: item.styles || {},
+              });
+            }
+
+            // Add the wiki link inline content
+            newContent.push({
+              type: "wikiLink",
+              props: {
+                page_path: selectedPath,
+                display_text: "",
+                exists,
+              },
+            });
+
+            // Add trailing space
+            newContent.push({
+              type: "text",
+              text: " ",
+              styles: {},
+            });
+
+            // Add content items after the matched text item
+            for (let j = i + 1; j < content.length; j++) {
+              newContent.push(content[j]);
+            }
+
+            // Update the block with new content
+            editor.updateBlock(block, {
+              content: newContent as typeof block.content,
+            });
+            break;
+          }
+        }
+      }
+
+      setBracketMenuState(null);
+    },
+    [editor, bracketMenuState],
+  );
+
+  // Handle hash menu selection - replace #query with wikiLink
+  const handleHashMenuSelect = useCallback(
+    (selectedPath: string, exists: boolean) => {
+      if (!editor || !hashMenuState) return;
+
+      const selection = editor.getTextCursorPosition();
+      if (!selection?.block) return;
+
+      const block = selection.block;
+      const content = block.content;
+      if (!Array.isArray(content)) return;
+
+      // Find and replace #query with wikiLink
+      for (let i = 0; i < content.length; i++) {
+        const item = content[i] as {
+          type?: string;
+          text?: string;
+          styles?: Record<string, unknown>;
+        };
+        if (item.type === "text" && item.text) {
+          const match = item.text.match(/#([^\s]*)$/);
+          if (match) {
+            const matchStart = match.index!;
+            const beforeText = item.text.substring(0, matchStart);
+
+            // Build new content array
+            const newContent: Array<unknown> = [];
+
+            // Add content items before the matched text item
+            for (let j = 0; j < i; j++) {
+              newContent.push(content[j]);
+            }
+
+            // Add text before the #
+            if (beforeText) {
+              newContent.push({
+                type: "text",
+                text: beforeText,
+                styles: item.styles || {},
+              });
+            }
+
+            // Add the wiki link inline content
+            newContent.push({
+              type: "wikiLink",
+              props: {
+                page_path: selectedPath,
+                display_text: "",
+                exists,
+              },
+            });
+
+            // Add trailing space
+            newContent.push({
+              type: "text",
+              text: " ",
+              styles: {},
+            });
+
+            // Add content items after the matched text item
+            for (let j = i + 1; j < content.length; j++) {
+              newContent.push(content[j]);
+            }
+
+            // Update the block with new content
+            editor.updateBlock(block, {
+              content: newContent as typeof block.content,
+            });
+            break;
+          }
+        }
+      }
+
+      setHashMenuState(null);
+    },
+    [editor, hashMenuState],
+  );
+
+  // Helper to get currently selected text in the editor
+  const getSelectedText = useCallback(() => {
+    // Use DOM selection - works across BlockNote/TipTap
+    const selection = window.getSelection();
+    return selection?.toString().trim() || "";
+  }, []);
+
+  // Keyboard shortcut: Cmd+J or Ctrl+J to open AI scratch panel
+  useEffect(() => {
+    if (!editor || !isEditorMounted) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "j") {
+        e.preventDefault();
+        const selectedText = getSelectedText();
+        wikiAIScratch?.openAIScratchPanel(selectedText);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [editor, isEditorMounted, wikiAIScratch, getSelectedText]);
+
+  // Insert daily template for newly created daily pages
+  useEffect(() => {
+    if (!editor || !isEditorMounted) return;
+
+    // Check if this is a daily page
+    if (!page.path.startsWith("daily/")) return;
+
+    // Check if the page is empty (newly created)
+    const blocks = editor.document;
+    const isEmpty =
+      blocks.length === 0 ||
+      (blocks.length === 1 &&
+        blocks[0].type === "paragraph" &&
+        (!blocks[0].content ||
+          (Array.isArray(blocks[0].content) && blocks[0].content.length === 0)));
+
+    if (!isEmpty) return;
+
+    // Extract date from path (daily/YYYY-MM-DD)
+    const datePart = page.path.replace("daily/", "");
+    const dateMatch = datePart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!dateMatch) return;
+
+    const [, year, month, day] = dateMatch;
+    const pageDate = new Date(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day)
+    );
+    const quote = getDailyQuote(pageDate);
+
+    // Insert daily template
+    editor.replaceBlocks(editor.document, [
+      {
+        type: "paragraph",
+        content: `"${quote.text}" — ${quote.author}`,
+      },
+      {
+        type: "paragraph",
+        content: "",
+      },
+      {
+        type: "heading",
+        props: { level: 3 },
+        content: "Tasks",
+      },
+      {
+        type: "bulletListItem",
+        content: "",
+      },
+      {
+        type: "heading",
+        props: { level: 3 },
+        content: "Notes",
+      },
+      {
+        type: "paragraph",
+        content: "",
+      },
+    ]);
+  }, [editor, isEditorMounted, page.path]);
+
   if (!fragment || !isEditorMounted) {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        <span className="text-neutral-500">Loading editor...</span>
+        <span className="text-muted-foreground">Loading editor...</span>
       </div>
     );
   }
@@ -482,159 +901,232 @@ export function WikiEditor({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full flex flex-col ${isActive ? "ring-1 ring-blue-500/30" : ""}`}
+      className={`relative w-full h-full flex flex-col ${isActive ? "ring-1 ring-blue-500/30" : ""}`}
       style={{ pointerEvents: isEditorMounted ? "auto" : "none" }}
     >
-      <BlockNoteView
-        key={editorId}
-        editor={editor}
-        theme="dark"
-        className="h-full flex-1 overflow-auto"
-        formattingToolbar={false}
-        slashMenu={false}
-      >
-        <FormattingToolbarController
-          formattingToolbar={() => (
-            <FormattingToolbar>
-              <BlockTypeSelect key="blockTypeSelect" />
-              <BasicTextStyleButton
-                basicTextStyle="bold"
-                key="boldStyleButton"
-              />
-              <BasicTextStyleButton
-                basicTextStyle="italic"
-                key="italicStyleButton"
-              />
-              <BasicTextStyleButton
-                basicTextStyle="underline"
-                key="underlineStyleButton"
-              />
-              <BasicTextStyleButton
-                basicTextStyle="strike"
-                key="strikeStyleButton"
-              />
-              <BasicTextStyleButton
-                basicTextStyle="code"
-                key="codeStyleButton"
-              />
-              <ColorStyleButton key="colorStyleButton" />
-              <NestBlockButton key="nestBlockButton" />
-              <UnnestBlockButton key="unnestBlockButton" />
-              <CreateLinkButton key="createLinkButton" />
-              <AIToolbarButton key="aiToolbarButton" />
-            </FormattingToolbar>
-          )}
-        />
-        <SuggestionMenuController
-          triggerCharacter="/"
-          getItems={async (query) => {
-            const ai = editor.getExtension(AIExtension);
-            const draftPageItem = ai
-              ? {
-                  key: "draft-page",
-                  title: "Draft Page",
-                  onItemClick: () => {
-                    const cursor = editor.getTextCursorPosition();
-                    const blockId = cursor.block.id;
-                    ai.openAIMenuAtBlock(blockId);
-                    // Small delay to ensure menu is open before invoking AI
-                    setTimeout(() => {
-                      ai.invokeAI({
-                        userPrompt: `Write comprehensive content for a wiki page titled "${page.title}". Generate well-structured prose with appropriate headings, paragraphs, and details relevant to the topic. Start directly with the content - do not include the page title as the first heading since it's already displayed.`,
-                      });
-                    }, 50);
-                  },
-                  aliases: ["draft", "generate", "write"],
-                  group: "AI",
-                  icon: <RiSparkling2Fill />,
-                  subtext: `Generate content for "${page.title}"`,
+      <WikiPageExistsContext.Provider value={pageExists}>
+        <div className="flex-1 overflow-y-auto pb-32">
+          <BlockNoteView
+            key={editorId}
+            editor={editor}
+            theme={resolvedTheme === "dark" ? "dark" : "light"}
+            className="h-full"
+            formattingToolbar={false}
+            slashMenu={false}
+          >
+            <FormattingToolbarController
+              formattingToolbar={() => (
+                <FormattingToolbar>
+                  <BlockTypeSelect key="blockTypeSelect" />
+                  <BasicTextStyleButton
+                    basicTextStyle="bold"
+                    key="boldStyleButton"
+                  />
+                  <BasicTextStyleButton
+                    basicTextStyle="italic"
+                    key="italicStyleButton"
+                  />
+                  <BasicTextStyleButton
+                    basicTextStyle="underline"
+                    key="underlineStyleButton"
+                  />
+                  <BasicTextStyleButton
+                    basicTextStyle="strike"
+                    key="strikeStyleButton"
+                  />
+                  <BasicTextStyleButton
+                    basicTextStyle="code"
+                    key="codeStyleButton"
+                  />
+                  <ColorStyleButton key="colorStyleButton" />
+                  <NestBlockButton key="nestBlockButton" />
+                  <UnnestBlockButton key="unnestBlockButton" />
+                  <CreateLinkButton key="createLinkButton" />
+                  <AIToolbarButton key="aiToolbarButton" />
+                </FormattingToolbar>
+              )}
+            />
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={async (query) => {
+                // Suppress slash menu when wiki link menu is active
+                if (bracketMenuState || hashMenuState) {
+                  return [];
                 }
-              : null;
 
-            // Build template menu items
-            const templateItems = ai
-              ? templates.map((template) => ({
+                // Build template menu items
+                const templateItems = templates.map((template) => ({
                   key: `template-${template.id}`,
                   title: template.name,
-                  onItemClick: () => {
+                  onItemClick: async () => {
+                    const ai = editor.getExtension(AIExtension);
+                    if (!ai) {
+                      console.error("AI extension not available");
+                      return;
+                    }
+                    // Get prompt text (handles both text and blocknote formats)
+                    const promptText = getTemplatePromptText(template);
+                    // Replace template variables with page context
+                    let contextualPrompt = promptText
+                      .replace(/\{\{page_title\}\}/g, page.title)
+                      .replace(/\{\{page_path\}\}/g, page.path);
+
+                    // Replace {{selection}} if include_selection is enabled
+                    if (template.include_selection) {
+                      const selectedText = getSelectedText();
+                      contextualPrompt = contextualPrompt.replace(
+                        /\{\{selection\}\}/g,
+                        selectedText || "[No text selected]"
+                      );
+                    }
+
+                    // Add wiki context from selected panels
+                    if (wikiAIContext) {
+                      const wikiContextMarkdown =
+                        await wikiAIContext.getSelectedAIContextMarkdown();
+                      if (wikiContextMarkdown) {
+                        contextualPrompt = `## Reference Context from Selected Wiki Pages\n\n${wikiContextMarkdown}\n\n---\n\n## Your Task\n\n${contextualPrompt}`;
+                      }
+                    }
+
+                    // Open AI menu at current block to enable state tracking
                     const cursor = editor.getTextCursorPosition();
-                    const blockId = cursor.block.id;
-                    ai.openAIMenuAtBlock(blockId);
-                    // Small delay to ensure menu is open before invoking AI
-                    setTimeout(() => {
-                      // Get prompt text (handles both text and blocknote formats)
-                      const promptText = getTemplatePromptText(template);
-                      // Replace template variables with page context
-                      const contextualPrompt = promptText
-                        .replace(/\{\{page_title\}\}/g, page.title)
-                        .replace(/\{\{page_path\}\}/g, page.path);
-                      ai.invokeAI({
-                        userPrompt: contextualPrompt,
-                      });
-                    }, 50);
+                    if (cursor?.block?.id) {
+                      ai.openAIMenuAtBlock(cursor.block.id);
+                    }
+
+                    // Invoke AI with template prompt
+                    ai.invokeAI({
+                      userPrompt: contextualPrompt,
+                    });
                   },
                   aliases: template.aliases || [template.name.toLowerCase()],
                   group: "Templates",
                   icon: <Sparkles className="w-4 h-4" />,
                   subtext:
                     template.description || `Use ${template.name} template`,
-                }))
-              : [];
+                }));
 
-            // YouTube embed menu item
-            const youtubeItem = {
-              key: "youtube",
-              title: "YouTube",
-              onItemClick: () => {
-                const url = prompt("Enter YouTube URL:");
-                if (!url) return;
-                const videoId = extractYouTubeId(url);
-                if (videoId) {
-                  const cursor = editor.getTextCursorPosition();
-                  editor.insertBlocks(
-                    [
-                      {
-                        type: "youtube",
-                        props: { video_id: videoId, title: "YouTube video" },
-                      },
-                    ],
-                    cursor.block,
-                    "after",
+                // YouTube embed menu item
+                const youtubeItem = {
+                  key: "youtube",
+                  title: "YouTube",
+                  onItemClick: () => {
+                    const url = prompt("Enter YouTube URL:");
+                    if (!url) return;
+                    const videoId = extractYouTubeId(url);
+                    if (videoId) {
+                      const cursor = editor.getTextCursorPosition();
+                      editor.insertBlocks(
+                        [
+                          {
+                            type: "youtube",
+                            props: {
+                              video_id: videoId,
+                              title: "YouTube video",
+                            },
+                          },
+                        ],
+                        cursor.block,
+                        "after",
+                      );
+                    } else {
+                      alert("Invalid YouTube URL");
+                    }
+                  },
+                  aliases: ["video", "embed", "yt"],
+                  group: "Embeds",
+                  icon: <Youtube className="w-4 h-4" />,
+                  subtext: "Embed a YouTube video",
+                };
+
+                // AI Scratch panel item (replaces inline AI prompt)
+                const aiScratchItem = {
+                  key: "ai-scratch",
+                  title: "Ask AI",
+                  onItemClick: () => {
+                    const selectedText = getSelectedText();
+                    wikiAIScratch?.openAIScratchPanel(selectedText);
+                  },
+                  aliases: ["ai", "prompt", "ask", "generate", "scratch"],
+                  group: "Tools",
+                  icon: <Sparkles className="w-4 h-4" />,
+                  subtext: "Open AI scratch panel",
+                };
+
+                // Daily note menu item
+                const dailyNoteItem = {
+                  key: "daily-note",
+                  title: "Daily Note",
+                  onItemClick: () => {
+                    const todayPath = getTodayPath();
+
+                    // Navigate to today's daily page
+                    // WikiPanel's handleLinkClick will create the page if it doesn't exist
+                    onLinkClick({
+                      path: todayPath,
+                      mouse_event: new MouseEvent("click"),
+                      source_panel_id: panelId,
+                    });
+                  },
+                  aliases: ["today", "journal", "note"],
+                  group: "Pages",
+                  icon: <Calendar className="w-4 h-4" />,
+                  subtext: "Open or create today's daily note",
+                };
+
+                return [
+                  ...getDefaultReactSlashMenuItems(editor),
+                  // Note: getAISlashMenuItems removed - using custom AI scratch panel instead
+                  ...templateItems,
+                  youtubeItem,
+                  aiScratchItem,
+                  dailyNoteItem,
+                ].filter((item) => {
+                  const queryLower = query.toLowerCase();
+                  const titleMatch = item.title
+                    .toLowerCase()
+                    .includes(queryLower);
+                  const aliasMatch = item.aliases?.some((alias: string) =>
+                    alias.toLowerCase().includes(queryLower),
                   );
-                } else {
-                  alert("Invalid YouTube URL");
-                }
-              },
-              aliases: ["video", "embed", "yt"],
-              group: "Embeds",
-              icon: <Youtube className="w-4 h-4" />,
-              subtext: "Embed a YouTube video",
-            };
+                  return titleMatch || aliasMatch;
+                });
+              }}
+            />
+            <AIMenuController />
+          </BlockNoteView>
+        </div>
+      </WikiPageExistsContext.Provider>
 
-            return [
-              ...getDefaultReactSlashMenuItems(editor),
-              ...getAISlashMenuItems(editor),
-              ...(draftPageItem ? [draftPageItem] : []),
-              ...templateItems,
-              youtubeItem,
-            ].filter((item) =>
-              item.title.toLowerCase().includes(query.toLowerCase()),
-            );
-          }}
+      {/* Bracket [[ mention menu */}
+      {bracketMenuState && (
+        <WikiPageMentionMenu
+          pages={pages}
+          query={bracketMenuState.query}
+          position={bracketMenuState.position}
+          onSelect={handleBracketMenuSelect}
+          onClose={() => setBracketMenuState(null)}
+          currentPagePath={page.path}
+          isAbsoluteMode={bracketMenuState.isAbsoluteMode}
         />
-        <AIMenuController />
-      </BlockNoteView>
-
-      {/* Stop AI generation FAB */}
-      {isAIGenerating && (
-        <button
-          onClick={handleStopAI}
-          className="fixed bottom-6 right-6 w-14 h-14 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 z-30 flex items-center justify-center"
-          aria-label="Stop AI generation"
-        >
-          <Square className="w-5 h-5 fill-current" />
-        </button>
       )}
+
+      {/* Hash # mention menu */}
+      {hashMenuState && (
+        <WikiPageMentionMenu
+          pages={pages}
+          query={hashMenuState.query}
+          position={hashMenuState.position}
+          onSelect={handleHashMenuSelect}
+          onClose={() => setHashMenuState(null)}
+          currentPagePath={page.path}
+          isAbsoluteMode={hashMenuState.isAbsoluteMode}
+        />
+      )}
+
+      {/* AI Cancel FAB - shows when AI inference is in progress */}
+      <WikiAICancelFAB isVisible={isAIActive} onCancel={cancelAI} />
     </div>
   );
 }

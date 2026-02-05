@@ -192,4 +192,33 @@ final class MessageSyncService: ObservableObject {
             return []
         }
     }
+
+    /// Retry a specific message immediately
+    func retryMessage(id: UUID) async {
+        guard let message = try? outbox.read(id: id) else {
+            print("⚠️ MessageSyncService: Message not found for retry: \(id)")
+            return
+        }
+
+        // Reset retry count
+        var resetMessage = PendingChatMessage(
+            id: message.id,
+            text: message.text,
+            groupId: message.groupId,
+            userId: message.userId,
+            senderName: message.senderName,
+            createdAt: message.createdAt,
+            imageFilenames: message.imageFilenames,
+            retryCount: 0
+        )
+
+        do {
+            try outbox.update(resetMessage)
+            print("🔄 MessageSyncService: Retrying message \(id)")
+            await syncMessage(resetMessage)
+            updatePendingCount()
+        } catch {
+            print("❌ MessageSyncService: Failed to retry message \(id): \(error)")
+        }
+    }
 }

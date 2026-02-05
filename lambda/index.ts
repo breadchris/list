@@ -117,6 +117,36 @@ const sqsPolicy = new aws.iam.RolePolicy('lambda-sqs-policy', {
 	}`
 });
 
+// Create Secrets Manager secret for Teller mTLS certificates
+// (Certificates are too large for Lambda env vars which have a 5KB limit)
+const tellerSecret = new aws.secretsmanager.Secret('teller-certificates', {
+	name: 'teller-mTLS-certificates',
+	tags: {
+		Name: 'Teller mTLS Certificates',
+		ManagedBy: 'Pulumi'
+	}
+});
+
+const tellerSecretVersion = new aws.secretsmanager.SecretVersion('teller-certificates-version', {
+	secretId: tellerSecret.id,
+	secretString: pulumi.all([tellerClientCert, tellerClientKey]).apply(([cert, key]) =>
+		JSON.stringify({ cert, key })
+	)
+});
+
+// Create custom policy for Secrets Manager access (Teller certificates)
+const secretsPolicy = new aws.iam.RolePolicy('lambda-secrets-policy', {
+	role: lambdaRole.id,
+	policy: tellerSecret.arn.apply(secretArn => JSON.stringify({
+		Version: '2012-10-17',
+		Statement: [{
+			Effect: 'Allow',
+			Action: ['secretsmanager:GetSecretValue'],
+			Resource: secretArn
+		}]
+	}))
+});
+
 // Create ECR repository for Lambda Docker image
 const ecrRepo = new aws.ecr.Repository('claude-code-lambda-repo', {
 	name: 'claude-code-lambda',
@@ -196,8 +226,7 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			MAPKIT_TEAM_ID: mapkitTeamId,
 			MAPKIT_KEY_ID: mapkitKeyId,
 			MAPKIT_PRIVATE_KEY: mapkitPrivateKey,
-			TELLER_CLIENT_CERT: tellerClientCert,
-			TELLER_CLIENT_KEY: tellerClientKey,
+			TELLER_SECRET_ARN: tellerSecret.arn,
 			HOME: '/tmp', // Claude CLI needs a HOME directory for config
 			IS_SANDBOX: '1', // Enable bypassPermissions mode for Claude CLI
 			// APNs Push Notification Configuration
@@ -328,11 +357,79 @@ const supabaseAccessKey = new aws.iam.AccessKey('supabase-access-key', {
 	user: supabaseUser.name
 });
 
+// ============================================================
+// Wiki Export Lambda (ZIP-based, minimal dependencies)
+// ============================================================
+
+// S3 bucket for Lambda deployment packages
+const deploymentBucket = new aws.s3.Bucket('lambda-deployment', {
+	bucket: 'claude-code-lambda-deployment',
+	forceDestroy: true,
+	tags: {
+		Name: 'Lambda Deployment Bucket',
+		ManagedBy: 'Pulumi'
+	}
+});
+
+// IAM role for wiki export Lambda (reuse same role)
+const wikiExportLambda = new aws.lambda.Function('wiki-export-lambda', {
+	name: 'wiki-export-lambda',
+	packageType: 'Zip',
+	role: lambdaRole.arn,
+	runtime: 'nodejs20.x',
+	handler: 'index.handler',
+	timeout: 30, // 30 seconds (export is fast)
+	memorySize: 512, // 512MB (sufficient for BlockNote)
+	// Initial dummy code - will be replaced by deploy.sh
+	s3Bucket: deploymentBucket.bucket,
+	s3Key: 'wiki-export/function.zip',
+	environment: {
+		variables: {
+			NODE_ENV: 'production',
+			// Y-Sweet connection string for reading Y.js docs directly
+			CONNECTION_STRING: config.getSecret('ySweetConnectionString') || ''
+		}
+	},
+	tags: {
+		Name: 'Wiki Export Lambda',
+		ManagedBy: 'Pulumi'
+	}
+}, { dependsOn: [deploymentBucket] });
+
+// Lambda integration for wiki export
+const wikiExportIntegration = new aws.apigatewayv2.Integration('wiki-export-integration', {
+	apiId: api.id,
+	integrationType: 'AWS_PROXY',
+	integrationUri: wikiExportLambda.arn,
+	payloadFormatVersion: '2.0'
+});
+
+// Create route for /wiki-export
+const wikiExportRoute = new aws.apigatewayv2.Route('wiki-export-route', {
+	apiId: api.id,
+	routeKey: 'POST /wiki-export',
+	target: pulumi.interpolate`integrations/${wikiExportIntegration.id}`
+});
+
+// Grant API Gateway permission to invoke wiki export Lambda
+const wikiExportPermission = new aws.lambda.Permission('wiki-export-api-gateway-invoke', {
+	action: 'lambda:InvokeFunction',
+	function: wikiExportLambda.name,
+	principal: 'apigateway.amazonaws.com',
+	sourceArn: pulumi.interpolate`${api.executionArn}/*/*`
+});
+
+// ============================================================
+// Exports
+// ============================================================
+
 // Export outputs
 export const apiUrl = pulumi.interpolate`${api.apiEndpoint}/content`;
 export const contentEndpoint = pulumi.interpolate`${api.apiEndpoint}/content`;
+export const wikiExportEndpoint = pulumi.interpolate`${api.apiEndpoint}/wiki-export`;
 export const bucketName = sessionBucket.bucket;
 export const lambdaArn = lambdaFunction.arn;
+export const wikiExportLambdaArn = wikiExportLambda.arn;
 
 // Export SQS queue information
 export const contentQueueUrl = contentQueue.url;

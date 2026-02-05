@@ -3,6 +3,7 @@
  * Supports both [[wiki links]] and standard [markdown](links)
  */
 
+import * as Y from "yjs";
 import type { ParsedLink, WikiLinkType } from "@/types/wiki";
 import { isExternalUrl, normalizePath } from "./path-utils";
 
@@ -266,4 +267,95 @@ export function findBacklinks(
   }
 
   return backlinks;
+}
+
+/**
+ * Count wiki links to target paths in a Y.XmlFragment
+ * Traverses the BlockNote content structure to find wikiLink inline content
+ * @param fragment The Y.XmlFragment containing page content
+ * @param targetPaths Set of page paths to look for
+ * @returns Number of links found to any of the target paths
+ */
+export function countWikiLinksInFragment(
+  fragment: Y.XmlFragment,
+  targetPaths: Set<string>
+): number {
+  let count = 0;
+
+  function traverseElement(element: Y.XmlElement | Y.XmlFragment) {
+    // Check for wikiLink elements by examining attributes
+    if (element instanceof Y.XmlElement) {
+      const attrs = element.getAttributes();
+      // BlockNote stores inline content type in nodeName or as attribute
+      const isWikiLink =
+        element.nodeName === "wikiLink" ||
+        attrs.type === "wikiLink" ||
+        attrs["data-content-type"] === "wikiLink";
+
+      if (isWikiLink) {
+        const pagePath = attrs.page_path || attrs["page_path"];
+        if (pagePath && targetPaths.has(normalizePath(String(pagePath)))) {
+          count++;
+        }
+      }
+    }
+
+    // Recurse into children
+    element.forEach((child) => {
+      if (child instanceof Y.XmlElement) {
+        traverseElement(child);
+      }
+    });
+  }
+
+  traverseElement(fragment);
+  return count;
+}
+
+/**
+ * Update wiki link page_path attributes in a Y.XmlFragment
+ * Must be called within a Y.js transaction for atomicity
+ * @param fragment The Y.XmlFragment containing page content
+ * @param pathMapping Map of old paths to new paths
+ * @returns Number of links updated
+ */
+export function updateWikiLinksInFragment(
+  fragment: Y.XmlFragment,
+  pathMapping: Map<string, string>
+): number {
+  let updated = 0;
+
+  function traverseElement(element: Y.XmlElement | Y.XmlFragment) {
+    if (element instanceof Y.XmlElement) {
+      const attrs = element.getAttributes();
+      // Check if this is a wikiLink element
+      const isWikiLink =
+        element.nodeName === "wikiLink" ||
+        attrs.type === "wikiLink" ||
+        attrs["data-content-type"] === "wikiLink";
+
+      if (isWikiLink) {
+        const pagePath = attrs.page_path || attrs["page_path"];
+        if (pagePath) {
+          const normalizedPath = normalizePath(String(pagePath));
+          const newPath = pathMapping.get(normalizedPath);
+          if (newPath) {
+            // Update the page_path attribute
+            element.setAttribute("page_path", newPath);
+            updated++;
+          }
+        }
+      }
+    }
+
+    // Recurse into children
+    element.forEach((child) => {
+      if (child instanceof Y.XmlElement) {
+        traverseElement(child);
+      }
+    });
+  }
+
+  traverseElement(fragment);
+  return updated;
 }

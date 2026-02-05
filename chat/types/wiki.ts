@@ -72,17 +72,75 @@ export interface WikiMetadata {
 }
 
 /**
- * An open panel in the wiki interface
+ * Base properties shared by all panel types
  */
-export interface WikiPanel {
+interface WikiPanelBase {
   /** Unique panel ID */
   id: string;
+  /** Whether this panel is the active/focused one */
+  is_active?: boolean;
+  /** Whether this panel is collapsed to the dock */
+  collapsed?: boolean;
+  /** Whether this panel's content is selected for AI context */
+  selected_for_ai_context?: boolean;
+}
+
+/**
+ * A wiki page panel (the default panel type)
+ */
+export interface WikiPagePanel extends WikiPanelBase {
+  /** Panel type - optional for backwards compatibility with existing panels */
+  type?: "page";
   /** Page path, e.g., "index", "guide/intro" */
   page_path: string;
   /** Content table ID for this page */
   page_id: string;
-  /** Whether this panel is the active/focused one */
-  is_active?: boolean;
+}
+
+/**
+ * A reader panel for displaying EPUB books
+ */
+export interface WikiReaderPanel extends WikiPanelBase {
+  /** Panel type - required for reader panels */
+  type: "reader";
+  /** Content ID of the book to display */
+  book_content_id: string;
+  /** Book title for display in panel header */
+  book_title?: string;
+}
+
+/**
+ * An open panel in the wiki interface
+ * Can be either a page panel or a reader panel
+ */
+export type WikiPanel = WikiPagePanel | WikiReaderPanel;
+
+/**
+ * Type guard to check if a panel is a reader panel
+ */
+export function isReaderPanel(panel: WikiPanel): panel is WikiReaderPanel {
+  return panel.type === "reader";
+}
+
+/**
+ * Type guard to check if a panel is a page panel
+ */
+export function isPagePanel(panel: WikiPanel): panel is WikiPagePanel {
+  return panel.type !== "reader";
+}
+
+/**
+ * Layout state for wiki collapse/focus persistence
+ */
+export interface WikiLayoutState {
+  /** IDs of collapsed panels */
+  collapsed_panel_ids: string[];
+  /** ID of panel in focus mode (null = normal mode) */
+  focused_panel_id: string | null;
+  /** Panel page_paths in display order (for persistence) */
+  panel_order_paths?: string[];
+  /** Page paths selected for AI context */
+  ai_context_selected_paths?: string[];
 }
 
 /**
@@ -197,6 +255,7 @@ export const DEFAULT_WIKI_SETTINGS: WikiSettings = {
 export const WIKI_CONTENT_TYPE = "wiki" as const;
 export const WIKI_PAGE_CONTENT_TYPE = "wiki-page" as const;
 export const WIKI_TEMPLATE_CONTENT_TYPE = "wiki-template" as const;
+export const WIKI_BACKUP_CONTENT_TYPE = "wiki-backup" as const;
 
 /**
  * A wiki template (AI prompt/command)
@@ -219,22 +278,38 @@ export interface WikiTemplate {
   description?: string;
   /** Aliases for slash command matching */
   aliases?: string[];
+  /** Whether to include selected text as {{selection}} variable */
+  include_selection?: boolean;
   /** ISO timestamp when template was created */
   created_at: string;
 }
 
 /**
- * Available AI models for wiki templates
+ * Available AI models for wiki templates and AI scratch
  */
 export const WIKI_TEMPLATE_MODELS = [
-  { id: 'gpt-5', name: 'GPT-5', provider: 'OpenAI' },
-  { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', provider: 'Anthropic' },
+  { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI' },
+  { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'OpenAI' },
 ] as const;
 
 /**
  * Default AI model for new templates
  */
-export const DEFAULT_TEMPLATE_MODEL = 'gpt-5';
+export const DEFAULT_TEMPLATE_MODEL = 'gpt-4.1';
+
+/**
+ * An AI scratch session stored in Y.js
+ */
+export interface WikiAIScratch {
+  /** Local UUID */
+  id: string;
+  /** Parent wiki content ID */
+  wiki_id: string;
+  /** AI model to use */
+  model: string;
+  /** ISO timestamp when created */
+  created_at: string;
+}
 
 /**
  * Metadata stored in content.metadata for wiki templates
@@ -261,4 +336,111 @@ export interface WikiNavItem {
   title: string;
   /** Child navigation items */
   children?: WikiNavItem[];
+}
+
+/**
+ * Presence state for wiki viewers
+ * Broadcast via Y.js Awareness
+ */
+export interface WikiPresenceState {
+  /** Stable visitor ID (from localStorage) */
+  visitor_id: string;
+  /** Display name (Anonymous 1, Anonymous 2, etc.) */
+  display_name: string;
+  /** Unique color for this visitor (HSL format) */
+  color: string;
+  /** Current page path being viewed */
+  current_page_path: string;
+  /** Mouse cursor position relative to viewport (null when not hovering editor) */
+  cursor_position: { x: number; y: number } | null;
+  /** Last activity timestamp (for idle detection) */
+  last_active: number;
+}
+
+/**
+ * Processed presence user for UI rendering
+ */
+export interface WikiPresenceUser {
+  /** Y.js client ID */
+  client_id: number;
+  /** Stable visitor ID */
+  visitor_id: string;
+  /** Display name */
+  display_name: string;
+  /** Assigned color */
+  color: string;
+  /** Current page */
+  current_page_path: string;
+  /** Cursor position (null if not on same page or not hovering) */
+  cursor_position: { x: number; y: number } | null;
+  /** Whether user is active (not idle) */
+  is_active: boolean;
+}
+
+/**
+ * Preview information for a page rename operation
+ */
+export interface WikiRenamePreview {
+  /** Pages that will be renamed (this page + children) */
+  pages_to_rename: Array<{
+    old_path: string;
+    new_path: string;
+    title: string;
+  }>;
+  /** Pages that contain links to any of the pages being renamed */
+  affected_pages: Array<{
+    path: string;
+    title: string;
+    link_count: number;
+  }>;
+  /** Total number of links that will be updated */
+  total_link_updates: number;
+}
+
+/**
+ * Metadata stored in content.metadata for wiki backups
+ */
+export interface WikiBackupMetadata {
+  /** Wiki ID this backup belongs to */
+  wiki_id: string;
+  /** Wiki title at backup time */
+  wiki_title: string;
+  /** ISO date string (YYYY-MM-DD) for daily deduplication */
+  backup_date: string;
+  /** Total number of pages backed up */
+  page_count: number;
+  /** Created by username */
+  created_by_username?: string;
+  /** Manual vs auto backup */
+  trigger: "manual" | "auto";
+}
+
+/**
+ * A single page within a wiki backup
+ */
+export interface WikiBackupPage {
+  /** Page path (e.g., "index", "guide/intro") */
+  path: string;
+  /** Page title */
+  title: string;
+  /** Full HTML content */
+  html: string;
+  /** Markdown content */
+  markdown: string;
+}
+
+/**
+ * Data stored in content.data for wiki backups
+ */
+export interface WikiBackupData {
+  pages: WikiBackupPage[];
+}
+
+/**
+ * A wiki backup entry from the database
+ */
+export interface WikiBackup {
+  id: string;
+  created_at: string;
+  metadata: WikiBackupMetadata;
 }

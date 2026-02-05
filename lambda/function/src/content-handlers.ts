@@ -372,7 +372,7 @@ export async function handleChatMessage(
       parent_content_id: chat_content_id,
       metadata: {
         role: "assistant",
-        model: "gpt-4",
+        model: "gpt-4.1-nano",
         created_by_chat: true,
         streaming: true,
       },
@@ -407,7 +407,7 @@ export async function handleChatMessage(
     });
 
     const result = streamText({
-      model: openaiProvider("gpt-4"),
+      model: openaiProvider("gpt-4.1-nano"),
       messages: messages as any,
     });
 
@@ -435,7 +435,7 @@ export async function handleChatMessage(
       .update({
         metadata: {
           role: "assistant",
-          model: "gpt-4",
+          model: "gpt-4.1-nano",
           created_by_chat: true,
           streaming: false,
         },
@@ -457,7 +457,7 @@ export async function handleChatMessage(
         data: `Error generating response: ${error.message}`,
         metadata: {
           role: "assistant",
-          model: "gpt-4",
+          model: "gpt-4.1-nano",
           created_by_chat: true,
           streaming: false,
           error: true,
@@ -1473,7 +1473,7 @@ export async function handleChatV2Stream(payload: ChatV2StreamPayload) {
 
   // Use Vercel AI SDK streamObject for structured streaming
   const result = streamObject({
-    model: openaiProvider("gpt-4o"),
+    model: openaiProvider("gpt-4.1-nano"),
     messages: messagesWithSystem,
     schema: chatResponseSchema,
     temperature: 0.7,
@@ -1533,7 +1533,7 @@ export async function handleChatV2StreamResponse(payload: ChatV2StreamPayload) {
 
   // Use Vercel AI SDK streamObject for structured streaming
   const result = streamObject({
-    model: openaiProvider("gpt-4o"),
+    model: openaiProvider("gpt-4.1-nano"),
     messages: messagesWithSystem,
     schema: chatResponseSchema,
     temperature: 0.7,

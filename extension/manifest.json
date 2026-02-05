@@ -18,7 +18,8 @@
     "https://localhost:8080/*",
     "http://localhost:3000/*",
     "https://localhost:3000/*",
-    "https://zazsrepfnamdmibcyenx.supabase.co/*"
+    "https://zazsrepfnamdmibcyenx.supabase.co/*",
+    "https://chatgpt.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -37,6 +38,17 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["chatgpt-injector.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["chatgpt-bridge.js"],
+      "run_at": "document_start"
     }
   ],
   "externally_connectable": {

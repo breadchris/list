@@ -59,7 +59,7 @@ export async function POST(req: Request) {
   const result = streamObject({
     schema: {} as any,
     output: "object",
-    model: openai("gpt-4.1"),
+    model: openai("gpt-4.1-nano"),
     prompt: prompt,
   });
 

@@ -160,6 +160,46 @@ final class SupabaseManager {
 
         print("✅ SupabaseManager: Content inserted successfully")
     }
+
+    /// Send a chat message to the database (for background/share extension use)
+    func sendChatMessage(text: String, groupId: String, sharedFrom: String? = nil) async throws {
+        guard let userId = await userId else {
+            throw SupabaseManagerError.notAuthenticated
+        }
+
+        struct ChatMessagePayload: Encodable {
+            let type: String
+            let data: String
+            let group_id: String
+            let user_id: String
+            let metadata: ChatMessageMetadata
+        }
+
+        struct ChatMessageMetadata: Encodable {
+            let sender_name: String?
+            let shared_from: String?
+        }
+
+        let displayName = await getCurrentUserDisplayName()
+
+        let payload = ChatMessagePayload(
+            type: "chat_message",
+            data: text,
+            group_id: groupId,
+            user_id: userId,
+            metadata: ChatMessageMetadata(
+                sender_name: displayName,
+                shared_from: sharedFrom
+            )
+        )
+
+        try await client
+            .from("content")
+            .insert(payload)
+            .execute()
+
+        print("✅ SupabaseManager: Chat message sent successfully")
+    }
 }
 
 // MARK: - Errors

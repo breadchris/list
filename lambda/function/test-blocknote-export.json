@@ -1,0 +1,37 @@
+{
+  "action": "blocknote-export",
+  "payload": {
+    "blocks": [
+      {
+        "id": "block-1",
+        "type": "heading",
+        "props": { "level": 1 },
+        "content": [{ "type": "text", "text": "Hello World", "styles": {} }],
+        "children": []
+      },
+      {
+        "id": "block-2",
+        "type": "paragraph",
+        "props": {},
+        "content": [{ "type": "text", "text": "This is a test paragraph with ", "styles": {} }, { "type": "text", "text": "bold text", "styles": { "bold": true } }, { "type": "text", "text": " inside.", "styles": {} }],
+        "children": []
+      },
+      {
+        "id": "block-3",
+        "type": "bulletListItem",
+        "props": {},
+        "content": [{ "type": "text", "text": "First list item", "styles": {} }],
+        "children": []
+      },
+      {
+        "id": "block-4",
+        "type": "bulletListItem",
+        "props": {},
+        "content": [{ "type": "text", "text": "Second list item", "styles": {} }],
+        "children": []
+      }
+    ],
+    "format": "all"
+  },
+  "sync": true
+}

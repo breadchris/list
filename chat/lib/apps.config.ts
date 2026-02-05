@@ -13,11 +13,28 @@ import {
   Calendar,
   Code2,
   Camera,
+  Palette,
+  Banknote,
+  Compass,
+  Bot,
+  StickyNote,
   type LucideIcon,
 } from "lucide-react";
 import type { z } from "zod";
 
-export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki" | "bookclub" | "time" | "code" | "photos";
+export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki" | "bookclub" | "time" | "code" | "photos" | "ineedart" | "transfer" | "rabbit-hole" | "agents" | "notes";
+
+/**
+ * Defines a public route pattern for an app that bypasses authentication
+ */
+export interface PublicRoutePattern {
+  /** Route prefix to match (e.g., "/art/", "/dj/") */
+  prefix: string;
+  /** If true, prefix alone is NOT public, only paths beyond it */
+  requiresSegment?: boolean;
+  /** Query param conditions - if set, one must match for route to be public */
+  queryParams?: { name: string; values: string[] }[];
+}
 
 export interface AppConfig {
   id: string;
@@ -31,6 +48,9 @@ export interface AppConfig {
   placeholder: string;
   loadingText?: string;
   renderMode: RenderMode;
+  hidden?: boolean;
+  /** Routes that bypass authentication */
+  publicRoutes?: PublicRoutePattern[];
 }
 
 export const apps: AppConfig[] = [
@@ -55,6 +75,7 @@ export const apps: AppConfig[] = [
     bgColor: "bg-cyan-400/10",
     placeholder: "Type a message...",
     renderMode: "chat",
+    hidden: true,
   },
   {
     id: "reader",
@@ -88,6 +109,7 @@ export const apps: AppConfig[] = [
     bgColor: "bg-emerald-400/10",
     placeholder: "View your connected accounts...",
     renderMode: "money",
+    hidden: true,
   },
   {
     id: "paint",
@@ -99,6 +121,7 @@ export const apps: AppConfig[] = [
     bgColor: "bg-rose-400/10",
     placeholder: "Start drawing...",
     renderMode: "paint",
+    hidden: true,
   },
   {
     id: "do",
@@ -110,6 +133,7 @@ export const apps: AppConfig[] = [
     bgColor: "bg-lime-400/10",
     placeholder: "Track your habits...",
     renderMode: "do",
+    hidden: true,
   },
   {
     id: "dj",
@@ -121,6 +145,13 @@ export const apps: AppConfig[] = [
     bgColor: "bg-violet-400/10",
     placeholder: "Press Cmd+K to add a video...",
     renderMode: "dj",
+    publicRoutes: [
+      {
+        prefix: "/dj/",
+        requiresSegment: true,
+        queryParams: [{ name: "mode", values: ["watch", "contribute"] }],
+      },
+    ],
   },
   {
     id: "signal",
@@ -132,6 +163,7 @@ export const apps: AppConfig[] = [
     bgColor: "bg-blue-400/10",
     placeholder: "Type a message...",
     renderMode: "signal",
+    hidden: true,
   },
   {
     id: "wiki",
@@ -143,6 +175,9 @@ export const apps: AppConfig[] = [
     bgColor: "bg-teal-400/10",
     placeholder: "Create and link wiki pages...",
     renderMode: "wiki",
+    publicRoutes: [
+      { prefix: "/wiki/pub/" },
+    ],
   },
   {
     id: "bookclub",
@@ -154,6 +189,7 @@ export const apps: AppConfig[] = [
     bgColor: "bg-orange-400/10",
     placeholder: "Create or join a book club...",
     renderMode: "bookclub",
+    hidden: true,
   },
   {
     id: "time",
@@ -188,6 +224,67 @@ export const apps: AppConfig[] = [
     placeholder: "Search for photos...",
     renderMode: "photos",
   },
+  {
+    id: "ineedart",
+    name: "art",
+    description:
+      "Request art from artists with prompts and inspiration images",
+    icon: Palette,
+    color: "text-pink-400",
+    bgColor: "bg-pink-400/10",
+    placeholder: "Describe the art you need...",
+    renderMode: "ineedart",
+    publicRoutes: [
+      { prefix: "/art/", requiresSegment: true },
+    ],
+  },
+  {
+    id: "transfer",
+    name: "pay",
+    description:
+      "Send and receive money with Stripe Connect",
+    icon: Banknote,
+    color: "text-green-400",
+    bgColor: "bg-green-400/10",
+    placeholder: "Send money...",
+    renderMode: "transfer",
+  },
+  {
+    id: "rabbit-hole",
+    name: "explore",
+    description:
+      "Explore topics in depth with AI-guided research",
+    icon: Compass,
+    color: "text-purple-400",
+    bgColor: "bg-purple-400/10",
+    placeholder: "Enter a topic to explore...",
+    renderMode: "rabbit-hole",
+    publicRoutes: [
+      { prefix: "/rabbit-hole/pub/" },
+    ],
+  },
+  {
+    id: "agents",
+    name: "agents",
+    description:
+      "Build and deploy AI agents with tools, workflows, and memory",
+    icon: Bot,
+    color: "text-cyan-400",
+    bgColor: "bg-cyan-400/10",
+    placeholder: "Create an AI agent...",
+    renderMode: "agents",
+  },
+  {
+    id: "notes",
+    name: "notes",
+    description:
+      "Collaborative note-taking with real-time sync powered by Electric SQL and Yjs",
+    icon: StickyNote,
+    color: "text-yellow-400",
+    bgColor: "bg-yellow-400/10",
+    placeholder: "Create a new note...",
+    renderMode: "notes",
+  },
 ];
 
 export function getAppById(id: string): AppConfig | undefined {
@@ -195,5 +292,5 @@ export function getAppById(id: string): AppConfig | undefined {
 }
 
 export function getAllApps(): AppConfig[] {
-  return apps;
+  return apps.filter((app) => !app.hidden);
 }

@@ -1,4 +1,33 @@
 import https from 'https';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+
+// Cache for Teller certificates (persists across Lambda invocations)
+let cachedCerts: { cert: string; key: string } | null = null;
+
+/**
+ * Fetches Teller mTLS certificates from AWS Secrets Manager.
+ * Caches the result to avoid repeated API calls.
+ */
+async function getTellerCertificates(): Promise<{ cert: string; key: string }> {
+  if (cachedCerts) {
+    return cachedCerts;
+  }
+
+  const secretArn = process.env.TELLER_SECRET_ARN;
+  if (!secretArn) {
+    throw new Error('TELLER_SECRET_ARN environment variable not set');
+  }
+
+  const client = new SecretsManagerClient({ region: 'us-east-1' });
+  const response = await client.send(new GetSecretValueCommand({ SecretId: secretArn }));
+
+  if (!response.SecretString) {
+    throw new Error('Teller secret has no value');
+  }
+
+  cachedCerts = JSON.parse(response.SecretString);
+  return cachedCerts!;
+}
 
 // Teller API response types
 export interface TellerAccount {
@@ -57,15 +86,10 @@ export interface TellerIdentity {
 
 /**
  * Creates an HTTPS agent with mTLS client certificates for Teller API authentication.
- * Certificates are loaded from environment variables (stored as Pulumi secrets).
+ * Certificates are fetched from AWS Secrets Manager and cached.
  */
-export function createTellerAgent(): https.Agent {
-  const cert = process.env.TELLER_CLIENT_CERT;
-  const key = process.env.TELLER_CLIENT_KEY;
-
-  if (!cert || !key) {
-    throw new Error('Missing Teller mTLS certificates. Set TELLER_CLIENT_CERT and TELLER_CLIENT_KEY environment variables.');
-  }
+export async function createTellerAgent(): Promise<https.Agent> {
+  const { cert, key } = await getTellerCertificates();
 
   return new https.Agent({
     cert,
@@ -81,7 +105,7 @@ export function createTellerAgent(): https.Agent {
  * @returns Promise with the parsed JSON response
  */
 export async function tellerFetch<T>(endpoint: string, accessToken: string): Promise<T> {
-  const agent = createTellerAgent();
+  const agent = await createTellerAgent();
   // Teller uses Basic Auth with access token as username, empty password
   const auth = Buffer.from(`${accessToken}:`).toString('base64');
 
@@ -140,7 +164,7 @@ export async function fetchTellerIdentity(accessToken: string): Promise<TellerId
  * Deletes an enrollment (disconnects the account).
  */
 export async function deleteTellerEnrollment(accessToken: string, enrollmentId: string): Promise<void> {
-  const agent = createTellerAgent();
+  const agent = await createTellerAgent();
   const auth = Buffer.from(`${accessToken}:`).toString('base64');
 
   const response = await fetch(`https://api.teller.io/enrollments/${enrollmentId}`, {

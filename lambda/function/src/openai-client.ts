@@ -73,7 +73,7 @@ export async function callOpenAI(systemPrompt: string, userContent: string): Pro
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4.1-nano',
       messages: messages,
       tools: tools,
       tool_choice: 'auto',
@@ -137,7 +137,7 @@ export async function callOpenAI(systemPrompt: string, userContent: string): Pro
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4.1-nano',
         messages: messages,
         tools: tools,
         tool_choice: 'auto',
@@ -172,7 +172,7 @@ export async function callOpenAIChat(messages: OpenAIMessage[], stream?: boolean
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'gpt-4',
+      model: 'gpt-4.1-nano',
       messages: messages,
       temperature: 0.7,
       max_tokens: 1000,
@@ -209,7 +209,7 @@ export async function* callOpenAIChatStream(messages: OpenAIMessage[]): AsyncGen
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'gpt-4',
+      model: 'gpt-4.1-nano',
       messages: messages,
       temperature: 0.7,
       max_tokens: 1000,

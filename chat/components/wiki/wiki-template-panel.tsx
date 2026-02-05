@@ -21,6 +21,7 @@ import {
   AIMenuController,
   AIToolbarButton,
   getAISlashMenuItems,
+  aiDocumentFormats,
 } from "@blocknote/xl-ai";
 import { DefaultChatTransport } from "ai";
 import { en } from "@blocknote/core/locales";
@@ -51,6 +52,7 @@ interface WikiTemplatePanelProps {
     model?: string;
     description?: string;
     aliases?: string[];
+    include_selection?: boolean;
   }) => void;
   /** Delete the template */
   onDelete?: () => void;
@@ -125,6 +127,9 @@ export function WikiTemplatePanel({
   const [localAliases, setLocalAliases] = useState(
     template.aliases?.join(", ") || ""
   );
+  const [localIncludeSelection, setLocalIncludeSelection] = useState(
+    template.include_selection || false
+  );
   const [showVariableHint, setShowVariableHint] = useState(false);
   const [isEditorMounted, setIsEditorMounted] = useState(false);
   const isEditorMountedRef = useRef(false);
@@ -143,7 +148,8 @@ export function WikiTemplatePanel({
     setLocalDescription(template.description || "");
     setLocalAliases(template.aliases?.join(", ") || "");
     setLocalModel(template.model || DEFAULT_TEMPLATE_MODEL);
-  }, [template.id, template.name, template.description, template.aliases, template.model]);
+    setLocalIncludeSelection(template.include_selection || false);
+  }, [template.id, template.name, template.description, template.aliases, template.model, template.include_selection]);
 
   // Create transport with model header for AI
   const aiTransport = useMemo(
@@ -164,6 +170,9 @@ export function WikiTemplatePanel({
       extensions: [
         AIExtension({
           transport: aiTransport,
+          streamToolsProvider: aiDocumentFormats.html.getStreamToolsProvider({
+            withDelays: false,
+          }),
         }),
       ],
       dictionary: {
@@ -267,6 +276,12 @@ export function WikiTemplatePanel({
   const handleModelChange = useCallback((newModel: string) => {
     setLocalModel(newModel);
     onUpdate({ model: newModel });
+  }, [onUpdate]);
+
+  // Handle include selection toggle
+  const handleIncludeSelectionChange = useCallback((checked: boolean) => {
+    setLocalIncludeSelection(checked);
+    onUpdate({ include_selection: checked });
   }, [onUpdate]);
 
   // Cleanup timeout on unmount
@@ -409,6 +424,24 @@ export function WikiTemplatePanel({
           </select>
         </div>
 
+        {/* Include selection toggle */}
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            id={`include-selection-${template.id}`}
+            checked={localIncludeSelection}
+            onChange={(e) => handleIncludeSelectionChange(e.target.checked)}
+            className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-neutral-900"
+          />
+          <label
+            htmlFor={`include-selection-${template.id}`}
+            className="text-sm text-neutral-300 cursor-pointer"
+          >
+            Include selected text as{" "}
+            <code className="text-amber-400 bg-neutral-800 px-1 rounded">{"{{selection}}"}</code>
+          </label>
+        </div>
+
         {/* Prompt field - BlockNote editor */}
         <div className="flex-1 flex flex-col min-h-[300px]">
           <div className="flex items-center justify-between mb-1">
@@ -435,6 +468,10 @@ export function WikiTemplatePanel({
                 <li>
                   <code className="text-amber-400">{"{{page_path}}"}</code> -
                   Current page path
+                </li>
+                <li>
+                  <code className="text-amber-400">{"{{selection}}"}</code> -
+                  Selected text (requires toggle above)
                 </li>
               </ul>
             </div>

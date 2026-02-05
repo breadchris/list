@@ -3,12 +3,16 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useYDoc } from "@y-sweet/react";
 import * as Y from "yjs";
-import type { WikiPage, WikiPageTreeNode } from "@/types/wiki";
+import type { WikiPage, WikiPageTreeNode, WikiRenamePreview } from "@/types/wiki";
 import {
   normalizePath,
   pathToTitle,
   getParentPath,
 } from "@/lib/wiki/path-utils";
+import {
+  countWikiLinksInFragment,
+  updateWikiLinksInFragment,
+} from "@/lib/wiki/link-parser";
 
 interface UseWikiPagesOptions {
   wiki_id: string;
@@ -27,8 +31,12 @@ interface UseWikiPagesReturn {
   getPageById: (id: string) => WikiPage | undefined;
   /** Create a new page */
   createPage: (path: string) => WikiPage;
-  /** Rename a page (change its path) */
+  /** Rename a page (change its path) - simple version without child/link updates */
   renamePage: (pageId: string, newPath: string) => void;
+  /** Rename a page and all children, updating all links */
+  renamePageWithChildren: (pageId: string, newPath: string) => { success: boolean; error?: string };
+  /** Get preview of pages affected by a rename */
+  getRenamePreview: (pageId: string, newPath: string) => WikiRenamePreview | null;
   /** Delete a page */
   deletePage: (pageId: string) => void;
   /** Check if a page exists */
@@ -283,6 +291,162 @@ export function useWikiPages({
     [pagesMap, doc]
   );
 
+  // Get preview of pages affected by a rename
+  const getRenamePreview = useCallback(
+    (pageId: string, newPath: string): WikiRenamePreview | null => {
+      if (!pagesMap || !doc) {
+        return null;
+      }
+
+      const normalizedNewPath = normalizePath(newPath);
+
+      // Find the page to rename
+      let oldPath: string | undefined;
+      let oldPage: WikiPage | undefined;
+      pagesMap.forEach((page, path) => {
+        if (page.id === pageId) {
+          oldPath = path;
+          oldPage = page;
+        }
+      });
+
+      if (!oldPage || !oldPath) {
+        return null;
+      }
+
+      // Find all pages to rename (this page + children)
+      const pagesToRename: Array<{ old_path: string; new_path: string; title: string }> = [];
+      const targetPaths = new Set<string>();
+
+      pagesMap.forEach((page, path) => {
+        if (path === oldPath || path.startsWith(oldPath + "/")) {
+          const suffix = path.substring(oldPath!.length);
+          const newPagePath = normalizedNewPath + suffix;
+          pagesToRename.push({
+            old_path: path,
+            new_path: newPagePath,
+            title: page.title,
+          });
+          targetPaths.add(path);
+        }
+      });
+
+      // Find all pages that link to any of the pages being renamed
+      const affectedPages: Array<{ path: string; title: string; link_count: number }> = [];
+      let totalLinkUpdates = 0;
+
+      pagesMap.forEach((page, path) => {
+        // Skip pages being renamed
+        if (targetPaths.has(path)) return;
+
+        const fragment = doc.getXmlFragment(`wiki-page-${page.id}`);
+        const linkCount = countWikiLinksInFragment(fragment, targetPaths);
+
+        if (linkCount > 0) {
+          affectedPages.push({
+            path,
+            title: page.title,
+            link_count: linkCount,
+          });
+          totalLinkUpdates += linkCount;
+        }
+      });
+
+      return {
+        pages_to_rename: pagesToRename,
+        affected_pages: affectedPages,
+        total_link_updates: totalLinkUpdates,
+      };
+    },
+    [pagesMap, doc]
+  );
+
+  // Rename a page and all children, updating all links
+  const renamePageWithChildren = useCallback(
+    (pageId: string, newPath: string): { success: boolean; error?: string } => {
+      if (!pagesMap || !doc) {
+        return { success: false, error: "Y.js document not ready" };
+      }
+
+      const normalizedNewPath = normalizePath(newPath);
+
+      // Find the page to rename
+      let oldPath: string | undefined;
+      let oldPage: WikiPage | undefined;
+      pagesMap.forEach((page, path) => {
+        if (page.id === pageId) {
+          oldPath = path;
+          oldPage = page;
+        }
+      });
+
+      if (!oldPage || !oldPath) {
+        return { success: false, error: "Page not found" };
+      }
+
+      // Prevent renaming index page
+      if (oldPath === "index") {
+        return { success: false, error: "Cannot rename the index page" };
+      }
+
+      // Find all pages to rename (this page + children)
+      const pagesToRename: Array<{ oldPath: string; newPath: string; page: WikiPage }> = [];
+      const pathMapping = new Map<string, string>();
+
+      pagesMap.forEach((page, path) => {
+        if (path === oldPath || path.startsWith(oldPath + "/")) {
+          const suffix = path.substring(oldPath!.length);
+          const newPagePath = normalizedNewPath + suffix;
+          pagesToRename.push({
+            oldPath: path,
+            newPath: newPagePath,
+            page,
+          });
+          pathMapping.set(path, newPagePath);
+        }
+      });
+
+      // Check for path conflicts (new paths must not exist unless it's one of our pages)
+      const ourPageIds = new Set(pagesToRename.map((p) => p.page.id));
+      for (const item of pagesToRename) {
+        const existingPage = pagesMap.get(item.newPath);
+        if (existingPage && !ourPageIds.has(existingPage.id)) {
+          return {
+            success: false,
+            error: `A page with path '${item.newPath}' already exists`,
+          };
+        }
+      }
+
+      // Perform atomic rename in Y.js transaction
+      doc.transact(() => {
+        // 1. Update page metadata (delete old paths, add new)
+        for (const item of pagesToRename) {
+          pagesMap.delete(item.oldPath);
+          const newTitle = pathToTitle(item.newPath);
+          pagesMap.set(item.newPath, {
+            ...item.page,
+            path: item.newPath,
+            title: newTitle,
+          });
+        }
+
+        // 2. Update wikiLinks in ALL other pages
+        const affectedPaths = new Set(pagesToRename.map((p) => p.oldPath));
+        pagesMap.forEach((page, path) => {
+          // Skip pages being renamed (they don't need link updates)
+          if (affectedPaths.has(path)) return;
+
+          const fragment = doc.getXmlFragment(`wiki-page-${page.id}`);
+          updateWikiLinksInFragment(fragment, pathMapping);
+        });
+      });
+
+      return { success: true };
+    },
+    [pagesMap, doc]
+  );
+
   // Build page tree
   const pageTree = useMemo(() => buildPageTree(pages), [pages]);
 
@@ -294,6 +458,8 @@ export function useWikiPages({
     getPageById,
     createPage,
     renamePage,
+    renamePageWithChildren,
+    getRenamePreview,
     deletePage,
     pageExists,
   };

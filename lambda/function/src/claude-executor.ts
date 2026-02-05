@@ -169,7 +169,7 @@ USER REQUEST:
 		const resultStream = query({
 			prompt: enhancedPrompt,
 			options: {
-				model: 'claude-sonnet-4-5-20250929',
+				model: 'gpt-4.1-nano',
 				permissionMode: 'bypassPermissions', // Allow automated file operations
 				includePartialMessages: false,
 				pathToClaudeCodeExecutable: '/var/lang/bin/claude',

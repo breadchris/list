@@ -1,13 +1,20 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import { createReactInlineContentSpec } from "@blocknote/react";
+
+/**
+ * Context for checking if a wiki page exists
+ * Used by WikiLinkInlineContent to style links dynamically
+ */
+export const WikiPageExistsContext = createContext<((path: string) => boolean) | null>(null);
 
 /**
  * Custom inline content spec for wiki-style [[links]]
  *
  * Renders as a clickable span that triggers wiki navigation
- * when clicked. Supports both existing and non-existing pages
- * (non-existing pages are styled differently).
+ * when clicked. Checks page existence dynamically via context
+ * to style existing vs non-existing pages differently.
  */
 export const WikiLinkInlineContent = createReactInlineContentSpec(
   {
@@ -19,6 +26,7 @@ export const WikiLinkInlineContent = createReactInlineContentSpec(
       display_text: {
         default: "",
       },
+      // Note: exists prop is legacy/hint only - we check dynamically via context
       exists: {
         default: true,
       },
@@ -27,8 +35,12 @@ export const WikiLinkInlineContent = createReactInlineContentSpec(
   },
   {
     render: (props) => {
-      const { page_path, display_text, exists } = props.inlineContent.props;
+      const { page_path, display_text } = props.inlineContent.props;
       const text = display_text || page_path;
+
+      // Check existence dynamically via context
+      const pageExists = useContext(WikiPageExistsContext);
+      const exists = pageExists ? pageExists(page_path) : true;
 
       return (
         <span

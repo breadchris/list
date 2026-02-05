@@ -23,12 +23,31 @@ import {
 	handleTellerBalances,
 	handleTellerTransactions
 } from './content-handlers.js';
+import {
+	handleStripeConnectOnboard,
+	handleStripeConnectStatus,
+	handleStripeConnectDashboard,
+	handleStripeCreateTransfer,
+	handleStripeListTransfers,
+	handleStripeInitiatePayout,
+	handleStripeListPayouts,
+	handleStripeSearchUsers,
+	handleStripeWebhook
+} from './stripe-handlers.js';
+import { handleBlockNoteExport } from './blocknote-handler.js';
 import { handleMapKitTokenRequest } from './mapkit-token-handler.js';
 import {
 	handleSendNotification,
 	handleRegisterDevice,
 	handleUnregisterDevice
 } from './apns-handler.js';
+import {
+	handleGenerateToken,
+	handleRedeemToken,
+	handleRevokeToken,
+	handleValidateSession,
+	handleListTokens
+} from './persistent-auth-handler.js';
 import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
 import { writeFileSync } from 'fs';
 
@@ -277,6 +296,46 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 							content_ids = result.data
 								.flatMap((item: any) => item.transaction_children || []);
 						}
+						break;
+
+					case 'stripe-connect-onboard':
+						result = await handleStripeConnectOnboard(supabase, payload);
+						break;
+
+					case 'stripe-connect-status':
+						result = await handleStripeConnectStatus(supabase, payload);
+						break;
+
+					case 'stripe-connect-dashboard':
+						result = await handleStripeConnectDashboard(supabase, payload);
+						break;
+
+					case 'stripe-create-transfer':
+						result = await handleStripeCreateTransfer(supabase, payload);
+						break;
+
+					case 'stripe-list-transfers':
+						result = await handleStripeListTransfers(supabase, payload);
+						break;
+
+					case 'stripe-initiate-payout':
+						result = await handleStripeInitiatePayout(supabase, payload);
+						break;
+
+					case 'stripe-list-payouts':
+						result = await handleStripeListPayouts(supabase, payload);
+						break;
+
+					case 'stripe-search-users':
+						result = await handleStripeSearchUsers(supabase, payload);
+						break;
+
+					case 'stripe-webhook':
+						result = await handleStripeWebhook(supabase, payload);
+						break;
+
+					case 'blocknote-export':
+						result = await handleBlockNoteExport(supabase, payload);
 						break;
 
 					case 'claude-code': {
@@ -1155,6 +1214,46 @@ async function handleContentRequest(request: ContentRequest): Promise<APIGateway
 						result = await handleTellerTransactions(supabase, payload);
 						break;
 
+					case 'stripe-connect-onboard':
+						result = await handleStripeConnectOnboard(supabase, payload);
+						break;
+
+					case 'stripe-connect-status':
+						result = await handleStripeConnectStatus(supabase, payload);
+						break;
+
+					case 'stripe-connect-dashboard':
+						result = await handleStripeConnectDashboard(supabase, payload);
+						break;
+
+					case 'stripe-create-transfer':
+						result = await handleStripeCreateTransfer(supabase, payload);
+						break;
+
+					case 'stripe-list-transfers':
+						result = await handleStripeListTransfers(supabase, payload);
+						break;
+
+					case 'stripe-initiate-payout':
+						result = await handleStripeInitiatePayout(supabase, payload);
+						break;
+
+					case 'stripe-list-payouts':
+						result = await handleStripeListPayouts(supabase, payload);
+						break;
+
+					case 'stripe-search-users':
+						result = await handleStripeSearchUsers(supabase, payload);
+						break;
+
+					case 'stripe-webhook':
+						result = await handleStripeWebhook(supabase, payload);
+						break;
+
+					case 'blocknote-export':
+						result = await handleBlockNoteExport(supabase, payload);
+						break;
+
 					case 'claude-code': {
 						// Execute Claude Code synchronously (local mode or explicitly requested)
 						const bucketName = process.env.S3_BUCKET_NAME || 'local-test-bucket';
@@ -1494,6 +1593,10 @@ Current message:
 				result = await handleUnregisterDevice(supabase, payload);
 				break;
 
+			case 'blocknote-export':
+				result = await handleBlockNoteExport(supabase, payload);
+				break;
+
 			case 'get-job':
 				// Get specific job status
 				return await handleGetJobStatus(jobManager, payload);
@@ -1505,6 +1608,26 @@ Current message:
 			case 'cancel-job':
 				// Cancel a pending job
 				return await handleCancelJob(jobManager, payload);
+
+			case 'auth-generate-token':
+				result = await handleGenerateToken(supabase, payload);
+				break;
+
+			case 'auth-redeem-token':
+				result = await handleRedeemToken(supabase, payload);
+				break;
+
+			case 'auth-revoke-token':
+				result = await handleRevokeToken(supabase, payload);
+				break;
+
+			case 'auth-validate-session':
+				result = await handleValidateSession(supabase, payload);
+				break;
+
+			case 'auth-list-tokens':
+				result = await handleListTokens(supabase, payload);
+				break;
 
 			default:
 				return {

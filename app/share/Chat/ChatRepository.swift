@@ -91,6 +91,19 @@ final class ChatRepository {
         return response
     }
 
+    /// Fetch count of child notes for a content ID
+    func fetchNoteCount(parentId: String) async throws -> Int {
+        let response: [ChatContent] = try await supabase
+            .from("content")
+            .select("id")
+            .eq("parent_content_id", value: parentId)
+            .eq("type", value: "note")
+            .execute()
+            .value
+
+        return response.count
+    }
+
     /// Fetch a single content item by ID
     func fetchContent(id: String) async throws -> ChatContent? {
         let response: [ChatContent] = try await supabase

@@ -3887,6 +3887,57 @@ export class ContentRepository {
     // Reuse existing method
     return this.getClubMemberProgress(bookContentId, groupId);
   }
+
+  /**
+   * Get content by type for a specific group
+   */
+  async getContentByType(
+    groupId: string,
+    type: string,
+    limit = 50
+  ): Promise<{ data: Content[] | null; error: Error | null }> {
+    try {
+      const { data, error } = await supabase
+        .from("content")
+        .select("*")
+        .eq("group_id", groupId)
+        .eq("type", type)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        return { data: null, error: new Error(error.message) };
+      }
+
+      return { data, error: null };
+    } catch (err) {
+      return { data: null, error: err instanceof Error ? err : new Error("Unknown error") };
+    }
+  }
+
+  /**
+   * Get content by share code from metadata
+   */
+  async getContentByShareCode(shareCode: string): Promise<Content | null> {
+    try {
+      const { data, error } = await supabase
+        .from("content")
+        .select("*")
+        .eq("type", "art-request")
+        .contains("metadata", { share_code: shareCode })
+        .single();
+
+      if (error) {
+        console.error("Error fetching by share code:", error);
+        return null;
+      }
+
+      return data;
+    } catch (err) {
+      console.error("Error fetching by share code:", err);
+      return null;
+    }
+  }
 }
 
 // Export singleton instance

@@ -288,12 +288,12 @@ function PageTreeView({
               {/* Icon */}
               {hasChildren ? (
                 isExpanded ? (
-                  <FolderOpen className="w-4 h-4 text-neutral-500" />
+                  <FolderOpen className="w-4 h-4 text-neutral-500 flex-shrink-0" />
                 ) : (
-                  <Folder className="w-4 h-4 text-neutral-500" />
+                  <Folder className="w-4 h-4 text-neutral-500 flex-shrink-0" />
                 )
               ) : (
-                <FileText className="w-4 h-4 text-neutral-500" />
+                <FileText className="w-4 h-4 text-neutral-500 flex-shrink-0" />
               )}
 
               {/* Title */}

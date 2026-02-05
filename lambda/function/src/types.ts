@@ -13,7 +13,7 @@ export interface ContentQueueJob {
 }
 
 export interface ContentRequest {
-	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio' | 'teller-accounts' | 'teller-balances' | 'teller-transactions' | 'send-notification' | 'register-device' | 'unregister-device';
+	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio' | 'teller-accounts' | 'teller-balances' | 'teller-transactions' | 'send-notification' | 'register-device' | 'unregister-device' | 'blocknote-export' | 'stripe-connect-onboard' | 'stripe-connect-status' | 'stripe-connect-dashboard' | 'stripe-create-transfer' | 'stripe-list-transfers' | 'stripe-initiate-payout' | 'stripe-list-payouts' | 'stripe-search-users' | 'stripe-webhook' | 'auth-generate-token' | 'auth-redeem-token' | 'auth-revoke-token' | 'auth-validate-session' | 'auth-list-tokens';
 	payload: any;
 	sync?: boolean; // When true, execute immediately and return results. When false/omitted, queue job (default)
 }
@@ -454,4 +454,113 @@ export interface TellerTransactionMetadata {
 	status: string;
 	merchant_name?: string;
 	running_balance?: number;
+}
+
+// BlockNote Export Types
+export interface BlockNoteExportPayload {
+	// Input: either blocks array or Y.js state
+	blocks?: any[];                    // BlockNote JSON blocks
+	yjs_state?: string;                // Base64-encoded Y.js state vector
+	yjs_fragment_name?: string;        // Fragment name (default: "prosemirror")
+
+	// Output format selection
+	format: 'html_full' | 'html_lossy' | 'markdown' | 'all';
+}
+
+export interface BlockNoteExportResult {
+	html_full?: string;
+	html_lossy?: string;
+	markdown?: string;
+}
+
+// Stripe Connect Types
+export interface StripeConnectOnboardPayload {
+	user_id: string;
+	return_url: string;
+	refresh_url: string;
+}
+
+export interface StripeConnectStatusPayload {
+	user_id: string;
+}
+
+export interface StripeConnectDashboardPayload {
+	user_id: string;
+}
+
+export interface StripeCreateTransferPayload {
+	sender_user_id: string;
+	recipient_user_id: string;
+	amount_cents: number;
+	currency?: string;
+	description?: string;
+	idempotency_key: string;
+}
+
+export interface StripeListTransfersPayload {
+	user_id: string;
+	limit?: number;
+	offset?: number;
+	status?: string;
+}
+
+export interface StripeInitiatePayoutPayload {
+	user_id: string;
+	amount_cents: number;
+	currency?: string;
+}
+
+export interface StripeListPayoutsPayload {
+	user_id: string;
+	limit?: number;
+	offset?: number;
+}
+
+export interface StripeSearchUsersPayload {
+	query: string;
+	exclude_user_id: string;
+	limit?: number;
+}
+
+export interface StripeWebhookPayload {
+	body: string;
+	signature: string;
+}
+
+export interface StripeConnectedAccount {
+	id: string;
+	user_id: string;
+	stripe_account_id: string;
+	onboarding_complete: boolean;
+	charges_enabled: boolean;
+	payouts_enabled: boolean;
+	details_submitted: boolean;
+	business_type?: string;
+	country: string;
+	default_currency: string;
+	email?: string;
+}
+
+export interface Transfer {
+	id: string;
+	sender_user_id: string;
+	recipient_user_id: string;
+	amount_cents: number;
+	currency: string;
+	description?: string;
+	status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+	created_at: string;
+	stripe_payment_intent_id?: string;
+	stripe_transfer_id?: string;
+}
+
+export interface Payout {
+	id: string;
+	user_id: string;
+	amount_cents: number;
+	currency: string;
+	status: 'pending' | 'in_transit' | 'paid' | 'failed' | 'cancelled';
+	stripe_payout_id?: string;
+	bank_account_last4?: string;
+	arrival_date?: string;
 }

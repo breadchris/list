@@ -356,19 +356,44 @@ async function shareCurrentPage() {
       // Continue without HTML - we can still save the URL
     }
 
+    // Check if this is a ChatGPT page and get conversation data
+    let contentType = "text";
+    let metadata: Record<string, any> = {
+      scraped_html: pageHTML,
+      scraped_at: new Date().toISOString(),
+      page_title: tab.title || "Untitled",
+      original_url: tab.url,
+    };
+
+    if (isChatGPTUrl(tab.url)) {
+      const conversationId = extractChatGPTUUID(tab.url);
+      console.log("[ChatGPT] Detected ChatGPT URL, conversation ID:", conversationId);
+
+      if (conversationId) {
+        const conversationData = await getChatGPTConversation(conversationId);
+        if (conversationData) {
+          contentType = "chatgpt";
+          metadata = {
+            ...metadata,
+            conversation: conversationData.conversation,
+            conversation_id: conversationId,
+            conversation_captured_at: conversationData.captured_at,
+          };
+          console.log("[ChatGPT] Found stored conversation data for:", conversationId);
+        } else {
+          console.warn("[ChatGPT] No stored conversation found for:", conversationId);
+        }
+      }
+    }
+
     // Save to Supabase
     const { data, error } = await supabase
       .from("content")
       .insert({
-        type: "text",
+        type: contentType,
         data: tab.url,
         group_id: groupId,
-        metadata: {
-          scraped_html: pageHTML,
-          scraped_at: new Date().toISOString(),
-          page_title: tab.title || "Untitled",
-          original_url: tab.url,
-        },
+        metadata,
       })
       .select()
       .single();
@@ -471,6 +496,72 @@ function isShareableUrl(url) {
   ];
 
   return !unshareableProtocols.some((protocol) => url.startsWith(protocol));
+}
+
+// ============================================================================
+// ChatGPT Conversation Capture
+// ============================================================================
+
+// UUID regex pattern
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+// Check if URL is a ChatGPT conversation page
+function isChatGPTUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "chatgpt.com" && parsed.pathname.includes("/c/");
+  } catch {
+    return false;
+  }
+}
+
+// Extract conversation UUID from ChatGPT URL
+// Handles: /c/{uuid} or /g/g-p-{gpt-id}/c/{uuid}
+function extractChatGPTUUID(url: string): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const pathParts = parsed.pathname.split("/");
+
+    // Find the UUID after "/c/"
+    for (let i = 0; i < pathParts.length; i++) {
+      if (pathParts[i] === "c" && pathParts[i + 1]) {
+        const potentialUUID = pathParts[i + 1];
+        if (UUID_PATTERN.test(potentialUUID)) {
+          return potentialUUID.toLowerCase();
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Store ChatGPT conversation in chrome.storage.local
+async function storeChatGPTConversation(
+  conversationId: string,
+  conversation: any,
+  capturedAt: string
+): Promise<void> {
+  const key = `chatgpt:${conversationId.toLowerCase()}`;
+  await chrome.storage.local.set({
+    [key]: {
+      conversation,
+      captured_at: capturedAt,
+    },
+  });
+  console.log("[ChatGPT] Stored conversation:", conversationId);
+}
+
+// Retrieve ChatGPT conversation from chrome.storage.local
+async function getChatGPTConversation(
+  conversationId: string
+): Promise<{ conversation: any; captured_at: string } | null> {
+  const key = `chatgpt:${conversationId.toLowerCase()}`;
+  const result = await chrome.storage.local.get([key]);
+  return result[key] || null;
 }
 
 // Show notification
@@ -710,6 +801,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const errorResponse = { success: false, error: error.message };
           console.log("[MESSAGE] check-auth error response:", errorResponse);
           sendResponse(errorResponse);
+        });
+      return true;
+
+    case "store-chatgpt-conversation":
+      console.log("[ChatGPT] Storing conversation:", message.conversation_id);
+      storeChatGPTConversation(
+        message.conversation_id,
+        message.conversation,
+        message.captured_at
+      )
+        .then(() => sendResponse({ success: true }))
+        .catch((error) => {
+          console.error("[ChatGPT] Error storing conversation:", error);
+          sendResponse({ success: false, error: error.message });
         });
       return true;
 

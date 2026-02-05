@@ -7,11 +7,14 @@ import { ChatInterface } from "@/components/chat-interface";
 import { CalendarChatInterface } from "@/components/calendar-chat-interface";
 import { ReaderAppInterface } from "@/components/reader-app-interface";
 import { MoneyAppInterface } from "@/components/money-app-interface";
+import { TransferAppInterface } from "@/components/transfer/transfer-app-interface";
 import { MapsAppInterface } from "@/components/maps-app-interface";
 import { PaintAppInterface } from "@/components/paint/paint-app-interface";
 import { DoAppInterface } from "@/components/do/do-app-interface";
 import { SignalAppInterface } from "@/components/signal/SignalAppInterface";
 import { WikiInterface } from "@/components/wiki/wiki-interface";
+import { IneedartInterface } from "@/components/ineedart/ineedart-interface";
+import { NotesAppWrapper } from "@/components/notes/notes-app-wrapper";
 import { AppSwitcherButton } from "@/components/app-switcher-button";
 import { AppSwitcherPanel } from "@/components/app-switcher-panel";
 import { YDocWrapper } from "@/components/y-doc-wrapper";
@@ -129,6 +132,23 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
     );
   }
 
+  // Transfer app for P2P payments with Stripe Connect
+  if (appConfig.renderMode === "transfer") {
+    return (
+      <GlobalGroupProvider>
+        <div className="relative h-screen bg-neutral-950">
+          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
+          <AppSwitcherPanel
+            isOpen={appSwitcherOpen}
+            onClose={() => setAppSwitcherOpen(false)}
+            currentApp={app}
+          />
+          <TransferAppInterface />
+        </div>
+      </GlobalGroupProvider>
+    );
+  }
+
   // Maps app for location browsing and saving
   if (appConfig.renderMode === "maps") {
     return (
@@ -216,6 +236,40 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
             groupId={groupId}
             ySweetUrl=""
           />
+        </div>
+      </GlobalGroupProvider>
+    );
+  }
+
+  // INeedArt app for art requests and submissions
+  if (appConfig.renderMode === "ineedart") {
+    return (
+      <GlobalGroupProvider>
+        <div className="relative h-screen bg-neutral-950">
+          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
+          <AppSwitcherPanel
+            isOpen={appSwitcherOpen}
+            onClose={() => setAppSwitcherOpen(false)}
+            currentApp={app}
+          />
+          <IneedartInterface />
+        </div>
+      </GlobalGroupProvider>
+    );
+  }
+
+  // Notes app for collaborative note-taking with Electric SQL + Yjs
+  if (appConfig.renderMode === "notes") {
+    return (
+      <GlobalGroupProvider>
+        <div className="relative h-screen bg-neutral-950">
+          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
+          <AppSwitcherPanel
+            isOpen={appSwitcherOpen}
+            onClose={() => setAppSwitcherOpen(false)}
+            currentApp={app}
+          />
+          <NotesAppWrapper />
         </div>
       </GlobalGroupProvider>
     );

@@ -199,3 +199,26 @@ export function sanitizePath(path: string): string {
     .replace(/\s+/g, "-")
     .toLowerCase();
 }
+
+/**
+ * Format a date as YYYY-MM-DD for daily note paths
+ */
+export function formatDatePath(date: Date = new Date()): string {
+  return date.toISOString().split("T")[0];
+}
+
+/**
+ * Get today's daily note path
+ */
+export function getTodayPath(): string {
+  return `daily/${formatDatePath(new Date())}`;
+}
+
+/**
+ * Get yesterday's daily note path
+ */
+export function getYesterdayPath(): string {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return `daily/${formatDatePath(yesterday)}`;
+}

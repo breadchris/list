@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect } from "react";
+import { ThemeProvider } from "next-themes";
 import { AuthPrompt } from "./auth-prompt";
 import { QueryProvider } from "../providers/QueryProvider";
 import { GlobalGroupProvider } from "./GlobalGroupContext";
@@ -38,12 +39,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <QueryProvider>
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
-        <AuthPrompt>
-          <GlobalGroupProvider>{children}</GlobalGroupProvider>
-        </AuthPrompt>
-      </Suspense>
-    </QueryProvider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <QueryProvider>
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+          <AuthPrompt>
+            <GlobalGroupProvider>{children}</GlobalGroupProvider>
+          </AuthPrompt>
+        </Suspense>
+      </QueryProvider>
+    </ThemeProvider>
   );
 }

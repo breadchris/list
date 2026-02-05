@@ -36,6 +36,7 @@ interface UseWikiTemplatesReturn {
       model?: string;
       description?: string;
       aliases?: string[];
+      include_selection?: boolean;
     }
   ) => void;
   /** Delete a template */
@@ -172,6 +173,7 @@ export function useWikiTemplates({
         model?: string;
         description?: string;
         aliases?: string[];
+        include_selection?: boolean;
       }
     ): void => {
       if (!templatesMap) {
@@ -199,6 +201,7 @@ export function useWikiTemplates({
         model: updates.model ?? existing.model,
         description: updates.description ?? existing.description,
         aliases: updates.aliases ?? existing.aliases,
+        include_selection: updates.include_selection ?? existing.include_selection,
       });
     },
     [templatesMap, templateExists]

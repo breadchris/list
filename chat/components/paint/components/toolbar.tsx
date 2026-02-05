@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   Pencil,
   Eraser,
@@ -8,10 +8,12 @@ import {
   Move,
   Pipette,
   RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { useDrawingTool } from "../hooks/use-paint-state";
 import { usePaintActions } from "../hooks/use-paint-actions";
 import { DRAWING_TOOLS, type DrawingTool } from "../types";
+import { AIDrawPanel } from "./ai-draw-panel";
 
 interface ToolButtonProps {
   tool: DrawingTool;
@@ -48,6 +50,7 @@ const tools: { id: DrawingTool; icon: React.ElementType; label: string }[] = [
 export function Toolbar() {
   const currentTool = useDrawingTool();
   const { switchTool, resetGrid } = usePaintActions();
+  const [aiPanelOpen, setAIPanelOpen] = useState(false);
 
   return (
     <div className="space-y-3">
@@ -68,7 +71,20 @@ export function Toolbar() {
         ))}
       </div>
 
-      <div className="pt-2 border-t border-neutral-800">
+      <div className="pt-2 border-t border-neutral-800 space-y-1.5">
+        {aiPanelOpen ? (
+          <AIDrawPanel onClose={() => setAIPanelOpen(false)} />
+        ) : (
+          <button
+            onClick={() => setAIPanelOpen(true)}
+            className="w-full flex items-center justify-center gap-2 p-2 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 hover:text-purple-300 rounded-lg transition-colors"
+            title="AI Draw"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span className="text-xs">AI Draw</span>
+          </button>
+        )}
+
         <button
           onClick={resetGrid}
           className="w-full flex items-center justify-center gap-2 p-2 bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200 rounded-lg transition-colors"

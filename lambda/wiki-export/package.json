@@ -1,0 +1,26 @@
+{
+  "name": "wiki-export-lambda",
+  "version": "1.0.0",
+  "description": "Minimal Lambda for BlockNote wiki export",
+  "main": "dist/index.cjs",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs --tree-shaking=false --keep-names && cp node_modules/jsdom/lib/jsdom/living/xhr/xhr-sync-worker.js dist/ 2>/dev/null || true",
+    "deploy": "bash scripts/deploy.sh"
+  },
+  "dependencies": {
+    "@blocknote/core": "^0.45.0",
+    "@blocknote/react": "^0.45.0",
+    "@blocknote/server-util": "^0.45.0",
+    "@supabase/supabase-js": "^2.89.0",
+    "@y-sweet/sdk": "^0.6.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "ws": "^8.18.0",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.0.0"
+  }
+}

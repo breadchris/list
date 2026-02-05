@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@source "../node_modules/streamdown/dist/*.js";
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -119,6 +121,10 @@ body {
   --bn-colors-editor-background: transparent;
 }
 
+.bn-container[data-color-scheme="light"] {
+  --bn-colors-editor-background: transparent;
+}
+
 .bn-editor {
   background-color: transparent !important;
 }
@@ -126,4 +132,33 @@ body {
 /* Hide empty blocks that only contain a trailing break in read-only views */
 .bn-editor[contenteditable="false"] .bn-block-outer:has(> .bn-block > .bn-block-content > .bn-inline-content > .ProseMirror-trailingBreak:only-child) {
   display: none;
+}
+
+/* AI generation progress bar animation */
+@keyframes progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Landing page fade-in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 1.5s ease-out forwards;
 }

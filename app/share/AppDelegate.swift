@@ -95,7 +95,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
-        guard let groupId = await SupabaseManager.shared.getDefaultGroupId() else {
+        guard let groupId = try? await SupabaseManager.shared.getDefaultGroupId() else {
             print("⚠️ Cannot register device token: no default group")
             return
         }

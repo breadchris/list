@@ -26,7 +26,10 @@ import {
   AIMenuController,
   AIToolbarButton,
   getAISlashMenuItems,
+  aiDocumentFormats,
 } from "@blocknote/xl-ai";
+import { offset, size } from "@floating-ui/react";
+import type { FloatingUIOptions } from "@blocknote/react";
 import { DefaultChatTransport } from "ai";
 import { en } from "@blocknote/core/locales";
 import { en as aiEn } from "@blocknote/xl-ai/locales";
@@ -34,6 +37,35 @@ import { en as aiEn } from "@blocknote/xl-ai/locales";
 import "@blocknote/shadcn/style.css";
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/xl-ai/style.css";
+
+// Inline AI menu configuration - appears attached to block instead of floating
+const inlineAIMenuOptions: FloatingUIOptions = {
+  useFloatingOptions: {
+    placement: "bottom-start",
+    middleware: [
+      offset(0),
+      size({
+        apply({ rects, elements }) {
+          const width = rects.reference.width > 0
+            ? `${rects.reference.width}px`
+            : "100%";
+          Object.assign(elements.floating.style, {
+            width,
+            minWidth: "300px",
+          });
+        },
+      }),
+    ],
+  },
+  elementProps: {
+    style: {
+      zIndex: 100,
+      boxShadow: "none",
+      borderRadius: 0,
+      borderTop: "1px solid var(--bn-colors-border)",
+    },
+  },
+};
 
 interface Message {
   id: string;
@@ -224,6 +256,9 @@ export function BlockNoteEditorAppInterface({
               transport: new DefaultChatTransport({
                 api: "/api/blocknote-ai",
               }),
+              streamToolsProvider: aiDocumentFormats.html.getStreamToolsProvider({
+                withDelays: false,
+              }),
             }),
           ],
           dictionary: {
@@ -403,7 +438,7 @@ export function BlockNoteEditorAppInterface({
                 )
               }
             />
-            <AIMenuController />
+            <AIMenuController floatingUIOptions={inlineAIMenuOptions} />
           </BlockNoteView>
         </div>
       </div>
@@ -448,7 +483,7 @@ export function BlockNoteEditorAppInterface({
             )
           }
         />
-        <AIMenuController />
+        <AIMenuController floatingUIOptions={inlineAIMenuOptions} />
       </BlockNoteView>
     </div>
   );

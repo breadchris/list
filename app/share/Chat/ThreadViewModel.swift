@@ -25,6 +25,23 @@ final class ThreadViewModel: ObservableObject {
     let parentURL: URL?
     let parentTitle: String
 
+    // MARK: - Computed Properties
+
+    /// Check if parent content has an image
+    var hasImage: Bool {
+        guard let images = parentContent?.metadata?.images else { return false }
+        return !images.isEmpty
+    }
+
+    /// Get the URL for the parent image (if any)
+    var parentImageURL: URL? {
+        guard let images = parentContent?.metadata?.images,
+              let firstImage = images.first else { return nil }
+
+        let baseStorageURL = "https://zazsrepfnamdmibcyenx.supabase.co/storage/v1/object/public/content/"
+        return URL(string: baseStorageURL + firstImage.storage_path)
+    }
+
     // MARK: - Private
 
     private let repository = ChatRepository()

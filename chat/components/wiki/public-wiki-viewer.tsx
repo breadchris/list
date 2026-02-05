@@ -21,11 +21,15 @@ import {
   ExternalLink,
 } from "lucide-react";
 import * as Y from "yjs";
+import type { Awareness } from "y-protocols/awareness";
 import { useReadonlyWikiDoc } from "@/hooks/wiki/use-readonly-wiki-doc";
+import { useWikiPresence } from "@/hooks/wiki/use-wiki-presence";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import { wikiSchema } from "./wiki-schema";
 import { resolvePath, getParentPath, normalizePath } from "@/lib/wiki/path-utils";
+import { WikiCursorOverlay } from "./wiki-cursor-overlay";
+import { CurrentlyViewingSection } from "./wiki-currently-viewing";
 import type { WikiPage, WikiPageTreeNode } from "@/types/wiki";
 
 import "@blocknote/shadcn/style.css";
@@ -43,7 +47,7 @@ export function PublicWikiViewer({
   wikiId,
   initialPath = "index",
 }: PublicWikiViewerProps) {
-  const { doc, provider, is_ready, connection_status, error } = useReadonlyWikiDoc({
+  const { doc, provider, awareness, is_ready, connection_status, error } = useReadonlyWikiDoc({
     wiki_id: wikiId,
   });
 
@@ -70,6 +74,7 @@ export function PublicWikiViewer({
       wikiId={wikiId}
       initialPath={initialPath}
       doc={doc}
+      awareness={awareness}
     />
   );
 }
@@ -78,12 +83,14 @@ interface PublicWikiViewerInnerProps {
   wikiId: string;
   initialPath: string;
   doc: Y.Doc;
+  awareness: Awareness | null;
 }
 
 function PublicWikiViewerInner({
   wikiId,
   initialPath,
   doc,
+  awareness,
 }: PublicWikiViewerInnerProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -91,6 +98,17 @@ function PublicWikiViewerInner({
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Presence tracking
+  const {
+    viewers_on_current_page,
+    active_pages,
+    local_state,
+  } = useWikiPresence({
+    awareness,
+    current_page_path: activePath,
+    editor_container_ref: containerRef,
+  });
 
   // Get pages from Y.js map
   const pagesMap = useMemo(() => doc.getMap<WikiPage>("wiki-pages"), [doc]);
@@ -284,6 +302,7 @@ function PublicWikiViewerInner({
       <aside
         className={`
           fixed top-0 left-0 z-50 h-full w-72 bg-gray-50 border-r border-gray-200
+          flex flex-col
           transform transition-transform duration-200 ease-in-out
           lg:translate-x-0
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
@@ -314,6 +333,14 @@ function PublicWikiViewerInner({
             />
           </div>
         </div>
+
+        {/* Currently Viewing - presence indicator */}
+        <CurrentlyViewingSection
+          active_pages={active_pages}
+          pages={pages}
+          current_path={activePath}
+          onNavigate={navigateToPage}
+        />
 
         {/* Page tree */}
         <nav className="flex-1 overflow-y-auto p-2">
@@ -351,10 +378,19 @@ function PublicWikiViewerInner({
         </header>
 
         {/* Content area */}
-        <article ref={containerRef} className="px-4 py-6 lg:px-8 lg:py-8">
+        <article ref={containerRef} className="relative px-4 py-6 lg:px-8 lg:py-8">
+          {/* Cursor overlay for presence */}
+          <WikiCursorOverlay viewers={viewers_on_current_page} />
+
           <div className="max-w-4xl mx-auto">
             {currentPage && fragment ? (
-              <ReadonlyWikiEditor fragment={fragment} pageExists={(path) => pages.has(normalizePath(path))} />
+              <ReadonlyWikiEditor
+                fragment={fragment}
+                pageExists={(path) => pages.has(normalizePath(path))}
+                awareness={awareness}
+                userName={local_state?.display_name || "Reader"}
+                userColor={local_state?.color || "#888888"}
+              />
             ) : (
               <div className="text-gray-500">Page not found</div>
             )}
@@ -381,23 +417,32 @@ function PublicWikiViewerInner({
 interface ReadonlyWikiEditorProps {
   fragment: Y.XmlFragment;
   pageExists: (path: string) => boolean;
+  awareness: Awareness | null;
+  userName: string;
+  userColor: string;
 }
 
 /**
  * Readonly BlockNote editor for viewing wiki content
  */
-function ReadonlyWikiEditor({ fragment, pageExists }: ReadonlyWikiEditorProps) {
+function ReadonlyWikiEditor({
+  fragment,
+  pageExists,
+  awareness,
+  userName,
+  userColor,
+}: ReadonlyWikiEditorProps) {
   // Create editor with collaboration (readonly via fragment)
   const editor = useCreateBlockNote(
     {
       schema: wikiSchema,
       collaboration: {
-        provider: { awareness: null } as any,
+        provider: awareness ? { awareness } as any : { awareness: null } as any,
         fragment: fragment,
-        user: { name: "Reader", color: "#888888" },
+        user: { name: userName, color: userColor },
       },
     },
-    [fragment]
+    [fragment, awareness, userName, userColor]
   );
 
   return (
@@ -465,12 +510,12 @@ function PageTreeView({
 
               {hasChildren ? (
                 isExpanded ? (
-                  <FolderOpen className="w-4 h-4 text-gray-400" />
+                  <FolderOpen className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 ) : (
-                  <Folder className="w-4 h-4 text-gray-400" />
+                  <Folder className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 )
               ) : (
-                <FileText className="w-4 h-4 text-gray-400" />
+                <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
               )}
 
               <span className="text-sm truncate">{node.title}</span>

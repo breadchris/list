@@ -1,14 +1,18 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import type {
   WikiPanel,
+  WikiPagePanel,
+  WikiReaderPanel,
   WikiNavMode,
   WikiNavContext,
   WikiLinkClickEvent,
   WikiSettings,
   DEFAULT_WIKI_SETTINGS,
 } from "@/types/wiki";
+import { isPagePanel } from "@/types/wiki";
 import { normalizePath } from "@/lib/wiki/path-utils";
 
 const WIKI_SETTINGS_KEY = "wiki-settings";
@@ -81,6 +85,30 @@ interface UseWikiNavReturn {
   goBack: () => void;
   /** Check if can go back */
   canGoBack: boolean;
+  /** Collapse a panel to the dock */
+  collapsePanel: (panelId: string) => void;
+  /** Restore a collapsed panel */
+  restorePanel: (panelId: string) => void;
+  /** Enter focus mode for a panel (auto-collapses others) */
+  enterFocusMode: (panelId: string) => void;
+  /** Exit focus mode (restores previous collapse states) */
+  exitFocusMode: () => void;
+  /** ID of the focused panel (null = normal mode) */
+  focused_panel_id: string | null;
+  /** Whether we're in focus mode */
+  isFocusMode: boolean;
+  /** Reorder panels by moving from one index to another */
+  reorderPanels: (fromIndex: number, toIndex: number) => void;
+  /** Set panel order based on array of page_paths */
+  setPanelOrder: (orderedPagePaths: string[]) => void;
+  /** Toggle AI context selection for a panel */
+  toggleAIContextSelection: (panelId: string) => void;
+  /** Apply AI context selections from saved page paths */
+  applyAIContextSelections: (selectedPaths: string[]) => void;
+  /** Open multiple panels at once (for restoring saved state) */
+  openMultiplePanels: (pages: Array<{path: string, id: string}>) => void;
+  /** Open a book in a new reader panel */
+  openBook: (bookContentId: string, bookTitle: string) => void;
 }
 
 /**
@@ -109,6 +137,7 @@ export function useWikiNav({
           page_path: initial_page_path,
           page_id: initial_page_id,
           is_active: true,
+          collapsed: false,
         },
       ];
     }
@@ -117,6 +146,12 @@ export function useWikiNav({
 
   // Active panel index
   const [activePanelIndex, setActivePanelIndex] = useState(0);
+
+  // Focus mode state
+  const [focusedPanelId, setFocusedPanelId] = useState<string | null>(null);
+
+  // Store collapse states before entering focus mode (to restore on exit)
+  const [preFocusCollapsedIds, setPreFocusCollapsedIds] = useState<Set<string>>(new Set());
 
   // Generate unique panel ID
   const generatePanelId = useCallback(() => {
@@ -128,9 +163,9 @@ export function useWikiNav({
     (pagePath: string, pageId: string) => {
       const normalizedPath = normalizePath(pagePath);
 
-      // Check if page is already open
+      // Check if page is already open (only check page panels)
       const existingIndex = panels.findIndex(
-        (p) => p.page_path === normalizedPath
+        (p) => isPagePanel(p) && p.page_path === normalizedPath
       );
 
       if (existingIndex !== -1) {
@@ -151,6 +186,7 @@ export function useWikiNav({
         page_path: normalizedPath,
         page_id: pageId,
         is_active: true,
+        collapsed: false,
       };
 
       setPanels((prev) => {
@@ -180,6 +216,7 @@ export function useWikiNav({
           page_path: normalizedPath,
           page_id: pageId,
           is_active: true,
+          collapsed: false,
         };
         return newPanels;
       });
@@ -264,6 +301,237 @@ export function useWikiNav({
     }
   }, [activePanelIndex, setActivePanel]);
 
+  // Collapse a panel to the dock
+  const collapsePanel = useCallback((panelId: string) => {
+    setPanels((prev) => {
+      const panelIndex = prev.findIndex((p) => p.id === panelId);
+      if (panelIndex === -1) return prev;
+
+      // Don't allow collapsing if it's the only expanded panel
+      const expandedPanels = prev.filter((p) => !p.collapsed);
+      if (expandedPanels.length <= 1) return prev;
+
+      return prev.map((p) =>
+        p.id === panelId ? { ...p, collapsed: true, is_active: false } : p
+      );
+    });
+
+    // If we collapsed the active panel, activate the next expanded one
+    setPanels((prev) => {
+      const activePanel = prev[activePanelIndex];
+      if (activePanel?.collapsed) {
+        const nextExpandedIndex = prev.findIndex((p) => !p.collapsed);
+        if (nextExpandedIndex !== -1) {
+          setActivePanelIndex(nextExpandedIndex);
+          return prev.map((p, i) => ({
+            ...p,
+            is_active: i === nextExpandedIndex,
+          }));
+        }
+      }
+      return prev;
+    });
+  }, [activePanelIndex]);
+
+  // Restore a collapsed panel
+  const restorePanel = useCallback((panelId: string) => {
+    setPanels((prev) =>
+      prev.map((p) =>
+        p.id === panelId ? { ...p, collapsed: false } : p
+      )
+    );
+  }, []);
+
+  // Enter focus mode for a panel (auto-collapses others)
+  const enterFocusMode = useCallback((panelId: string) => {
+    // Store current collapsed states to restore later
+    setPanels((prev) => {
+      const currentlyCollapsed = new Set(
+        prev.filter((p) => p.collapsed).map((p) => p.id)
+      );
+      setPreFocusCollapsedIds(currentlyCollapsed);
+
+      // Collapse all panels except the focused one
+      return prev.map((p) => ({
+        ...p,
+        collapsed: p.id !== panelId,
+        is_active: p.id === panelId,
+      }));
+    });
+
+    setFocusedPanelId(panelId);
+
+    // Update active panel index
+    setPanels((prev) => {
+      const focusedIndex = prev.findIndex((p) => p.id === panelId);
+      if (focusedIndex !== -1) {
+        setActivePanelIndex(focusedIndex);
+      }
+      return prev;
+    });
+  }, []);
+
+  // Exit focus mode (restores previous collapse states)
+  const exitFocusMode = useCallback(() => {
+    if (!focusedPanelId) return;
+
+    setPanels((prev) =>
+      prev.map((p) => ({
+        ...p,
+        // Restore to collapsed state it had before focus mode
+        collapsed: preFocusCollapsedIds.has(p.id),
+      }))
+    );
+
+    setFocusedPanelId(null);
+    setPreFocusCollapsedIds(new Set());
+  }, [focusedPanelId, preFocusCollapsedIds]);
+
+  // Reorder panels by moving from one index to another
+  const reorderPanels = useCallback((fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+
+    setPanels((prev) => {
+      const newPanels = arrayMove(prev, fromIndex, toIndex);
+      return newPanels;
+    });
+
+    // Adjust active panel index to follow the moved panel
+    setActivePanelIndex((prevActiveIndex) => {
+      if (prevActiveIndex === fromIndex) {
+        return toIndex;
+      }
+      if (fromIndex < prevActiveIndex && toIndex >= prevActiveIndex) {
+        return prevActiveIndex - 1;
+      }
+      if (fromIndex > prevActiveIndex && toIndex <= prevActiveIndex) {
+        return prevActiveIndex + 1;
+      }
+      return prevActiveIndex;
+    });
+  }, []);
+
+  // Set panel order based on array of page_paths (only affects page panels)
+  const setPanelOrder = useCallback((orderedPagePaths: string[]) => {
+    setPanels((prev) => {
+      // Build a map of page_path -> panel (only for page panels)
+      const panelsByPath = new Map<string, WikiPanel>();
+      prev.forEach((p) => {
+        if (isPagePanel(p)) {
+          panelsByPath.set(p.page_path, p);
+        }
+      });
+
+      // Reorder panels based on orderedPagePaths
+      const reordered: WikiPanel[] = [];
+      const seenIds = new Set<string>();
+
+      // First, add panels in the saved order
+      for (const path of orderedPagePaths) {
+        const panel = panelsByPath.get(path);
+        if (panel && !seenIds.has(panel.id)) {
+          reordered.push(panel);
+          seenIds.add(panel.id);
+        }
+      }
+
+      // Then, add any remaining panels not in the saved order
+      for (const panel of prev) {
+        if (!seenIds.has(panel.id)) {
+          reordered.push(panel);
+        }
+      }
+
+      return reordered;
+    });
+  }, []);
+
+  // Toggle AI context selection for a panel
+  const toggleAIContextSelection = useCallback((panelId: string) => {
+    setPanels((prev) =>
+      prev.map((p) =>
+        p.id === panelId
+          ? { ...p, selected_for_ai_context: !p.selected_for_ai_context }
+          : p
+      )
+    );
+  }, []);
+
+  // Apply AI context selections from saved page paths (only applies to page panels)
+  const applyAIContextSelections = useCallback((selectedPaths: string[]) => {
+    const pathSet = new Set(selectedPaths);
+    setPanels((prev) =>
+      prev.map((p) => ({
+        ...p,
+        selected_for_ai_context: isPagePanel(p) ? pathSet.has(p.page_path) : false,
+      }))
+    );
+  }, []);
+
+  // Open multiple panels at once (for restoring saved state)
+  const openMultiplePanels = useCallback(
+    (pagesToOpen: Array<{ path: string; id: string }>) => {
+      if (pagesToOpen.length === 0) return;
+
+      const newPanels: WikiPanel[] = pagesToOpen.map((p, i) => ({
+        id: generatePanelId(),
+        page_path: normalizePath(p.path),
+        page_id: p.id,
+        is_active: i === 0,
+        collapsed: false,
+      }));
+
+      setPanels(newPanels);
+      setActivePanelIndex(0);
+    },
+    [generatePanelId]
+  );
+
+  // Open a book in a new reader panel
+  const openBook = useCallback(
+    (bookContentId: string, bookTitle: string) => {
+      // Check if book is already open
+      const existingIndex = panels.findIndex(
+        (p) => p.type === "reader" && (p as WikiReaderPanel).book_content_id === bookContentId
+      );
+
+      if (existingIndex !== -1) {
+        // Just activate the existing panel
+        setActivePanelIndex(existingIndex);
+        setPanels((prev) =>
+          prev.map((p, i) => ({
+            ...p,
+            is_active: i === existingIndex,
+          }))
+        );
+        return;
+      }
+
+      // Create new reader panel
+      const newPanel: WikiReaderPanel = {
+        id: generatePanelId(),
+        type: "reader",
+        book_content_id: bookContentId,
+        book_title: bookTitle,
+        is_active: true,
+        collapsed: false,
+      };
+
+      setPanels((prev) => {
+        // Add new panel after the active panel
+        const newPanels: WikiPanel[] = prev.slice(0, activePanelIndex + 1).map((p) => ({
+          ...p,
+          is_active: false,
+        }));
+        newPanels.push(newPanel);
+        return newPanels;
+      });
+
+      setActivePanelIndex((prev) => prev + 1);
+    },
+    [panels, activePanelIndex, generatePanelId]
+  );
+
   // Navigation context
   const context: WikiNavContext = useMemo(
     () => ({
@@ -289,5 +557,17 @@ export function useWikiNav({
     setNavMode,
     goBack,
     canGoBack: activePanelIndex > 0,
+    collapsePanel,
+    restorePanel,
+    enterFocusMode,
+    exitFocusMode,
+    focused_panel_id: focusedPanelId,
+    isFocusMode: focusedPanelId !== null,
+    reorderPanels,
+    setPanelOrder,
+    toggleAIContextSelection,
+    applyAIContextSelections,
+    openMultiplePanels,
+    openBook,
   };
 }

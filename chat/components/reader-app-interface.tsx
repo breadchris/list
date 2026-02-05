@@ -81,6 +81,7 @@ export type ReaderFontFamily = "default" | "serif" | "sans";
 interface EpubSelection {
   text: string;
   cfiRange: string;
+  rect?: { x: number; y: number; width: number; height: number };
 }
 
 interface ReaderAppInterfaceProps {
@@ -287,7 +288,22 @@ export function ReaderAppInterface({
       if (range) {
         const text = range.toString().trim();
         if (text.length > 0) {
-          setCurrentSelection({ text, cfiRange });
+          // Get selection bounding rect
+          const domRect = range.getBoundingClientRect();
+          // Get iframe offset to translate to page coordinates
+          const iframe = document.querySelector('iframe');
+          const iframeRect = iframe?.getBoundingClientRect();
+
+          setCurrentSelection({
+            text,
+            cfiRange,
+            rect: {
+              x: domRect.left + (iframeRect?.left ?? 0),
+              y: domRect.top + (iframeRect?.top ?? 0),
+              width: domRect.width,
+              height: domRect.height,
+            },
+          });
           // Notify iOS app if running in webview
           notifyIOSTextSelected(text, cfiRange);
         }
@@ -925,35 +941,31 @@ export function ReaderAppInterface({
         </div>
       )}
 
-      {/* Fixed bottom bar for highlight confirmation (hidden in iOS app - native menu shown instead) */}
-      {currentSelection && !isIOSApp() && (
+      {/* Floating popup for highlight confirmation - positioned above/below selection */}
+      {currentSelection && currentSelection.rect && (
         <div
-          className="fixed bottom-0 left-0 right-0 z-50 bg-neutral-900/95 backdrop-blur-sm border-t border-neutral-700"
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          className="fixed z-50 bg-neutral-800 rounded-lg shadow-lg px-3 py-2 flex items-center gap-2"
+          style={{
+            left: Math.max(8, Math.min(currentSelection.rect.x + currentSelection.rect.width / 2 - 50, window.innerWidth - 108)),
+            top: currentSelection.rect.y > 60
+              ? currentSelection.rect.y - 48
+              : currentSelection.rect.y + currentSelection.rect.height + 8,
+          }}
         >
-          <div className="px-4 py-3 flex items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-neutral-300 line-clamp-2">
-                "{currentSelection.text}"
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={handleSaveHighlight}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                <Highlighter className="w-4 h-4" />
-                Highlight
-              </button>
-              <button
-                onClick={handleCancelSelection}
-                className="p-1.5 text-neutral-400 hover:text-neutral-200 transition-colors"
-                aria-label="Cancel"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={handleSaveHighlight}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Highlighter className="w-4 h-4" />
+            Highlight
+          </button>
+          <button
+            onClick={handleCancelSelection}
+            className="p-1.5 text-neutral-400 hover:text-neutral-200 transition-colors"
+            aria-label="Cancel"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
