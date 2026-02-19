@@ -113,7 +113,7 @@ export function ToolLibrary() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 pl-14 border-b border-neutral-800">
+      <div className="flex items-center justify-between p-4 border-b border-neutral-800">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/agents")}

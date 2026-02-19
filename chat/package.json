@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test:yjs": "tsx scripts/yjs-test-cli.ts",
+    "test:y-sweet": "tsx scripts/test-y-sweet-server.ts",
     "test:wiki": "tsx scripts/wiki-cli.ts",
     "index:omnivore": "tsx scripts/index-omnivore-to-typesense.ts"
   },
@@ -45,6 +46,8 @@
     "@slate-yjs/react": "^1.1.0",
     "@supabase/supabase-js": "^2.84.0",
     "@tanstack/react-query": "^5.90.11",
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0",
     "@xyflow/react": "^12.10.0",
     "@y-sweet/react": "^0.9.1",
     "@y-sweet/sdk": "^0.9.1",

@@ -104,7 +104,7 @@ export function TraceViewer() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 pl-14 py-4 border-b border-neutral-800">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/agents")}

@@ -1,14 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AppSwitcherButton } from "@/components/app-switcher-button";
-import { AppSwitcherPanel } from "@/components/app-switcher-panel";
+import { AppShell } from "@/components/app-shell";
 import { GlobalGroupProvider, useGlobalGroup } from "@/components/GlobalGroupContext";
 import { BuilderChat } from "@/components/agent-studio/builder-chat";
 import { supabase } from "@/lib/list/SupabaseClient";
 
 function AgentsPageContent() {
-  const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
   const { selectedGroup, isLoading: groupsLoading } = useGlobalGroup();
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -50,15 +48,9 @@ function AgentsPageContent() {
   }
 
   return (
-    <div className="relative h-screen bg-neutral-950">
-      <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-      <AppSwitcherPanel
-        isOpen={appSwitcherOpen}
-        onClose={() => setAppSwitcherOpen(false)}
-        currentApp="agents"
-      />
+    <AppShell currentApp="agents">
       <BuilderChat groupId={selectedGroup.id} userId={userId} />
-    </div>
+    </AppShell>
   );
 }
 

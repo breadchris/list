@@ -49,6 +49,7 @@ import {
 	handleListTokens
 } from './persistent-auth-handler.js';
 import type { ContentRequest, ClaudeCodeStatusPayload, ClaudeCodeJobResponse, SQSMessageBody } from './types.js';
+import { handleShellStart, handleShellRun } from './shell-handler.js';
 import { writeFileSync } from 'fs';
 
 // Helper to flush stdout/stderr before Lambda freezes
@@ -336,6 +337,10 @@ async function handleSQSEvent(event: SQSEvent): Promise<any> {
 
 					case 'blocknote-export':
 						result = await handleBlockNoteExport(supabase, payload);
+						break;
+
+					case 'shell-run':
+						result = await handleShellRun(payload);
 						break;
 
 					case 'claude-code': {
@@ -1628,6 +1633,46 @@ Current message:
 			case 'auth-list-tokens':
 				result = await handleListTokens(supabase, payload);
 				break;
+
+			case 'shell-start': {
+				// Create the Y-Sweet doc, then enqueue shell-run to SQS
+				const shellStartResult = await handleShellStart(payload);
+				if (!shellStartResult.success) {
+					return {
+						statusCode: 500,
+						headers: { 'Content-Type': 'application/json', ...corsHeaders },
+						body: JSON.stringify(shellStartResult)
+					};
+				}
+
+				// Enqueue the long-running shell-run job to SQS
+				if (queueUrl) {
+					const shellJob = await jobManager.createJob({
+						user_id: payload.user_id || 'system',
+						group_id: payload.group_id || 'system',
+						action: 'shell-run',
+						payload: { doc_id: payload.doc_id, cols: payload.cols, rows: payload.rows }
+					});
+					await jobManager.enqueueJob(shellJob);
+					return {
+						statusCode: 200,
+						headers: { 'Content-Type': 'application/json', ...corsHeaders },
+						body: JSON.stringify({
+							success: true,
+							doc_id: payload.doc_id,
+							job_id: shellJob.id
+						})
+					};
+				}
+
+				// Local mode: run shell synchronously
+				const shellRunResult = await handleShellRun(payload);
+				return {
+					statusCode: 200,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+					body: JSON.stringify(shellRunResult)
+				};
+			}
 
 			default:
 				return {

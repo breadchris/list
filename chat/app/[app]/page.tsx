@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useEffect } from "react";
 import { notFound, useRouter } from "next/navigation";
 import { SearchInterface } from "@/components/search-interface";
 import { ChatInterface } from "@/components/chat-interface";
@@ -14,9 +14,7 @@ import { DoAppInterface } from "@/components/do/do-app-interface";
 import { SignalAppInterface } from "@/components/signal/SignalAppInterface";
 import { WikiInterface } from "@/components/wiki/wiki-interface";
 import { IneedartInterface } from "@/components/ineedart/ineedart-interface";
-import { NotesAppWrapper } from "@/components/notes/notes-app-wrapper";
-import { AppSwitcherButton } from "@/components/app-switcher-button";
-import { AppSwitcherPanel } from "@/components/app-switcher-panel";
+import { AppShell } from "@/components/app-shell";
 import { YDocWrapper } from "@/components/y-doc-wrapper";
 import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 import { AppSettingsProvider } from "@/components/AppSettingsContext";
@@ -26,7 +24,6 @@ import { getAppById } from "@/lib/apps.config";
 export default function AppPage({ params }: { params: Promise<{ app: string }> }) {
   const { app } = use(params);
   const appConfig = getAppById(app);
-  const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
   const router = useRouter();
 
   // Redirect list, dj, wiki, time, and code apps to their dedicated routes
@@ -46,6 +43,9 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
     if (appConfig?.renderMode === "code") {
       router.replace("/code");
     }
+    if (appConfig?.renderMode === "shell") {
+      router.replace("/shell");
+    }
   }, [appConfig, router]);
 
   if (!appConfig) {
@@ -53,7 +53,7 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   }
 
   // List, DJ, Wiki, Time, and Code apps have their own route structures
-  if (appConfig.renderMode === "list" || appConfig.renderMode === "dj" || appConfig.renderMode === "wiki" || appConfig.renderMode === "time" || appConfig.renderMode === "code") {
+  if (appConfig.renderMode === "list" || appConfig.renderMode === "dj" || appConfig.renderMode === "wiki" || appConfig.renderMode === "time" || appConfig.renderMode === "code" || appConfig.renderMode === "shell") {
     return null; // Will redirect
   }
 
@@ -64,17 +64,11 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   if (appConfig.renderMode === "chat") {
     return (
       <GlobalGroupProvider>
-        <div className="relative h-screen bg-neutral-950">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp={app}
-          />
+        <AppShell currentApp={app}>
           <YDocWrapper docId={docId}>
             <ChatInterface />
           </YDocWrapper>
-        </div>
+        </AppShell>
       </GlobalGroupProvider>
     );
   }
@@ -83,17 +77,11 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   if (appConfig.renderMode === "calendar") {
     return (
       <GlobalGroupProvider>
-        <div className="relative h-screen bg-neutral-950">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp={app}
-          />
+        <AppShell currentApp={app}>
           <YDocWrapper docId={docId}>
             <CalendarChatInterface />
           </YDocWrapper>
-        </div>
+        </AppShell>
       </GlobalGroupProvider>
     );
   }
@@ -103,15 +91,9 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
     return (
       <GlobalGroupProvider>
         <AppSettingsProvider>
-          <div className="relative h-screen bg-neutral-900">
-            {/* AppSwitcherButton is inside ReaderAppInterface - shown on tap */}
-            <AppSwitcherPanel
-              isOpen={appSwitcherOpen}
-              onClose={() => setAppSwitcherOpen(false)}
-              currentApp={app}
-            />
-            <ReaderAppInterface onToggleAppSwitcher={() => setAppSwitcherOpen(prev => !prev)} />
-          </div>
+          <AppShell currentApp={app} bgColor="bg-neutral-900">
+            <ReaderAppInterface />
+          </AppShell>
         </AppSettingsProvider>
       </GlobalGroupProvider>
     );
@@ -120,15 +102,9 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   // Money app for bank connections and transactions
   if (appConfig.renderMode === "money") {
     return (
-      <div className="relative h-screen bg-neutral-950">
-        <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-        <AppSwitcherPanel
-          isOpen={appSwitcherOpen}
-          onClose={() => setAppSwitcherOpen(false)}
-          currentApp={app}
-        />
+      <AppShell currentApp={app}>
         <MoneyAppInterface />
-      </div>
+      </AppShell>
     );
   }
 
@@ -136,15 +112,9 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   if (appConfig.renderMode === "transfer") {
     return (
       <GlobalGroupProvider>
-        <div className="relative h-screen bg-neutral-950">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp={app}
-          />
+        <AppShell currentApp={app}>
           <TransferAppInterface />
-        </div>
+        </AppShell>
       </GlobalGroupProvider>
     );
   }
@@ -152,49 +122,31 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   // Maps app for location browsing and saving
   if (appConfig.renderMode === "maps") {
     return (
-      <div className="relative h-screen bg-neutral-950">
-        <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-        <AppSwitcherPanel
-          isOpen={appSwitcherOpen}
-          onClose={() => setAppSwitcherOpen(false)}
-          currentApp={app}
-        />
+      <AppShell currentApp={app}>
         <MapsAppInterface />
-      </div>
+      </AppShell>
     );
   }
 
   // Paint app for collaborative pixel art
   if (appConfig.renderMode === "paint") {
     return (
-      <div className="relative h-screen bg-neutral-950">
-        <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-        <AppSwitcherPanel
-          isOpen={appSwitcherOpen}
-          onClose={() => setAppSwitcherOpen(false)}
-          currentApp={app}
-        />
+      <AppShell currentApp={app}>
         <YDocWrapper docId={docId}>
           <PaintAppInterface />
         </YDocWrapper>
-      </div>
+      </AppShell>
     );
   }
 
   // Do app for habit tracking with stamps
   if (appConfig.renderMode === "do") {
     return (
-      <div className="relative h-screen bg-neutral-950">
-        <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-        <AppSwitcherPanel
-          isOpen={appSwitcherOpen}
-          onClose={() => setAppSwitcherOpen(false)}
-          currentApp={app}
-        />
+      <AppShell currentApp={app}>
         <YDocWrapper docId={docId}>
           <DoAppInterface />
         </YDocWrapper>
-      </div>
+      </AppShell>
     );
   }
 
@@ -202,41 +154,27 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   if (appConfig.renderMode === "signal") {
     return (
       <ToastProvider>
-        <div className="relative h-screen bg-[#2d2d2d]">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp={app}
-          />
+        <AppShell currentApp={app} bgColor="bg-[#2d2d2d]">
           <SignalAppInterface />
-        </div>
+        </AppShell>
       </ToastProvider>
     );
   }
 
   // Wiki app for collaborative wiki building
   if (appConfig.renderMode === "wiki") {
-    // For wiki, we need a wiki ID. For now, use a default wiki per app
-    // In a full implementation, this would come from user selection or URL params
     const wikiId = `wiki-${appConfig.id}`;
-    const groupId = "default-wiki-group"; // TODO: Get from user context
+    const groupId = "default-wiki-group";
 
     return (
       <GlobalGroupProvider>
-        <div className="relative h-screen bg-neutral-950">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp={app}
-          />
+        <AppShell currentApp={app}>
           <WikiInterface
             wikiId={wikiId}
             groupId={groupId}
             ySweetUrl=""
           />
-        </div>
+        </AppShell>
       </GlobalGroupProvider>
     );
   }
@@ -245,47 +183,18 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   if (appConfig.renderMode === "ineedart") {
     return (
       <GlobalGroupProvider>
-        <div className="relative h-screen bg-neutral-950">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp={app}
-          />
+        <AppShell currentApp={app}>
           <IneedartInterface />
-        </div>
-      </GlobalGroupProvider>
-    );
-  }
-
-  // Notes app for collaborative note-taking with Electric SQL + Yjs
-  if (appConfig.renderMode === "notes") {
-    return (
-      <GlobalGroupProvider>
-        <div className="relative h-screen bg-neutral-950">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp={app}
-          />
-          <NotesAppWrapper />
-        </div>
+        </AppShell>
       </GlobalGroupProvider>
     );
   }
 
   return (
-    <div className="relative h-screen bg-neutral-900">
-      <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-      <AppSwitcherPanel
-        isOpen={appSwitcherOpen}
-        onClose={() => setAppSwitcherOpen(false)}
-        currentApp={app}
-      />
+    <AppShell currentApp={app} bgColor="bg-neutral-900">
       <YDocWrapper docId={docId}>
         <SearchInterface appConfig={appConfig} />
       </YDocWrapper>
-    </div>
+    </AppShell>
   );
 }

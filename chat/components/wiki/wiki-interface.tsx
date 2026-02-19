@@ -18,13 +18,15 @@ import {
 } from "@dnd-kit/sortable";
 import { WikiPanel } from "./wiki-panel";
 import { WikiReaderPanel } from "./wiki-reader-panel";
-import { BookPickerModal } from "./book-picker-modal";
+import { BookPickerSidebar } from "./book-picker-modal";
 import { WikiDock } from "./wiki-dock";
 import { WikiSidebar } from "./wiki-sidebar";
 import { WikiTemplatesSidebar } from "./wiki-templates-sidebar";
 import { WikiTemplatePanel } from "./wiki-template-panel";
 import { WikiAIScratchPanel } from "./wiki-ai-scratch-panel";
+import { WikiChatPanel } from "./wiki-chat-panel";
 import { WikiSettingsPanel } from "./wiki-settings-panel";
+import { WikiRailActions } from "./wiki-rail-actions";
 import { useWikiSyncStatus } from "./wiki-sync-status";
 import { useWikiNav } from "@/hooks/wiki/use-wiki-nav";
 import { useWikiPages } from "@/hooks/wiki/use-wiki-pages";
@@ -197,6 +199,11 @@ function WikiInterfaceInner({
   const [aiScratchPanelWidths, setAIScratchPanelWidths] = useState<number[]>([]);
   // Store initial selected text for new scratch panels
   const [aiScratchInitialSelections, setAIScratchInitialSelections] = useState<Map<string, string>>(new Map());
+
+  // Chat panels state
+  const [chatPanels, setChatPanels] = useState<{ id: string }[]>([]);
+  const [activeChatIndex, setActiveChatIndex] = useState(-1);
+  const [chatPanelWidths, setChatPanelWidths] = useState<number[]>([]);
 
   // Panel widths (desktop)
   const [panelWidths, setPanelWidths] = useState<number[]>([]);
@@ -513,18 +520,22 @@ function WikiInterfaceInner({
   // Toggle sidebar (stable reference to avoid infinite loops in WikiSettingsPanel)
   const handleToggleSidebar = useCallback(() => {
     setShowSidebar(prev => !prev);
-    setShowTemplatesSidebar(false); // Close templates sidebar when opening pages
+    setShowTemplatesSidebar(false);
+    setShowBookPicker(false);
   }, []);
 
   // Toggle templates sidebar
   const handleToggleTemplatesSidebar = useCallback(() => {
     setShowTemplatesSidebar(prev => !prev);
-    setShowSidebar(false); // Close pages sidebar when opening templates
+    setShowSidebar(false);
+    setShowBookPicker(false);
   }, []);
 
-  // Toggle book picker modal
+  // Toggle book picker sidebar
   const handleToggleBookPicker = useCallback(() => {
     setShowBookPicker(prev => !prev);
+    setShowSidebar(false);
+    setShowTemplatesSidebar(false);
   }, []);
 
   // Handle book selection from picker
@@ -663,6 +674,35 @@ function WikiInterfaceInner({
     });
   }, []);
 
+  // Open a new chat panel
+  const handleOpenChatPanel = useCallback(() => {
+    // Auto-select current editor for AI context
+    const currentPanel = panels[active_panel_index];
+    if (currentPanel && !currentPanel.selected_for_ai_context) {
+      toggleAIContextSelection(currentPanel.id);
+    }
+    const newId = crypto.randomUUID();
+    setChatPanels(prev => [...prev, { id: newId }]);
+    setActiveChatIndex(chatPanels.length);
+  }, [chatPanels.length, panels, active_panel_index, toggleAIContextSelection]);
+
+  // Close chat panel
+  const handleCloseChatPanel = useCallback((index: number) => {
+    setChatPanels(prev => prev.filter((_, i) => i !== index));
+    if (activeChatIndex >= index && activeChatIndex > 0) {
+      setActiveChatIndex(prev => prev - 1);
+    }
+  }, [activeChatIndex]);
+
+  // Resize chat panel
+  const handleChatPanelResize = useCallback((index: number, width: number) => {
+    setChatPanelWidths(prev => {
+      const newWidths = [...prev];
+      newWidths[index] = width;
+      return newWidths;
+    });
+  }, []);
+
   // Memoize the AI scratch context object
   const wikiAIScratchContext: WikiAIScratchContext = useMemo(() => ({
     openAIScratchPanel: handleOpenAIScratchPanel,
@@ -737,6 +777,15 @@ function WikiInterfaceInner({
           onCreateBackup={handleCreateBackup}
         />
 
+        {/* Action buttons in the app shell rail */}
+        <WikiRailActions
+          onToggleSidebar={handleToggleSidebar}
+          onToggleTemplatesSidebar={handleToggleTemplatesSidebar}
+          onToggleBookPicker={handleToggleBookPicker}
+          onCreateNewPage={handleCreateNewPage}
+          onOpenChat={handleOpenChatPanel}
+        />
+
         {/* Main content area - full height without top bar */}
         <div className="flex-1 flex overflow-hidden" {...swipeHandlers}>
           {/* Pages Sidebar - hide in focus mode */}
@@ -760,6 +809,14 @@ function WikiInterfaceInner({
               onCreateTemplate={handleCreateTemplateFromSidebar}
               onClose={() => setShowTemplatesSidebar(false)}
               templateExists={templateExists}
+            />
+          )}
+
+          {/* Books Sidebar - hide in focus mode */}
+          {showBookPicker && !isFocusMode && (
+            <BookPickerSidebar
+              onClose={() => setShowBookPicker(false)}
+              onSelectBook={handleSelectBook}
             />
           )}
 
@@ -943,6 +1000,35 @@ function WikiInterfaceInner({
                     </div>
                   );
                 })}
+
+                {/* Chat panels */}
+                {chatPanels.map((panel, index) => {
+                  const width = isDesktop
+                    ? chatPanelWidths[index] || 400
+                    : undefined;
+
+                  return (
+                    <div
+                      key={`chat-${panel.id}`}
+                      className="relative h-full flex-shrink-0 snap-start"
+                      style={{
+                        width: isDesktop ? `${width}px` : "100%",
+                        minWidth: isDesktop ? "200px" : "100%",
+                      }}
+                    >
+                      <WikiChatPanel
+                        id={panel.id}
+                        isActive={index === activeChatIndex}
+                        index={index}
+                        onClose={() => handleCloseChatPanel(index)}
+                        onActivate={() => setActiveChatIndex(index)}
+                        showResizeHandle={isDesktop}
+                        width={width}
+                        onResize={(w) => handleChatPanelResize(index, w)}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </SortableContext>
           </DndContext>
@@ -951,12 +1037,6 @@ function WikiInterfaceInner({
       </div>
       </WikiAIScratchContext.Provider>
       </WikiAIContextContext.Provider>
-      {/* Book Picker Modal */}
-      <BookPickerModal
-        isOpen={showBookPicker}
-        onClose={() => setShowBookPicker(false)}
-        onSelectBook={handleSelectBook}
-      />
     </WikiEditorRegistryContext.Provider>
   );
 }
