@@ -5,6 +5,8 @@ import { createContext, useContext, useState, ReactNode, useCallback, useMemo } 
 interface AppSettingsContextValue {
   settingsComponent: ReactNode | null;
   setSettingsComponent: (component: ReactNode | null) => void;
+  railActions: ReactNode | null;
+  setRailActions: (actions: ReactNode | null) => void;
   closeAppSwitcher: () => void;
 }
 
@@ -19,6 +21,7 @@ export function AppSettingsProvider({ children, onCloseAppSwitcher }: AppSetting
   const [settingsComponent, setSettingsComponent] = useState<ReactNode | null>(
     null
   );
+  const [railActions, setRailActions] = useState<ReactNode | null>(null);
 
   const closeAppSwitcher = useCallback(() => {
     onCloseAppSwitcher?.();
@@ -26,8 +29,8 @@ export function AppSettingsProvider({ children, onCloseAppSwitcher }: AppSetting
 
   // Memoize context value to prevent unnecessary consumer re-renders
   const value = useMemo(
-    () => ({ settingsComponent, setSettingsComponent, closeAppSwitcher }),
-    [settingsComponent, setSettingsComponent, closeAppSwitcher]
+    () => ({ settingsComponent, setSettingsComponent, railActions, setRailActions, closeAppSwitcher }),
+    [settingsComponent, setSettingsComponent, railActions, setRailActions, closeAppSwitcher]
   );
 
   return (
@@ -50,6 +53,21 @@ export function useSetAppSettings() {
     );
   }
   return context.setSettingsComponent;
+}
+
+export function useRailActions() {
+  const context = useContext(AppSettingsContext);
+  return context?.railActions ?? null;
+}
+
+export function useSetRailActions() {
+  const context = useContext(AppSettingsContext);
+  if (!context) {
+    throw new Error(
+      "useSetRailActions must be used within an AppSettingsProvider"
+    );
+  }
+  return context.setRailActions;
 }
 
 export function useCloseAppSwitcher() {

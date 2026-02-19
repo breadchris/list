@@ -2,6 +2,7 @@ import * as pulumi from '@pulumi/pulumi';
 import * as aws from '@pulumi/aws';
 import * as docker from '@pulumi/docker';
 
+
 // Get configuration
 const config = new pulumi.Config();
 const anthropicApiKey = config.requireSecret('anthropic_api_key');
@@ -234,7 +235,9 @@ const lambdaFunction = new aws.lambda.Function('claude-code-lambda', {
 			APNS_KEY_ID: apnsKeyId,
 			APNS_PRIVATE_KEY: apnsPrivateKey,
 			APNS_BUNDLE_ID: apnsBundleId,
-			APNS_ENVIRONMENT: apnsEnvironment
+			APNS_ENVIRONMENT: apnsEnvironment,
+			// Y-Sweet connection string for shell sessions
+			CONNECTION_STRING: config.getSecret('ySweetConnectionString') || '',
 		}
 	},
 	tags: {
@@ -387,7 +390,10 @@ const wikiExportLambda = new aws.lambda.Function('wiki-export-lambda', {
 		variables: {
 			NODE_ENV: 'production',
 			// Y-Sweet connection string for reading Y.js docs directly
-			CONNECTION_STRING: config.getSecret('ySweetConnectionString') || ''
+			CONNECTION_STRING: config.getSecret('ySweetConnectionString') || '',
+			// Supabase credentials for store_backup action
+			SUPABASE_URL: supabaseUrl,
+			SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
 		}
 	},
 	tags: {
@@ -420,6 +426,353 @@ const wikiExportPermission = new aws.lambda.Permission('wiki-export-api-gateway-
 });
 
 // ============================================================
+// Y-Sweet Server (ECS Fargate with scale-to-zero)
+// ============================================================
+
+const ySweetAuthKey = config.requireSecret('y_sweet_auth_key');
+
+// VPC for Y-Sweet Fargate
+const ySweetVpc = new aws.ec2.Vpc('y-sweet-vpc', {
+	cidrBlock: '10.0.0.0/16',
+	enableDnsSupport: true,
+	enableDnsHostnames: true,
+	tags: { Name: 'Y-Sweet VPC', ManagedBy: 'Pulumi' }
+});
+
+const ySweetIgw = new aws.ec2.InternetGateway('y-sweet-igw', {
+	vpcId: ySweetVpc.id,
+	tags: { Name: 'Y-Sweet IGW', ManagedBy: 'Pulumi' }
+});
+
+const ySweetRouteTable = new aws.ec2.RouteTable('y-sweet-rt', {
+	vpcId: ySweetVpc.id,
+	routes: [{ cidrBlock: '0.0.0.0/0', gatewayId: ySweetIgw.id }],
+	tags: { Name: 'Y-Sweet Route Table', ManagedBy: 'Pulumi' }
+});
+
+const ySweetSubnetA = new aws.ec2.Subnet('y-sweet-subnet-a', {
+	vpcId: ySweetVpc.id,
+	cidrBlock: '10.0.1.0/24',
+	availabilityZone: 'us-east-1a',
+	mapPublicIpOnLaunch: true,
+	tags: { Name: 'Y-Sweet Subnet A', ManagedBy: 'Pulumi' }
+});
+
+const ySweetSubnetB = new aws.ec2.Subnet('y-sweet-subnet-b', {
+	vpcId: ySweetVpc.id,
+	cidrBlock: '10.0.2.0/24',
+	availabilityZone: 'us-east-1b',
+	mapPublicIpOnLaunch: true,
+	tags: { Name: 'Y-Sweet Subnet B', ManagedBy: 'Pulumi' }
+});
+
+const ySweetRtAssocA = new aws.ec2.RouteTableAssociation('y-sweet-rta-a', {
+	subnetId: ySweetSubnetA.id,
+	routeTableId: ySweetRouteTable.id
+});
+
+const ySweetRtAssocB = new aws.ec2.RouteTableAssociation('y-sweet-rta-b', {
+	subnetId: ySweetSubnetB.id,
+	routeTableId: ySweetRouteTable.id
+});
+
+// Security Groups
+const ySweetAlbSg = new aws.ec2.SecurityGroup('y-sweet-alb-sg', {
+	vpcId: ySweetVpc.id,
+	ingress: [
+		{ protocol: 'tcp', fromPort: 80, toPort: 80, cidrBlocks: ['0.0.0.0/0'] },
+		{ protocol: 'tcp', fromPort: 443, toPort: 443, cidrBlocks: ['0.0.0.0/0'] },
+	],
+	egress: [
+		{ protocol: '-1', fromPort: 0, toPort: 0, cidrBlocks: ['0.0.0.0/0'] },
+	],
+	tags: { Name: 'Y-Sweet ALB SG', ManagedBy: 'Pulumi' }
+});
+
+const ySweetEcsSg = new aws.ec2.SecurityGroup('y-sweet-ecs-sg', {
+	vpcId: ySweetVpc.id,
+	ingress: [
+		{ protocol: 'tcp', fromPort: 8080, toPort: 8080, securityGroups: [ySweetAlbSg.id] },
+	],
+	egress: [
+		{ protocol: '-1', fromPort: 0, toPort: 0, cidrBlocks: ['0.0.0.0/0'] },
+	],
+	tags: { Name: 'Y-Sweet ECS SG', ManagedBy: 'Pulumi' }
+});
+
+// S3 bucket for Y-Sweet document persistence
+const ySweetBucket = new aws.s3.Bucket('y-sweet-data', {
+	bucket: 'justshare-y-sweet-data',
+	acl: 'private',
+	serverSideEncryptionConfiguration: {
+		rule: {
+			applyServerSideEncryptionByDefault: { sseAlgorithm: 'AES256' }
+		}
+	},
+	tags: { Name: 'Y-Sweet Data', ManagedBy: 'Pulumi' }
+});
+
+// IAM roles for ECS
+const ecsTaskExecutionRole = new aws.iam.Role('y-sweet-execution-role', {
+	assumeRolePolicy: JSON.stringify({
+		Version: '2012-10-17',
+		Statement: [{
+			Action: 'sts:AssumeRole',
+			Effect: 'Allow',
+			Principal: { Service: 'ecs-tasks.amazonaws.com' }
+		}]
+	}),
+	tags: { Name: 'Y-Sweet Task Execution Role', ManagedBy: 'Pulumi' }
+});
+
+new aws.iam.RolePolicyAttachment('y-sweet-execution-policy', {
+	role: ecsTaskExecutionRole.name,
+	policyArn: 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+});
+
+const ecsTaskRole = new aws.iam.Role('y-sweet-task-role', {
+	assumeRolePolicy: JSON.stringify({
+		Version: '2012-10-17',
+		Statement: [{
+			Action: 'sts:AssumeRole',
+			Effect: 'Allow',
+			Principal: { Service: 'ecs-tasks.amazonaws.com' }
+		}]
+	}),
+	tags: { Name: 'Y-Sweet Task Role', ManagedBy: 'Pulumi' }
+});
+
+new aws.iam.RolePolicy('y-sweet-s3-policy', {
+	role: ecsTaskRole.id,
+	policy: ySweetBucket.arn.apply(bucketArn => JSON.stringify({
+		Version: '2012-10-17',
+		Statement: [
+			{
+				Effect: 'Allow',
+				Action: ['s3:ListBucket', 's3:GetBucketLocation'],
+				Resource: bucketArn
+			},
+			{
+				Effect: 'Allow',
+				Action: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:HeadObject'],
+				Resource: `${bucketArn}/*`
+			}
+		]
+	}))
+});
+
+// IAM user with access keys for Y-Sweet S3 access
+// (Y-Sweet requires explicit AWS_ACCESS_KEY_ID, doesn't use ECS credential chain)
+const ySweetUser = new aws.iam.User('y-sweet-s3-user', {
+	name: 'y-sweet-s3-access',
+	tags: { Name: 'Y-Sweet S3 User', ManagedBy: 'Pulumi' }
+});
+
+new aws.iam.UserPolicy('y-sweet-user-s3-policy', {
+	user: ySweetUser.name,
+	policy: ySweetBucket.arn.apply(bucketArn => JSON.stringify({
+		Version: '2012-10-17',
+		Statement: [
+			{
+				Effect: 'Allow',
+				Action: ['s3:ListBucket', 's3:GetBucketLocation'],
+				Resource: bucketArn
+			},
+			{
+				Effect: 'Allow',
+				Action: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:HeadObject'],
+				Resource: `${bucketArn}/*`
+			}
+		]
+	}))
+});
+
+const ySweetAccessKey = new aws.iam.AccessKey('y-sweet-access-key', {
+	user: ySweetUser.name
+});
+
+// ECS Cluster
+const ySweetCluster = new aws.ecs.Cluster('y-sweet-cluster', {
+	name: 'y-sweet-cluster',
+	settings: [{ name: 'containerInsights', value: 'enabled' }],
+	tags: { Name: 'Y-Sweet Cluster', ManagedBy: 'Pulumi' }
+});
+
+// CloudWatch Log Group
+const ySweetLogGroup = new aws.cloudwatch.LogGroup('y-sweet-logs', {
+	name: '/ecs/y-sweet',
+	retentionInDays: 14,
+	tags: { Name: 'Y-Sweet Logs', ManagedBy: 'Pulumi' }
+});
+
+// Task Definition
+const ySweetTaskDef = new aws.ecs.TaskDefinition('y-sweet-task', {
+	family: 'y-sweet',
+	networkMode: 'awsvpc',
+	requiresCompatibilities: ['FARGATE'],
+	cpu: '256',
+	memory: '512',
+	executionRoleArn: ecsTaskExecutionRole.arn,
+	taskRoleArn: ecsTaskRole.arn,
+	containerDefinitions: pulumi.all([
+		ySweetBucket.bucket, ySweetAuthKey, ySweetLogGroup.name,
+		ySweetAccessKey.id, ySweetAccessKey.secret
+	]).apply(
+		([bucket, authKey, logGroup, awsKeyId, awsSecret]) => JSON.stringify([{
+			name: 'y-sweet',
+			image: 'ghcr.io/jamsocket/y-sweet:latest',
+			command: ['y-sweet', 'serve', `s3://${bucket}/docs`, '--host', '0.0.0.0', '--auth', authKey],
+			essential: true,
+			portMappings: [{ containerPort: 8080, protocol: 'tcp' }],
+			environment: [
+				{ name: 'AWS_ACCESS_KEY_ID', value: awsKeyId },
+				{ name: 'AWS_SECRET_ACCESS_KEY', value: awsSecret },
+				{ name: 'AWS_REGION', value: 'us-east-1' },
+			],
+			logConfiguration: {
+				logDriver: 'awslogs',
+				options: {
+					'awslogs-group': logGroup,
+					'awslogs-region': 'us-east-1',
+					'awslogs-stream-prefix': 'y-sweet'
+				}
+			}
+		}])
+	),
+	tags: { Name: 'Y-Sweet Task', ManagedBy: 'Pulumi' }
+});
+
+// ALB
+const ySweetAlb = new aws.lb.LoadBalancer('y-sweet-alb', {
+	internal: false,
+	loadBalancerType: 'application',
+	securityGroups: [ySweetAlbSg.id],
+	subnets: [ySweetSubnetA.id, ySweetSubnetB.id],
+	tags: { Name: 'Y-Sweet ALB', ManagedBy: 'Pulumi' }
+});
+
+const ySweetTg = new aws.lb.TargetGroup('y-sweet-tg', {
+	port: 8080,
+	protocol: 'HTTP',
+	targetType: 'ip',
+	vpcId: ySweetVpc.id,
+	healthCheck: {
+		path: '/ready',
+		interval: 30,
+		timeout: 5,
+		healthyThreshold: 2,
+		unhealthyThreshold: 3,
+	},
+	stickiness: {
+		type: 'lb_cookie',
+		enabled: true,
+		cookieDuration: 86400,
+	},
+	tags: { Name: 'Y-Sweet TG', ManagedBy: 'Pulumi' }
+});
+
+const ySweetListener = new aws.lb.Listener('y-sweet-listener', {
+	loadBalancerArn: ySweetAlb.arn,
+	port: 80,
+	protocol: 'HTTP',
+	defaultActions: [{ type: 'forward', targetGroupArn: ySweetTg.arn }],
+	tags: { Name: 'Y-Sweet Listener', ManagedBy: 'Pulumi' }
+});
+
+// ECS Service (starts at 0 - scale-to-zero)
+const ySweetService = new aws.ecs.Service('y-sweet-service', {
+	name: 'y-sweet',
+	cluster: ySweetCluster.arn,
+	taskDefinition: ySweetTaskDef.arn,
+	desiredCount: 0,
+	launchType: 'FARGATE',
+	networkConfiguration: {
+		subnets: [ySweetSubnetA.id, ySweetSubnetB.id],
+		securityGroups: [ySweetEcsSg.id],
+		assignPublicIp: true,
+	},
+	loadBalancers: [{
+		targetGroupArn: ySweetTg.arn,
+		containerName: 'y-sweet',
+		containerPort: 8080,
+	}],
+	tags: { Name: 'Y-Sweet Service', ManagedBy: 'Pulumi' }
+}, { dependsOn: [ySweetListener] });
+
+// Auto-scaling: scale-to-zero when idle, scale up on requests
+const ySweetScalingTarget = new aws.appautoscaling.Target('y-sweet-scaling-target', {
+	maxCapacity: 2,
+	minCapacity: 0,
+	resourceId: pulumi.interpolate`service/${ySweetCluster.name}/${ySweetService.name}`,
+	scalableDimension: 'ecs:service:DesiredCount',
+	serviceNamespace: 'ecs',
+});
+
+// Scale up: when ALB gets requests and there are no healthy targets
+const ySweetScaleUp = new aws.appautoscaling.Policy('y-sweet-scale-up', {
+	policyType: 'StepScaling',
+	resourceId: ySweetScalingTarget.resourceId,
+	scalableDimension: ySweetScalingTarget.scalableDimension,
+	serviceNamespace: ySweetScalingTarget.serviceNamespace,
+	stepScalingPolicyConfiguration: {
+		adjustmentType: 'ExactCapacity',
+		cooldown: 60,
+		stepAdjustments: [{
+			scalingAdjustment: 1,
+			metricIntervalLowerBound: '0',
+		}],
+	},
+});
+
+// CloudWatch alarm: trigger scale-up when ALB request count > 0 but no healthy targets
+const ySweetScaleUpAlarm = new aws.cloudwatch.MetricAlarm('y-sweet-scale-up-alarm', {
+	comparisonOperator: 'GreaterThanThreshold',
+	evaluationPeriods: 1,
+	metricName: 'RequestCount',
+	namespace: 'AWS/ApplicationELB',
+	period: 60,
+	statistic: 'Sum',
+	threshold: 0,
+	dimensions: {
+		LoadBalancer: ySweetAlb.arnSuffix,
+	},
+	alarmActions: [ySweetScaleUp.arn],
+	tags: { Name: 'Y-Sweet Scale Up Alarm', ManagedBy: 'Pulumi' }
+});
+
+// Scale down: when no requests for 15 minutes
+const ySweetScaleDown = new aws.appautoscaling.Policy('y-sweet-scale-down', {
+	policyType: 'StepScaling',
+	resourceId: ySweetScalingTarget.resourceId,
+	scalableDimension: ySweetScalingTarget.scalableDimension,
+	serviceNamespace: ySweetScalingTarget.serviceNamespace,
+	stepScalingPolicyConfiguration: {
+		adjustmentType: 'ExactCapacity',
+		cooldown: 300,
+		stepAdjustments: [{
+			scalingAdjustment: 0,
+			metricIntervalUpperBound: '0',
+		}],
+	},
+});
+
+const ySweetScaleDownAlarm = new aws.cloudwatch.MetricAlarm('y-sweet-scale-down-alarm', {
+	comparisonOperator: 'LessThanOrEqualToThreshold',
+	evaluationPeriods: 15,
+	metricName: 'RequestCount',
+	namespace: 'AWS/ApplicationELB',
+	period: 60,
+	statistic: 'Sum',
+	threshold: 0,
+	dimensions: {
+		LoadBalancer: ySweetAlb.arnSuffix,
+	},
+	alarmActions: [ySweetScaleDown.arn],
+	tags: { Name: 'Y-Sweet Scale Down Alarm', ManagedBy: 'Pulumi' }
+});
+
+
+// ============================================================
 // Exports
 // ============================================================
 
@@ -443,3 +796,8 @@ export const supabaseAwsSecretAccessKey = pulumi.secret(supabaseAccessKey.secret
 export const supabaseAwsRegion = pulumi.output('us-east-1');
 export const supabaseS3BucketName = sessionBucket.bucket;
 export const supabaseLambdaEndpoint = pulumi.interpolate`${api.apiEndpoint}/content`;
+
+// Y-Sweet exports
+export const ySweetUrl = pulumi.interpolate`http://${ySweetAlb.dnsName}`;
+export const ySweetConnectionString = config.getSecret('ySweetConnectionString');
+

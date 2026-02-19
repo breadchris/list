@@ -29,7 +29,7 @@ export function AgentStudioNav() {
   const activeTab = getActiveTab();
 
   return (
-    <div className="flex items-center gap-1 px-4 pl-14 py-2 border-b border-neutral-800 bg-neutral-900/50">
+    <div className="flex items-center gap-1 px-4 py-2 border-b border-neutral-800 bg-neutral-900/50">
       {navItems.map((item) => {
         const Icon = item.icon;
         const isActive = item.href === activeTab;

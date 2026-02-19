@@ -2,13 +2,13 @@
 
 import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 import { AppShell } from "@/components/app-shell";
-import { CodeLanding } from "@/components/code/code-landing";
+import { ShellLanding } from "@/components/shell/shell-landing";
 
-export default function CodePage() {
+export default function ShellPage() {
   return (
     <GlobalGroupProvider>
-      <AppShell currentApp="code">
-        <CodeLanding />
+      <AppShell currentApp="shell">
+        <ShellLanding />
       </AppShell>
     </GlobalGroupProvider>
   );

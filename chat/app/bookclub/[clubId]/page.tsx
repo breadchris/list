@@ -1,9 +1,8 @@
 "use client";
 
-import { use, useState } from "react";
+import { use } from "react";
 import { BookClubDetail } from "@/components/bookclub/bookclub-detail";
-import { AppSwitcherButton } from "@/components/app-switcher-button";
-import { AppSwitcherPanel } from "@/components/app-switcher-panel";
+import { AppShell } from "@/components/app-shell";
 import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 
 export default function BookClubDetailPage({
@@ -12,19 +11,12 @@ export default function BookClubDetailPage({
   params: Promise<{ clubId: string }>;
 }) {
   const { clubId } = use(params);
-  const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
 
   return (
     <GlobalGroupProvider>
-      <div className="relative h-screen bg-neutral-950">
-        <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-        <AppSwitcherPanel
-          isOpen={appSwitcherOpen}
-          onClose={() => setAppSwitcherOpen(false)}
-          currentApp="bookclub"
-        />
+      <AppShell currentApp="bookclub">
         <BookClubDetail clubId={clubId} />
-      </div>
+      </AppShell>
     </GlobalGroupProvider>
   );
 }

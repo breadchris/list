@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useYDoc } from "@y-sweet/react";
+import { useYDoc, useConnectionStatus } from "@y-sweet/react";
 import type { WikiTemplate } from "@/types/wiki";
 import { DEFAULT_TEMPLATE_MODEL } from "@/types/wiki";
 
@@ -56,6 +56,7 @@ export function useWikiTemplates({
   wiki_id,
 }: UseWikiTemplatesOptions): UseWikiTemplatesReturn {
   const doc = useYDoc();
+  const connectionStatus = useConnectionStatus();
 
   // Templates state (derived from Y.js)
   const [templates, setTemplates] = useState<Map<string, WikiTemplate>>(
@@ -227,7 +228,7 @@ export function useWikiTemplates({
   return {
     templates,
     templatesList,
-    isReady: !!doc,
+    isReady: !!doc && connectionStatus === "connected",
     getTemplate,
     getTemplateByName,
     createTemplate,

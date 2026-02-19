@@ -2,8 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import { RabbitHoleInterface } from "@/components/rabbit-hole/RabbitHoleInterface";
-import { AppSwitcherButton } from "@/components/app-switcher-button";
-import { AppSwitcherPanel } from "@/components/app-switcher-panel";
+import { AppShell } from "@/components/app-shell";
 import { AppSettingsProvider } from "@/components/AppSettingsContext";
 import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 import { contentRepository } from "@/lib/list/ContentRepository";
@@ -14,7 +13,6 @@ export default function RabbitHoleRoomPage({
   params: Promise<{ roomId: string }>;
 }) {
   const { roomId } = use(params);
-  const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
   const [groupId, setGroupId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,16 +55,10 @@ export default function RabbitHoleRoomPage({
 
   return (
     <GlobalGroupProvider>
-      <AppSettingsProvider onCloseAppSwitcher={() => setAppSwitcherOpen(false)}>
-        <div className="relative h-screen bg-background">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp="rabbit-hole"
-          />
+      <AppSettingsProvider>
+        <AppShell currentApp="rabbit-hole">
           <RabbitHoleInterface roomId={roomId} />
-        </div>
+        </AppShell>
       </AppSettingsProvider>
     </GlobalGroupProvider>
   );

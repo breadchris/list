@@ -2,8 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import { WikiInterface } from "@/components/wiki/wiki-interface";
-import { AppSwitcherButton } from "@/components/app-switcher-button";
-import { AppSwitcherPanel } from "@/components/app-switcher-panel";
+import { AppShell } from "@/components/app-shell";
 import { AppSettingsProvider } from "@/components/AppSettingsContext";
 import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 import { contentRepository } from "@/lib/list/ContentRepository";
@@ -14,7 +13,6 @@ export default function WikiRoomPage({
   params: Promise<{ wikiId: string }>;
 }) {
   const { wikiId } = use(params);
-  const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
   const [groupId, setGroupId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,20 +55,14 @@ export default function WikiRoomPage({
 
   return (
     <GlobalGroupProvider>
-      <AppSettingsProvider onCloseAppSwitcher={() => setAppSwitcherOpen(false)}>
-        <div className="relative h-screen bg-neutral-950">
-          <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-          <AppSwitcherPanel
-            isOpen={appSwitcherOpen}
-            onClose={() => setAppSwitcherOpen(false)}
-            currentApp="wiki"
-          />
+      <AppSettingsProvider>
+        <AppShell currentApp="wiki">
           <WikiInterface
             wikiId={wikiId}
             groupId={groupId}
             ySweetUrl=""
           />
-        </div>
+        </AppShell>
       </AppSettingsProvider>
     </GlobalGroupProvider>
   );

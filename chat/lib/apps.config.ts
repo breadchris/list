@@ -17,12 +17,12 @@ import {
   Banknote,
   Compass,
   Bot,
-  StickyNote,
+  Terminal,
   type LucideIcon,
 } from "lucide-react";
 import type { z } from "zod";
 
-export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki" | "bookclub" | "time" | "code" | "photos" | "ineedart" | "transfer" | "rabbit-hole" | "agents" | "notes";
+export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki" | "bookclub" | "time" | "code" | "photos" | "ineedart" | "transfer" | "rabbit-hole" | "agents" | "shell";
 
 /**
  * Defines a public route pattern for an app that bypasses authentication
@@ -275,15 +275,15 @@ export const apps: AppConfig[] = [
     renderMode: "agents",
   },
   {
-    id: "notes",
-    name: "notes",
+    id: "shell",
+    name: "shell",
     description:
-      "Collaborative note-taking with real-time sync powered by Electric SQL and Yjs",
-    icon: StickyNote,
-    color: "text-yellow-400",
-    bgColor: "bg-yellow-400/10",
-    placeholder: "Create a new note...",
-    renderMode: "notes",
+      "Remote terminal session synced via Y-Sweet",
+    icon: Terminal,
+    color: "text-green-400",
+    bgColor: "bg-green-400/10",
+    placeholder: "Start a shell session...",
+    renderMode: "shell",
   },
 ];
 

@@ -13,7 +13,7 @@ export interface ContentQueueJob {
 }
 
 export interface ContentRequest {
-	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio' | 'teller-accounts' | 'teller-balances' | 'teller-transactions' | 'send-notification' | 'register-device' | 'unregister-device' | 'blocknote-export' | 'stripe-connect-onboard' | 'stripe-connect-status' | 'stripe-connect-dashboard' | 'stripe-create-transfer' | 'stripe-list-transfers' | 'stripe-initiate-payout' | 'stripe-list-payouts' | 'stripe-search-users' | 'stripe-webhook' | 'auth-generate-token' | 'auth-redeem-token' | 'auth-revoke-token' | 'auth-validate-session' | 'auth-list-tokens';
+	action: 'seo-extract' | 'llm-generate' | 'screenshot-queue' | 'queue-process' | 'markdown-extract' | 'chat-message' | 'claude-code-execute' | 'claude-code' | 'youtube-playlist-extract' | 'youtube-subtitle-extract' | 'tmdb-search' | 'libgen-search' | 'get-job' | 'list-jobs' | 'cancel-job' | 'tsx-transpile' | 'transcribe-audio' | 'teller-accounts' | 'teller-balances' | 'teller-transactions' | 'send-notification' | 'register-device' | 'unregister-device' | 'blocknote-export' | 'stripe-connect-onboard' | 'stripe-connect-status' | 'stripe-connect-dashboard' | 'stripe-create-transfer' | 'stripe-list-transfers' | 'stripe-initiate-payout' | 'stripe-list-payouts' | 'stripe-search-users' | 'stripe-webhook' | 'auth-generate-token' | 'auth-redeem-token' | 'auth-revoke-token' | 'auth-validate-session' | 'auth-list-tokens' | 'shell-start';
 	payload: any;
 	sync?: boolean; // When true, execute immediately and return results. When false/omitted, queue job (default)
 }
@@ -525,6 +525,19 @@ export interface StripeSearchUsersPayload {
 export interface StripeWebhookPayload {
 	body: string;
 	signature: string;
+}
+
+// Shell Types
+export interface ShellStartPayload {
+	doc_id: string;
+	cols?: number;
+	rows?: number;
+}
+
+export interface ShellRunPayload {
+	doc_id: string;
+	cols?: number;
+	rows?: number;
 }
 
 export interface StripeConnectedAccount {

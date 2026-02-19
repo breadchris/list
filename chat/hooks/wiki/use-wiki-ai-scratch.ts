@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useYDoc } from "@y-sweet/react";
+import { useYDoc, useConnectionStatus } from "@y-sweet/react";
 import type { WikiAIScratch } from "@/types/wiki";
 import { DEFAULT_TEMPLATE_MODEL } from "@/types/wiki";
 
@@ -36,6 +36,7 @@ export function useWikiAIScratch({
   wiki_id,
 }: UseWikiAIScratchOptions): UseWikiAIScratchReturn {
   const doc = useYDoc();
+  const connectionStatus = useConnectionStatus();
 
   // Scratches state (derived from Y.js)
   const [scratches, setScratches] = useState<Map<string, WikiAIScratch>>(
@@ -145,7 +146,7 @@ export function useWikiAIScratch({
   return {
     scratches,
     scratchesList,
-    isReady: !!doc,
+    isReady: !!doc && connectionStatus === "connected",
     getScratch,
     createScratch,
     updateScratch,

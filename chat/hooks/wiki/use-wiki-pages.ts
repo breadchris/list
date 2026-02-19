@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useYDoc } from "@y-sweet/react";
+import { useYDoc, useConnectionStatus } from "@y-sweet/react";
 import * as Y from "yjs";
 import type { WikiPage, WikiPageTreeNode, WikiRenamePreview } from "@/types/wiki";
 import {
@@ -104,6 +104,7 @@ export function useWikiPages({
   wiki_id,
 }: UseWikiPagesOptions): UseWikiPagesReturn {
   const doc = useYDoc();
+  const connectionStatus = useConnectionStatus();
 
   // Pages state (derived from Y.js)
   const [pages, setPages] = useState<Map<string, WikiPage>>(new Map());
@@ -453,7 +454,7 @@ export function useWikiPages({
   return {
     pages,
     pageTree,
-    isReady: !!doc,
+    isReady: !!doc && connectionStatus === "connected",
     getPage,
     getPageById,
     createPage,

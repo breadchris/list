@@ -1,8 +1,7 @@
 "use client";
 
-import { use, useState } from "react";
-import { AppSwitcherButton } from "@/components/app-switcher-button";
-import { AppSwitcherPanel } from "@/components/app-switcher-panel";
+import { use } from "react";
+import { AppShell } from "@/components/app-shell";
 import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 import { WorkflowEditor } from "@/components/agent-studio/workflow-editor";
 
@@ -12,19 +11,12 @@ interface WorkflowEditorPageProps {
 
 export default function WorkflowEditorPage({ params }: WorkflowEditorPageProps) {
   const { workflowId } = use(params);
-  const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
 
   return (
     <GlobalGroupProvider>
-      <div className="relative h-screen bg-neutral-950">
-        <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-        <AppSwitcherPanel
-          isOpen={appSwitcherOpen}
-          onClose={() => setAppSwitcherOpen(false)}
-          currentApp="agents"
-        />
+      <AppShell currentApp="agents">
         <WorkflowEditor workflowId={workflowId} />
-      </div>
+      </AppShell>
     </GlobalGroupProvider>
   );
 }

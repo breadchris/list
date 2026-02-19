@@ -94,7 +94,7 @@ export function KnowledgeLibrary() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 pl-14 border-b border-neutral-800">
+      <div className="flex items-center justify-between p-4 border-b border-neutral-800">
         <div className="flex items-center gap-3">
           <Database className="w-6 h-6 text-emerald-400" />
           <h1 className="text-xl font-semibold text-neutral-100">Knowledge Base</h1>

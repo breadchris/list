@@ -165,8 +165,8 @@ export function AgentEditor({ agentId }: AgentEditorProps) {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header - pl-14 accounts for fixed AppSwitcherButton */}
-      <div className="flex items-center justify-between p-4 pl-14 border-b border-neutral-800">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-neutral-800">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/agents")}

@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef, useCallback, Dispatch, SetStateAction } from "react";
 import { ReactReader, ReactReaderStyle } from "react-reader";
 import type { Rendition, Contents } from "epubjs";
-import { BookOpen, Upload, LayoutGrid, Highlighter, X, Trash2 } from "lucide-react";
+import { BookOpen, Upload, Highlighter, X, Trash2 } from "lucide-react";
 import { ReaderSettingsPanel } from "./ReaderSettingsPanel";
 import { useReadingPosition } from "@/hooks/reader/useReadingPosition";
 import { useEpubLoader } from "@/hooks/reader/useEpubLoader";
@@ -85,13 +85,11 @@ interface EpubSelection {
 }
 
 interface ReaderAppInterfaceProps {
-  onToggleAppSwitcher?: () => void;
   bookContentId?: string | null;
   groupId?: string | null;
 }
 
 export function ReaderAppInterface({
-  onToggleAppSwitcher,
   bookContentId: propBookContentId = null,
   groupId: propGroupId = null,
 }: ReaderAppInterfaceProps) {
@@ -839,27 +837,6 @@ export function ReaderAppInterface({
         onNavigateToHighlight={handleNavigateToHighlight}
         onRemoveHighlight={removeHighlight}
       />
-
-      {/* Controls overlay - tap top zone to toggle */}
-      {showControls && onToggleAppSwitcher && (
-        <div
-          className="fixed top-0 left-0 right-0 z-50 bg-black/60 backdrop-blur-sm"
-          style={{ paddingTop: 'env(safe-area-inset-top)' }}
-        >
-          <div className="flex items-center gap-2 px-3 py-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleAppSwitcher();
-              }}
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-neutral-300 hover:text-white hover:bg-white/10 transition-colors"
-              aria-label="Toggle app switcher"
-            >
-              <LayoutGrid className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Epub Reader with safe area padding */}
       <div

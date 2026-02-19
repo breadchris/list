@@ -1,9 +1,8 @@
 "use client";
 
-import { use, useState } from "react";
+import { use } from "react";
 import { TimeAppInterface } from "@/components/time/time-app-interface";
-import { AppSwitcherButton } from "@/components/app-switcher-button";
-import { AppSwitcherPanel } from "@/components/app-switcher-panel";
+import { AppShell } from "@/components/app-shell";
 import { AppSettingsProvider } from "@/components/AppSettingsContext";
 import { GlobalGroupProvider } from "@/components/GlobalGroupContext";
 import { YDocWrapper } from "@/components/y-doc-wrapper";
@@ -17,7 +16,6 @@ export default function TimeCalendarPage({
 }) {
   const { calendarId } = use(params);
   const { mode } = use(searchParams);
-  const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
 
   // Create a unique document ID for this calendar
   const docId = `time-calendar-${calendarId}`;
@@ -29,22 +27,11 @@ export default function TimeCalendarPage({
   return (
     <GlobalGroupProvider>
       <AppSettingsProvider>
-        <div className="relative h-screen bg-neutral-950">
-          {/* Hide app switcher for guests */}
-          {!guestMode && (
-            <>
-              <AppSwitcherButton onClick={() => setAppSwitcherOpen(true)} />
-              <AppSwitcherPanel
-                isOpen={appSwitcherOpen}
-                onClose={() => setAppSwitcherOpen(false)}
-                currentApp="time"
-              />
-            </>
-          )}
+        <AppShell currentApp="time" hideShell={!!guestMode}>
           <YDocWrapper docId={docId}>
             <TimeAppInterface calendarId={calendarId} guestMode={guestMode} />
           </YDocWrapper>
-        </div>
+        </AppShell>
       </AppSettingsProvider>
     </GlobalGroupProvider>
   );
