@@ -191,6 +191,7 @@ export interface BookClubRoom {
 export class ContentRepository {
   // Content methods
   async createContent(content: {
+    id?: string;
     type: string;
     data: string;
     group_id: string;
