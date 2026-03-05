@@ -305,7 +305,7 @@ export async function POST(req: Request) {
                 type: "tool-result" as const,
                 toolCallId: tc.toolCallId,
                 toolName: tc.toolName,
-                output: { success: true },
+                output: { type: "text" as const, value: "success" },
               },
             ],
           })),
