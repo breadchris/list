@@ -46,6 +46,9 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
     if (appConfig?.renderMode === "shell") {
       router.replace("/shell");
     }
+    if (appConfig?.renderMode === "context") {
+      router.replace("/context");
+    }
   }, [appConfig, router]);
 
   if (!appConfig) {
@@ -53,7 +56,7 @@ export default function AppPage({ params }: { params: Promise<{ app: string }> }
   }
 
   // List, DJ, Wiki, Time, and Code apps have their own route structures
-  if (appConfig.renderMode === "list" || appConfig.renderMode === "dj" || appConfig.renderMode === "wiki" || appConfig.renderMode === "time" || appConfig.renderMode === "code" || appConfig.renderMode === "shell") {
+  if (appConfig.renderMode === "list" || appConfig.renderMode === "dj" || appConfig.renderMode === "wiki" || appConfig.renderMode === "time" || appConfig.renderMode === "code" || appConfig.renderMode === "shell" || appConfig.renderMode === "context") {
     return null; // Will redirect
   }
 

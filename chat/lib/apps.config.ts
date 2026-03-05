@@ -18,11 +18,12 @@ import {
   Compass,
   Bot,
   Terminal,
+  Brain,
   type LucideIcon,
 } from "lucide-react";
 import type { z } from "zod";
 
-export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki" | "bookclub" | "time" | "code" | "photos" | "ineedart" | "transfer" | "rabbit-hole" | "agents" | "shell";
+export type RenderMode = "list" | "chat" | "calendar" | "reader" | "uploads" | "money" | "maps" | "paint" | "do" | "dj" | "signal" | "wiki" | "bookclub" | "time" | "code" | "photos" | "ineedart" | "transfer" | "rabbit-hole" | "agents" | "shell" | "context";
 
 /**
  * Defines a public route pattern for an app that bypasses authentication
@@ -284,6 +285,17 @@ export const apps: AppConfig[] = [
     bgColor: "bg-green-400/10",
     placeholder: "Start a shell session...",
     renderMode: "shell",
+  },
+  {
+    id: "context",
+    name: "context",
+    description:
+      "AI thinking partner with chat, timeline, wiki, and flow diagrams",
+    icon: Brain,
+    color: "text-amber-400",
+    bgColor: "bg-amber-400/10",
+    placeholder: "Start thinking...",
+    renderMode: "context",
   },
 ];
 

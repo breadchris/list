@@ -299,7 +299,7 @@ export async function POST(request: NextRequest) {
           const resultStream = query({
             prompt: enhancedPrompt,
             options: {
-              model: "gpt-4.1-nano",
+              model: "claude-sonnet-4-20250514",
               permissionMode: "bypassPermissions",
               pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_PATH,
               cwd: paths.workDir,
